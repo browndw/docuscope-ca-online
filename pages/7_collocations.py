@@ -115,7 +115,7 @@ else:
 	else:
 		node_tag = None
 		ignore_tags = True
-		count_by = None
+		count_by = 'pos'
 	
 	to_left = st.slider("Choose a span to the left of the node word:", 0, 9, (4))
 	to_right = st.slider("Choose a span to the right of the node word:", 0, 9, (4))
