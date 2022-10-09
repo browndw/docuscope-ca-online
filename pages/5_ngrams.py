@@ -106,7 +106,7 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 else:
 	st.write("Use the button to generate an ngrams table from your corpus.")
 
-	span = st.radio('Choose the span of your ngrams.', (2, 3, 4))
+	span = st.radio('Choose the span of your ngrams.', (2, 3, 4), horizontal=True)
 	
 	if st.button("Ngrams Table"):
 		#st.write(token_tuple)

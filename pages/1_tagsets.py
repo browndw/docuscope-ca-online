@@ -1,8 +1,6 @@
 import streamlit as st
 
-st.sidebar.markdown("## More about DocuScope and CLAWS7")
-
-st.title("More about the tagsets")
+st.title("More about the DocuScope and CLAWS7 tagsets")
 
 st.markdown("## What is DocuScope?\n")
 st.markdown("DocuScope is a dictionary-based tagger, developed by [David Kaufer and Suguru Ishizaki](https://www.igi-global.com/chapter/computer-aided-rhetorical-analysis/61054) at Carnegie Mellon University.")

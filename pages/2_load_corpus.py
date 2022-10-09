@@ -7,16 +7,19 @@ import docuscospacy.corpus_analysis as ds
 import re
 import string
 
-st.sidebar.markdown("## Load a corpus")
-
 st.title("Load and manage your corpus")
-
 
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
 if 'docids' not in st.session_state:
 	st.session_state.docids = ''
+
+if 'tags_pos' not in st.session_state:
+	st.session_state.tags_pos = ''
+
+if 'tags_ds' not in st.session_state:
+	st.session_state.tags_ds = ''
 
 if 'words' not in st.session_state:
 	st.session_state.words = 0
@@ -67,6 +70,8 @@ if st.session_state.ndocs > 0:
 	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
 	with st.expander("📁 Documents:"):
 		st.write(st.session_state.docids)
+	st.write(st.session_state.tags_pos)
+	st.write(st.session_state.tags_ds)
 	
 	st.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 	if st.button("Reset Corpus"):
@@ -90,14 +95,30 @@ else:
 			else:
 				st.success('Processing complete!')
 				tok = list(corp.values())
-				tag_list = []
+				#get pos tags
+				tags_pos = []
 				for i in range(0,len(tok)):
 					tags = [x[1] for x in tok[i]]
-					tag_list.append(tags)
-				tag_list = [x for xs in tag_list for x in xs]
-				st.session_state.tokens = len(tag_list)
-				st.session_state.words = len([x for x in tag_list if not x.startswith('Y')])
+					tags_pos.append(tags)
+				tags_pos = [x for xs in tags_pos for x in xs]
+				#get ds tags
+				tags_ds = []
+				for i in range(0,len(tok)):
+					tags = [x[2] for x in tok[i]]
+					tags_ds.append(tags)
+				tags_ds = [x for xs in tags_ds for x in xs]
+				tags_ds = [x for x in tags_ds if x.startswith('B-')]
+				#assign session states
+				st.session_state.tokens = len(tags_pos)
+				st.session_state.words = len([x for x in tags_pos if not x.startswith('Y')])
 				st.session_state.corpus = corp
 				st.session_state.docids = list(corp.keys())
 				st.session_state.ndocs = len(list(corp.keys()))
+				#tagsets
+				tags_ds = set(tags_ds)
+				tags_ds = sorted(set([re.sub(r'B-', '', i) for i in tags_ds]))
+				tags_pos = set(tags_pos)
+				tags_pos = sorted(set([re.sub(r'\d\d$', '', i) for i in tags_pos]))
+				st.session_state.tags_ds = tags_ds
+				st.session_state.tags_pos = tags_pos
 				st.experimental_rerun()

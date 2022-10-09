@@ -63,20 +63,6 @@ if 'corpus' not in st.session_state:
 if 'kwic' not in st.session_state:
 	st.session_state.kwic = ''
 
-# a method for preserving button selection on page interactions
-# with quick clicking it can lag
-if 'count_4' not in st.session_state:
-	st.session_state.count_4 = 0
-
-def increment_counter():
-	st.session_state.count_4 += 1
-
-if st.session_state.count_4 % 2 == 0:
-    idx = 0
-else:
-    idx = 1
-
-
 if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
 	
 	df = st.session_state.kwic
@@ -133,7 +119,7 @@ if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
 
 		
 else:
-	st.write("Use the button to generate a tag frequency table from your corpus.")
+	st.write("Use the button to generate a KWIC table for a node word.")
 	
 	search_mode = st.radio("Select search type:", ("Fixed", "Starts with", "Ends with", "Contains"), horizontal=True)
 	
