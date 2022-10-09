@@ -107,12 +107,15 @@ else:
 		else:
 			node_tag = st.selectbox("Select tag:", (st.session_state.tags_pos))
 		ignore_tags = False
+		count_by = 'pos'
 	elif tag_radio == 'DocuScope':
 		node_tag = st.selectbox("Select tag:", (st.session_state.tags_ds))
 		ignore_tags = False
+		count_by = 'ds'
 	else:
 		node_tag = None
 		ignore_tags = True
+		count_by = None
 	
 	to_left = st.slider("Choose a span to the left of the node word:", 0, 9, (4))
 	to_right = st.slider("Choose a span to the right of the node word:", 0, 9, (4))
@@ -143,6 +146,9 @@ else:
 				st.write("It doesn't look like you've loaded a corpus yet.")
 			else:
 				tp = st.session_state.corpus
-				df = ds.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags)
-				st.session_state.collocations = df
+				df = ds.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)
+				if len(df.index) > 0:
+					st.session_state.collocations = df
+				else:
+					st.session_state.collocations = "Empty"
 				st.experimental_rerun()
