@@ -18,19 +18,6 @@ if 'corpus' not in st.session_state:
 if 'collocations' not in st.session_state:
 	st.session_state.collocations = ''
 
-# a method for preserving button selection on page interactions
-# with quick clicking it can lag
-if 'count_5' not in st.session_state:
-	st.session_state.count_5 = 0
-
-def increment_counter():
-	st.session_state.count_5 += 1
-
-if st.session_state.count_5 % 2 == 0:
-    idx = 0
-else:
-    idx = 1
-
 if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	
 	df = st.session_state.collocations
