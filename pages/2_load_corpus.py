@@ -6,6 +6,7 @@ import docuscospacy.corpus_analysis as ds
 
 import re
 import string
+from collections import Counter
 
 st.title("Load and manage your corpus")
 
@@ -30,6 +31,13 @@ if 'tokens' not in st.session_state:
 if 'ndocs' not in st.session_state:
 	st.session_state.ndocs = 0
 
+if 'doccats' not in st.session_state:
+	st.session_state.doccats = ''
+
+if 'reference' not in st.session_state:
+	st.session_state.reference = ''
+
+
 nlp = spacy.load('en_docusco_spacy')
 
 def pre_process(txt):
@@ -40,6 +48,7 @@ def pre_process(txt):
 
 def process_corpus(corp):
 	doc_ids = [doc.name for doc in corp]
+	doc_ids = [doc.replace(" ", "") for doc in doc_ids]
 	if len(doc_ids) > len(set(doc_ids)):
 		dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
 		st.write("Your documents contain duplicate names: ", dup_ids)
@@ -49,7 +58,7 @@ def process_corpus(corp):
 		tp = {}
 		for doc in corp:	
 			doc_txt = doc.getvalue().decode("utf-8")
-			doc_id = doc.name
+			doc_id = doc.name.replace(" ", "")
 			doc_txt = pre_process(doc_txt)
 			doc_taged = nlp(doc_txt)
 			token_list = [token.text for token in doc_taged]
@@ -63,15 +72,34 @@ def process_corpus(corp):
 			tag_list = ['MC' if bool(is_digit.match(token_list[i])) and tag_list[i] != 'Y' else v for i, v in enumerate(tag_list)]
 			tp.update({doc_id: (list(zip(token_list, tag_list, iob_ent)))})
 		return tp
-
+	
 if st.session_state.ndocs > 0:
 	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
 	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
 	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
-	with st.expander("📁 Documents:"):
+	with st.expander("Documents:"):
 		st.write(st.session_state.docids)
-	st.write(st.session_state.tags_pos)
-	st.write(st.session_state.tags_ds)
+	
+	if st.session_state.doccats != '':
+		with st.expander("Counts of document categories:"):
+			st.write(Counter(st.session_state.doccats))
+	else:
+		load_cats = st.radio("Do you have categories in your file names to process?", ("No", "Yes"), horizontal=True)
+		if load_cats == 'Yes':
+			if st.button("Process Document Metadata"):
+				with st.spinner('Processing metadata...'):
+					if all(['_' in item for item in st.session_state.docids]):
+						doc_cats = [re.sub(r"_\S+$", "", item, flags=re.UNICODE) for item in st.session_state.docids]
+						if min([len(item) for item in doc_cats]) > 0 and len(set(doc_cats)) > 1:
+							st.session_state.doccats = doc_cats
+							st.success('Processing complete!')
+							st.experimental_rerun()
+						else:
+							st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly or your data contain only a single category. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
+					else:
+						st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
+
+
 	
 	st.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 	if st.button("Reset Corpus"):
