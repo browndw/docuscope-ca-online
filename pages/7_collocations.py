@@ -75,7 +75,7 @@ if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 				towrite.seek(0)  # reset pointer
 				b64 = base64.b64encode(towrite.read()).decode()  # some strings
 				st.success('Link generated!')
-				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="kwic.xlsx">Download Excel file</a>'
+				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="collocations.xlsx">Download Excel file</a>'
 				st.markdown(linko, unsafe_allow_html=True)
 	
 	with col2:
