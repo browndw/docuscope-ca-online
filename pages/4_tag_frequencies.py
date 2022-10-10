@@ -54,11 +54,8 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	grid_response = AgGrid(
 		df,
 		gridOptions=gridOptions,
-		#data_return_mode='AS_INPUT', 
-		#update_mode='MODEL_CHANGED', 
-		fit_columns_on_grid_load=True,
+		columns_auto_size_mode='FIT_CONTENTS',
 		theme='alpine', #Add theme color to the table
-		enable_enterprise_modules=True,
 		height=500, 
 		width='100%',
 		reload_data=True

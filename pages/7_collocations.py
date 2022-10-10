@@ -30,7 +30,7 @@ if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_default_column(filter="agTextColumnFilter")
-	gb.configure_column("Pre-Node", type="rightAligned")
+	gb.configure_column("MI", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=3)
 	
 	gb.configure_side_bar(columns_panel=False) #Add a sidebar
 	go = gb.build()
