@@ -42,38 +42,37 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 	else:
 		df = st.session_state.ft_ds
 	
+	reload_data = False
+	
+	if st.button('Reset Filters & Selections'):
+		reload_data = True
+		st.experimental_rerun()
+
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
-	gb.configure_default_column(enablePivot=False, enableValue=True, enableRowGroup=True)
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 	gb.configure_column("Tag", filter="agTextColumnFilter")
 	gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
-	gb.configure_side_bar() #Add a sidebar
 	gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
-	gridOptions = gb.build()
+	gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
+	go = gb.build()
 
 	grid_response = AgGrid(
 		df,
-		gridOptions=gridOptions,
+		gridOptions=go,
 		data_return_mode='FILTERED_AND_SORTED', 
 		update_mode='MODEL_CHANGED', 
-		fit_columns_on_grid_load=True,
-		#theme='alpine', #Add theme color to the table
-		enable_enterprise_modules=True,
-		header_checkbox_selection_filtered_only=True,
+		columns_auto_size_mode='FIT_CONTENTS',
+		theme='alpine',
+		#enable_enterprise_modules=True,
+		#header_checkbox_selection_filtered_only=True,
 		height=500, 
 		width='100%',
-		reload_data=False
+		reload_data=reload_data
 		)
+
 	
-	selected = grid_response['selected_rows'] 
-	if selected:
-		st.write('Selected rows')
-		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
-		st.dataframe(df)
-
-
 	with st.expander("Column explanation"):
 		st.write("""
 				The 'AF' column refers to the absolute token frequency.
@@ -90,6 +89,13 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 				Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
 				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
 		""")
+		
+	selected = grid_response['selected_rows'] 
+	if selected:
+		st.write('Selected rows')
+		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
+		st.dataframe(df)
+
 
 	if st.button("Download"):
 		with st.spinner('Creating download link...'):
