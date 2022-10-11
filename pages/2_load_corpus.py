@@ -90,12 +90,14 @@ if st.session_state.ndocs > 0:
 				with st.spinner('Processing metadata...'):
 					if all(['_' in item for item in st.session_state.docids]):
 						doc_cats = [re.sub(r"_\S+$", "", item, flags=re.UNICODE) for item in st.session_state.docids]
-						if min([len(item) for item in doc_cats]) > 0 and len(set(doc_cats)) > 1:
+						if min([len(item) for item in doc_cats]) == 0:
+							st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
+						elif len(set(doc_cats)) > 1 and len(set(doc_cats < 21)):
 							st.session_state.doccats = doc_cats
 							st.success('Processing complete!')
 							st.experimental_rerun()
 						else:
-							st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly or your data contain only a single category. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
+							st.markdown(":no_entry_sign: Your data should contain at least 2 and no more than 20 categories. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
 					else:
 						st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
 

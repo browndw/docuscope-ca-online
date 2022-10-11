@@ -44,26 +44,35 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 	
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
+	gb.configure_default_column(enablePivot=False, enableValue=True, enableRowGroup=True)
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 	gb.configure_column("Tag", filter="agTextColumnFilter")
-	gb.configure_column("Token", filter="agTextColumnFilter")
+	gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
 	gb.configure_side_bar() #Add a sidebar
-	#gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
+	gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
 	gridOptions = gb.build()
 
 	grid_response = AgGrid(
 		df,
 		gridOptions=gridOptions,
-		#data_return_mode='AS_INPUT', 
-		#update_mode='MODEL_CHANGED', 
+		data_return_mode='FILTERED_AND_SORTED', 
+		update_mode='MODEL_CHANGED', 
 		fit_columns_on_grid_load=True,
-		theme='alpine', #Add theme color to the table
+		#theme='alpine', #Add theme color to the table
 		enable_enterprise_modules=True,
+		header_checkbox_selection_filtered_only=True,
 		height=500, 
 		width='100%',
-		reload_data=True
+		reload_data=False
 		)
+	
+	selected = grid_response['selected_rows'] 
+	if selected:
+		st.write('Selected rows')
+		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
+		st.dataframe(df)
+
 
 	with st.expander("Column explanation"):
 		st.write("""
