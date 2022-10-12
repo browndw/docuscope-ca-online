@@ -32,8 +32,7 @@ if st.session_state.count_1 % 2 == 0:
     idx = 0
 else:
     idx = 1
-
-
+	
 if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 	
@@ -41,13 +40,7 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 		df = st.session_state.ft_pos
 	else:
 		df = st.session_state.ft_ds
-	
-	reload_data = False
-	
-	if st.button('Reset Filters & Selections'):
-		reload_data = True
-		st.experimental_rerun()
-
+		
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
@@ -57,7 +50,7 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 	gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
 	gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
 	go = gb.build()
-
+	
 	grid_response = AgGrid(
 		df,
 		gridOptions=go,
@@ -65,14 +58,11 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 		update_mode='MODEL_CHANGED', 
 		columns_auto_size_mode='FIT_CONTENTS',
 		theme='alpine',
-		#enable_enterprise_modules=True,
-		#header_checkbox_selection_filtered_only=True,
 		height=500, 
 		width='100%',
-		reload_data=reload_data
+		reload_data=False
 		)
-
-	
+			
 	with st.expander("Column explanation"):
 		st.write("""
 				The 'AF' column refers to the absolute token frequency.
@@ -95,7 +85,6 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 		st.write('Selected rows')
 		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
 		st.dataframe(df)
-
 
 	if st.button("Download"):
 		with st.spinner('Creating download link...'):
