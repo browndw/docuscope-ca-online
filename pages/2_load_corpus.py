@@ -86,6 +86,7 @@ def process_corpus(corp):
 		return tp
 	
 if st.session_state.ndocs > 0:
+	st.markdown('## Target corpus information:\n')
 	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
 	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
 	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
@@ -114,6 +115,7 @@ if st.session_state.ndocs > 0:
 						st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
 
 	if st.session_state.reference != '':
+		st.markdown('## Reference corpus information:\n')
 		st.write('Number of tokens in reference corpus: ', str(st.session_state.ref_tokens))
 		st.write('Number of word tokens in reference corpus: ', str(st.session_state.ref_words))
 		st.write('Number of documents in reference corpus: ', str(st.session_state.ref_ndocs))
@@ -155,6 +157,7 @@ if st.session_state.ndocs > 0:
 						st.session_state.ref_ndocs = len(list(ref_corp.keys()))
 						st.experimental_rerun()
 	
+	st.markdown('#### Reset all tools and files:\n')
 	st.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 	if st.button("Reset Corpus"):
 		for key in st.session_state.keys():
