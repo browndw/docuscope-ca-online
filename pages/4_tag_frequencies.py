@@ -44,21 +44,23 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
+	gb.configure_column("Tag", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
-	gb.configure_column("Tag", filter="agTextColumnFilter")
 	gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
 	gb.configure_side_bar() #Add a sidebar
-	#gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
-	gridOptions = gb.build()
+	gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
+	go = gb.build()
 
 	grid_response = AgGrid(
 		df,
-		gridOptions=gridOptions,
+		gridOptions=go,
+		data_return_mode='FILTERED_AND_SORTED', 
+		update_mode='MODEL_CHANGED', 
 		columns_auto_size_mode='FIT_CONTENTS',
-		theme='alpine', #Add theme color to the table
+		theme='alpine',
 		height=500, 
 		width='100%',
-		reload_data=True
+		reload_data=False
 		)
 	
 	with st.expander("Column explanation"):
@@ -78,21 +80,30 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
 		""")
 	
-	if st.button("Download"):
-		with st.spinner('Creating download link...'):
-			towrite = BytesIO()
-			downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-			towrite.seek(0)  # reset pointer
-			b64 = base64.b64encode(towrite.read()).decode()  # some strings
-			st.success('Link generated!')
-			linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
-			st.markdown(linko, unsafe_allow_html=True)
+	selected = grid_response['selected_rows'] 
+	if selected:
+		st.write('Selected rows')
+		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
+		st.dataframe(df)
 
-	if st.button("Plot resutls"):
-		fig = px.bar(df, x='Tag', y='RF', template='plotly_white')
-		fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-		fig.update_xaxes(color='black', title_text='', zeroline=True, linecolor='black')
-		fig.update_yaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
+		col1, col2 = st.columns([1,1])	if st.button("Download"):
+		
+		with col1:
+			with st.spinner('Creating download link...'):
+				towrite = BytesIO()
+				downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
+				towrite.seek(0)  # reset pointer
+				b64 = base64.b64encode(towrite.read()).decode()  # some strings
+				st.success('Link generated!')
+				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
+				st.markdown(linko, unsafe_allow_html=True)
+		
+		with col2:
+		if st.button("Plot resutls"):
+			fig = px.bar(df, x='Tag', y='RF', template='plotly_white')
+			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
+			fig.update_xaxes(color='black', title_text='', zeroline=True, linecolor='black')
+			fig.update_yaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
 
 		st.write(fig)
 		
