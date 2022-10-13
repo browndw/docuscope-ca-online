@@ -40,15 +40,11 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 		df = st.session_state.ng_pos
 	else:
 		df = st.session_state.ng_ds
-	
-	reload_data = False
-	if st.button('Reset filters'):
-		grid_response = df.copy()
-		reload_data = True
-	
+		
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_default_column(filter="agTextColumnFilter")
+	gb.configure_column("Token1", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 	gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
 	gb.configure_side_bar() #Add a sidebar
@@ -56,16 +52,16 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 	
 	grid_response = AgGrid(
 		df,
-		gridOptions=gridOptions,
+		gridOptions=go,
+		data_return_mode='FILTERED_AND_SORTED', 
+		update_mode='MODEL_CHANGED', 
 		columns_auto_size_mode='FIT_CONTENTS',
-		theme='alpine', #Add theme color to the table
+		theme='alpine',
 		height=500, 
 		width='100%',
-		reload_data=reload_data
+		reload_data=False
 		)
-	
-	#reload_data = False
-	
+		
 	with st.expander("Column explanation"):
 		st.write("""
 				The 'AF' column refers to the absolute token frequency.
@@ -82,6 +78,12 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 				Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
 				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
 		""")
+
+	selected = grid_response['selected_rows'] 
+	if selected:
+		st.write('Selected rows')
+		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
+		st.dataframe(df)
 	
 	col1, col2 = st.columns([1,1])
 	
