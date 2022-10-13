@@ -65,17 +65,12 @@ if 'kwic' not in st.session_state:
 
 if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
 	
-	df = st.session_state.kwic
-	
-	reload_data = False
-	if st.button('Reset filters'):
-		grid_response = df.copy()
-		reload_data = True
-	
+	df = st.session_state.kwic	
 	
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_default_column(filter="agTextColumnFilter")
+	gb.configure_column("Doc ID", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("Pre-Node", type="rightAligned")
 	
 	gb.configure_side_bar(columns_panel=False) #Add a sidebar
@@ -84,11 +79,13 @@ if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
 	grid_response = AgGrid(
 		df,
 		gridOptions=go,
+		data_return_mode='FILTERED_AND_SORTED', 
+		update_mode='MODEL_CHANGED', 
 		columns_auto_size_mode='FIT_CONTENTS',
-		theme='alpine', #Add theme color to the table
+		theme='alpine',
 		height=500, 
 		width='100%',
-		reload_data=reload_data
+		reload_data=False
 		)
 	
 	with st.expander("See explanation"):
@@ -97,6 +94,12 @@ if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
 				I rolled actual dice for these, so they're *guaranteed* to
 				be random.
 		""")
+
+	selected = grid_response['selected_rows'] 
+	if selected:
+		st.write('Selected rows')
+		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
+		st.dataframe(df)
 	
 	col1, col2 = st.columns([1,1])
 	
