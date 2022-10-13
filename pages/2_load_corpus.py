@@ -37,6 +37,18 @@ if 'doccats' not in st.session_state:
 if 'reference' not in st.session_state:
 	st.session_state.reference = ''
 
+if 'ref_docids' not in st.session_state:
+	st.session_state.ref_docids = ''
+
+if 'ref_words' not in st.session_state:
+	st.session_state.ref_words = 0
+
+if 'ref_tokens' not in st.session_state:
+	st.session_state.ref_words = 0
+
+if 'ref_ndocs' not in st.session_state:
+	st.session_state.ref_ndocs = 0
+
 
 nlp = spacy.load('en_docusco_spacy')
 
@@ -101,7 +113,47 @@ if st.session_state.ndocs > 0:
 					else:
 						st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
 
-
+	if st.session_state.reference != '':
+		st.write('Number of tokens in reference corpus: ', str(st.session_state.ref_tokens))
+		st.write('Number of word tokens in reference corpus: ', str(st.session_state.ref_words))
+		st.write('Number of documents in reference corpus: ', str(st.session_state.ref_ndocs))
+		with st.expander("Documents in reference corpus:"):
+			st.write(st.session_state.ref_docids)
+			
+	else:
+		load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)
+		if load_ref == 'Yes':
+			ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True)
+		
+			if len(ref_files) > 0:
+				if st.button("Process Reference Corpus"):
+					with st.spinner('Processing corpus data...'):
+						ref_corp = process_corpus(ref_files)
+					if ref_corp == None:
+						st.success('Fix or remove duplicate file names before processing corpus.')
+					else:
+						st.success('Processing complete!')
+						tok = list(ref_corp.values())
+						#get pos tags
+						tags_pos = []
+						for i in range(0,len(tok)):
+							tags = [x[1] for x in tok[i]]
+							tags_pos.append(tags)
+						tags_pos = [x for xs in tags_pos for x in xs]
+						#get ds tags
+						tags_ds = []
+						for i in range(0,len(tok)):
+							tags = [x[2] for x in tok[i]]
+							tags_ds.append(tags)
+						tags_ds = [x for xs in tags_ds for x in xs]
+						tags_ds = [x for x in tags_ds if x.startswith('B-')]
+						#assign session states
+						st.session_state.ref_tokens = len(tags_pos)
+						st.session_state.ref_words = len([x for x in tags_pos if not x.startswith('Y')])
+						st.session_state.reference = ref_corp
+						st.session_state.ref_docids = list(ref_corp.keys())
+						st.session_state.ref_ndocs = len(list(ref_corp.keys()))
+						st.experimental_rerun()
 	
 	st.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 	if st.button("Reset Corpus"):
