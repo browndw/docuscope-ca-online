@@ -86,26 +86,27 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
 		st.dataframe(df)
 
-		col1, col2 = st.columns([1,1])	if st.button("Download"):
+		col1, col2 = st.columns([1,1])
 		
 		with col1:
-			with st.spinner('Creating download link...'):
-				towrite = BytesIO()
-				downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-				towrite.seek(0)  # reset pointer
-				b64 = base64.b64encode(towrite.read()).decode()  # some strings
-				st.success('Link generated!')
-				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
-				st.markdown(linko, unsafe_allow_html=True)
-		
-		with col2:
-		if st.button("Plot resutls"):
-			fig = px.bar(df, x='Tag', y='RF', template='plotly_white')
-			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			fig.update_xaxes(color='black', title_text='', zeroline=True, linecolor='black')
-			fig.update_yaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
+			if st.button("Plot resutls"):
+				fig = px.bar(df, x='Tag', y='RF', template='plotly_white')
+				fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
+				fig.update_xaxes(color='black', title_text='', zeroline=True, linecolor='black')
+				fig.update_yaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
+				st.write(fig)
 
-		st.write(fig)
+		with col2:
+			if st.button("Download"):
+				with st.spinner('Creating download link...'):
+					towrite = BytesIO()
+					downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
+					towrite.seek(0)  # reset pointer
+					b64 = base64.b64encode(towrite.read()).decode()  # some strings
+					st.success('Link generated!')
+					linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
+					st.markdown(linko, unsafe_allow_html=True)
+		
 		
 else:
 	st.write("Use the button to generate a tag frequency table from your corpus.")
