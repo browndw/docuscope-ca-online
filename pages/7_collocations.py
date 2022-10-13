@@ -21,12 +21,7 @@ if 'collocations' not in st.session_state:
 if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	
 	df = st.session_state.collocations
-	
-	reload_data = False
-	if st.button('Reset filters'):
-		grid_response = df.copy()
-		reload_data = True
-	
+		
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_default_column(filter="agTextColumnFilter")
