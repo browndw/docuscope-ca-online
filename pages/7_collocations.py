@@ -30,6 +30,7 @@ if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_default_column(filter="agTextColumnFilter")
+	gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("MI", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=3)
 	gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
 	gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
