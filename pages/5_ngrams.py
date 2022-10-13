@@ -48,7 +48,7 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 	gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
 	gb.configure_side_bar() #Add a sidebar
-	gridOptions = gb.build()
+	go = gb.build()
 	
 	grid_response = AgGrid(
 		df,
