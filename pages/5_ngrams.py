@@ -47,7 +47,8 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 	gb.configure_column("Token1", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 	gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 	gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
-	gb.configure_side_bar() #Add a sidebar
+	gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
+	gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
 	go = gb.build()
 	
 	grid_response = AgGrid(
