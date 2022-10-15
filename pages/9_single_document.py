@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components 
 
 # NLP Pkgs
 import docuscospacy.corpus_analysis as ds
@@ -18,6 +19,12 @@ if 'corpus' not in st.session_state:
 if 'docids' not in st.session_state:
 	st.session_state.docids = ''
 
+if 'doc_pos' not in st.session_state:
+	st.session_state.doc_pos = ''
+
+if 'doc_ds' not in st.session_state:
+	st.session_state.doc_ds = ''
+
 if 'dc_pos' not in st.session_state:
 	st.session_state.dc_pos = ''
 
@@ -29,10 +36,15 @@ if 'html_pos' not in st.session_state:
 
 if 'html_ds' not in st.session_state:
 	st.session_state.html_ds = ''
+
+if 'html_str' not in st.session_state:
+	st.session_state.html_str = ''
 	
 if 'doc_key' not in st.session_state:
 	st.session_state.doc_key = ''
 
+if 'tags' not in st.session_state:
+	st.session_state.tags = []
 
 if 'count_4' not in st.session_state:
 	st.session_state.count_4 = 0
@@ -45,6 +57,9 @@ if st.session_state.count_4 % 2 == 0:
 else:
     idx = 1
     
+hex_highlights = ['#FEB7B3', '#97E5D7', '#FCF1DD', '#FFD4B8', '#D2EBD8']
+html_highlights = [' { background-color:#FEB7B3; }', ' { background-color:#97E5D7; }', ' { background-color:#FCF1DD; }', ' { background-color:#FFD4B8; }', ' { background-color:#D2EBD8; }']
+
 def html_build(tok, key, count_by="tag"):
     df = ds.tag_ruler(tok=tok, key=key, count_by=count_by)
     df['ws'] = df['Token'].str.extract(r'(\s+)$')
@@ -76,7 +91,30 @@ def doc_counts(doc_span, n_tokens, count_by='pos'):
         df.reset_index(drop=True, inplace=True)
     return(df)
 
-html_highlights = [' { background-color:#FEB7B3; }', ' { background-color:#97E5D7; }', ' { background-color:#FCF1DD; }', ' { background-color:#FFD4B8; }', ' { background-color:#D2EBD8; }']
+def lexdensity_plot(df, tag_list):
+	plot_colors = hex_highlights[:len(tag_list)]
+	df['X'] = (df.index + 1)/(len(df.index))
+	df = df[df['Tag'].isin(tag_list)]
+	df['Y'] = 1
+	df_b = df.copy()
+	df_b['Y'] = 0
+	df = pd.concat([df, df_b], axis=0)
+	plot = px.line(df, x='X', y='Y', color='Tag', line_group='X', color_discrete_sequence=plot_colors, facet_row='Tag', category_orders = {'Tag':tag_list})
+	plot.update_yaxes(title_text='', showticklabels=False, range = [0,1], showgrid=False, mirror=True, showline=True, linecolor='black')
+	plot.update_xaxes(title_text='', range = [0,1], tick0=.25, dtick=.25, tickformat=".0%", mirror=True, showline=True, linecolor='black')
+	plot.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+	plot.update_layout(showlegend=False, paper_bgcolor='white', plot_bgcolor='white', height=300)
+	return(plot)
+
+def update_tags(html_state):
+	tags = st.session_state.tags
+	tags = ['.' + x for x in tags]
+	highlights = html_highlights[:len(tags)]
+	style_str = [''.join(x) for x in zip(tags, highlights)]
+	style_str = ''.join(style_str)
+	style_sheet_str = '<style>' + style_str + '</style>'
+	st.session_state.html_str = style_sheet_str + html_state
+	#st.experimental_rerun()
 
 if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 	st.write("Use the menus to select the tags you would like to highlight.")
@@ -84,40 +122,42 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 
 	if tag_radio == 'Parts-of-Speech':
-		tags = st.multiselect('Select tags to highlight', (st.session_state.tags_pos))
-		html_str = st.session_state.html_pos
+		tag_list = st.multiselect('Select tags to highlight', st.session_state.tags_pos, on_change = update_tags(st.session_state.html_pos), key='tags')
+		#html_str = st.session_state.html_pos
+		tag_loc = st.session_state.doc_pos
 		df = st.session_state.dc_pos
 	else:
-		tags = st.multiselect('Select tags to highlight', (st.session_state.tags_ds))
-		html_str = st.session_state.html_ds
+		tag_list = st.multiselect('Select tags to highlight', st.session_state.tags_ds, on_change = update_tags(st.session_state.html_ds), key='tags')
+		#html_str = st.session_state.html_ds
+		tag_loc = st.session_state.doc_ds
 		df = st.session_state.dc_ds
 	
-	col1, col2 = st.columns([1,1])
+	col1, col2= st.columns([1,1])
 	with col1:
-		if st.button("Highlight Tags"):
-			if len(tags) > 5:
+		if st.button("Plot"):
+			if len(tag_list) > 5:
 				st.write('You can only hightlight a maximum of 5 tags.')
 			else:
-				tags = ['.' + x for x in tags]
-				highlights = html_highlights[:len(tags)]
-				style_str = [''.join(x) for x in zip(tags, highlights)]
-				style_str = ''.join(style_str)
-				style_sheet_str = '<style>' + style_str + '</style>'
-				html_str = style_sheet_str + html_str
+				st.plotly_chart(lexdensity_plot(tag_loc, tag_list), use_container_width=False)
+
 	with col2:
 		if st.button("Select a new document"):
+			st.session_state.doc_pos = ''
+			st.session_state.doc_ds = ''
 			st.session_state.dc_pos = ''
 			st.session_state.dc_ds = ''
 			st.session_state.html_pos = ''
 			st.session_state.html_ds = ''
 			st.session_state.doc_key = ''
+			del st.session_state['tags']
 			st.experimental_rerun()
 
-	st.write(st.session_state.doc_key)
-	st.markdown(html_str, unsafe_allow_html=True)
-	st.dataframe(df)
-	
+	st.markdown(f"""
+				###  {st.session_state.doc_key}
+				""")
 
+	components.html(st.session_state.html_str, height=500, scrolling=True)
+	st.dataframe(df)
 
 
 else:
@@ -136,6 +176,8 @@ else:
 			dc_ds = doc_counts(doc_ds, doc_tokens, count_by='ds')
 			html_pos = html_build(st.session_state.corpus, doc_key, count_by='pos')
 			html_ds = html_build(st.session_state.corpus, doc_key, count_by='ds')
+			st.session_state.doc_pos = doc_pos
+			st.session_state.doc_ds = doc_ds
 			st.session_state.dc_pos = dc_pos
 			st.session_state.dc_ds = dc_ds
 			st.session_state.html_pos = html_pos
