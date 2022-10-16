@@ -91,7 +91,7 @@ if st.session_state.ndocs > 0:
 	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
 	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
 	with st.expander("Documents:"):
-		st.write(st.session_state.docids)
+		st.write(sorted(st.session_state.docids))
 	
 	if st.session_state.doccats != '':
 		with st.expander("Counts of document categories:"):
@@ -120,7 +120,7 @@ if st.session_state.ndocs > 0:
 		st.write('Number of word tokens in reference corpus: ', str(st.session_state.ref_words))
 		st.write('Number of documents in reference corpus: ', str(st.session_state.ref_ndocs))
 		with st.expander("Documents in reference corpus:"):
-			st.write(st.session_state.ref_docids)
+			st.write(sorted(st.session_state.ref_docids))
 			
 	else:
 		load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)

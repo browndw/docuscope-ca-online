@@ -204,9 +204,8 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 			downloaded_file.save(towrite)
 			towrite.seek(0)  # reset pointer
 			b64 = base64.b64encode(towrite.read()).decode()
-			#downloaded_file.save('/Users/davidwestbrown/Downloads/test2.docx')
 			st.success('Link generated!')
-			linko= f'<a href="data:vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{b64}" download="test.docx">Download Word file</a>'
+			linko= f'<a href="data:vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{b64}" download="document_tags.docx">Download Word file</a>'
 			st.markdown(linko, unsafe_allow_html=True)
 
 else:
