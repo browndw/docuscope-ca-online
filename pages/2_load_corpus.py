@@ -44,7 +44,7 @@ if 'ref_words' not in st.session_state:
 	st.session_state.ref_words = 0
 
 if 'ref_tokens' not in st.session_state:
-	st.session_state.ref_words = 0
+	st.session_state.ref_tokens = 0
 
 if 'ref_ndocs' not in st.session_state:
 	st.session_state.ref_ndocs = 0

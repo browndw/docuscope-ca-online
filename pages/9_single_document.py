@@ -10,6 +10,11 @@ from collections import Counter
 
 import base64
 from io import BytesIO
+from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.opc.part import Part
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
 st.title("Explore single texts")
 
@@ -93,6 +98,8 @@ def doc_counts(doc_span, n_tokens, count_by='pos'):
 
 def lexdensity_plot(df, tag_list):
 	plot_colors = hex_highlights[:len(tag_list)]
+	hts = [200, 280, 340, 420, 500]
+	ht = hts[len(tag_list)-1]
 	df['X'] = (df.index + 1)/(len(df.index))
 	df = df[df['Tag'].isin(tag_list)]
 	df['Y'] = 1
@@ -103,7 +110,7 @@ def lexdensity_plot(df, tag_list):
 	plot.update_yaxes(title_text='', showticklabels=False, range = [0,1], showgrid=False, mirror=True, showline=True, linecolor='black')
 	plot.update_xaxes(title_text='', range = [0,1], tick0=.25, dtick=.25, tickformat=".0%", mirror=True, showline=True, linecolor='black')
 	plot.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-	plot.update_layout(showlegend=False, paper_bgcolor='white', plot_bgcolor='white', height=300)
+	plot.update_layout(showlegend=False, paper_bgcolor='white', plot_bgcolor='white', height=ht)
 	return(plot)
 
 def update_tags(html_state):
@@ -114,7 +121,15 @@ def update_tags(html_state):
 	style_str = ''.join(style_str)
 	style_sheet_str = '<style>' + style_str + '</style>'
 	st.session_state.html_str = style_sheet_str + html_state
-	#st.experimental_rerun()
+
+def add_alt_chunk(doc: Document, html: str):
+    package = doc.part.package
+    partname = package.next_partname('/word/altChunk%d.html')
+    alt_part = Part(partname, 'text/html', html.encode(), package)
+    r_id = doc.part.relate_to(alt_part, RT.A_F_CHUNK)
+    alt_chunk = OxmlElement('w:altChunk')
+    alt_chunk.set(qn('r:id'), r_id)
+    doc.element.body.sectPr.addprevious(alt_chunk)
 
 if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 	st.write("Use the menus to select the tags you would like to highlight.")
@@ -137,6 +152,8 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 		if st.button("Plot"):
 			if len(tag_list) > 5:
 				st.write('You can only hightlight a maximum of 5 tags.')
+			elif len(tag_list) == 0:
+				st.write('There are no tags to plot.')
 			else:
 				st.plotly_chart(lexdensity_plot(tag_loc, tag_list), use_container_width=False)
 
@@ -158,7 +175,39 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 
 	components.html(st.session_state.html_str, height=500, scrolling=True)
 	st.dataframe(df)
-
+	
+	if st.button("Download"):
+		with st.spinner('Creating download link...'):
+			doc_html = st.session_state.html_str.split('</style>')
+			style_sheet_str = doc_html[0] + '</style>'
+			html_str = doc_html[1]
+			doc_html = '<!DOCTYPE html><html><head>' + style_sheet_str + '</head><body>' + html_str + '</body></html>'
+			downloaded_file = Document()
+			downloaded_file.add_heading(st.session_state.doc_key)
+			downloaded_file.add_heading('Table of tag frequencies:', 3)
+			#add counts table
+			df['RF'] = df.RF.round(2)
+			t = downloaded_file.add_table(df.shape[0]+1, df.shape[1])
+			# add the header rows.
+			for j in range(df.shape[-1]):
+				t.cell(0,j).text = df.columns[j]
+			# add the rest of the data frame
+			for i in range(df.shape[0]):
+				for j in range(df.shape[-1]):
+					t.cell(i+1,j).text = str(df.values[i,j])
+			t.style = 'LightShading-Accent1'
+			downloaded_file.add_heading('Highlighted tags:', 3)
+			downloaded_file.add_heading(', '.join(tag_list), 4)
+			#add html
+			add_alt_chunk(downloaded_file, doc_html)
+			towrite = BytesIO()
+			downloaded_file.save(towrite)
+			towrite.seek(0)  # reset pointer
+			b64 = base64.b64encode(towrite.read()).decode()
+			#downloaded_file.save('/Users/davidwestbrown/Downloads/test2.docx')
+			st.success('Link generated!')
+			linko= f'<a href="data:vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{b64}" download="test.docx">Download Word file</a>'
+			st.markdown(linko, unsafe_allow_html=True)
 
 else:
 	st.write("Use the menus to select the tags you would like to highlight.")
