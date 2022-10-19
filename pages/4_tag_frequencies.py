@@ -90,11 +90,12 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 		
 	with col1:
 		if st.button("Plot resutls"):
-			fig = px.bar(df, x='Tag', y='RF', template='plotly_white')
+			fig = px.bar(df, x='RF', y='Tag', template='plotly_white', orientation='h')
 			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			fig.update_xaxes(color='black', title_text='', zeroline=True, linecolor='black')
-			fig.update_yaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
-			st.write(fig)
+			fig.update_yaxes(color='black', title_text='', zeroline=True, linecolor='black')
+			fig.update_xaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
+			fig.update_layout(yaxis={'categoryorder':'total ascending'})
+			st.plotly_chart(fig)
 
 	with col2:
 		if st.button("Download"):

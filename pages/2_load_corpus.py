@@ -86,7 +86,7 @@ def process_corpus(corp):
 		return tp
 	
 if st.session_state.ndocs > 0:
-	st.markdown('## Target corpus information:\n')
+	st.markdown('## Target corpus information:')
 	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
 	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
 	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
@@ -94,6 +94,7 @@ if st.session_state.ndocs > 0:
 		st.write(sorted(st.session_state.docids))
 	
 	if st.session_state.doccats != '':
+		st.markdown('### Target corpus metadata:')
 		with st.expander("Counts of document categories:"):
 			st.write(Counter(st.session_state.doccats))
 	else:
@@ -105,7 +106,7 @@ if st.session_state.ndocs > 0:
 						doc_cats = [re.sub(r"_\S+$", "", item, flags=re.UNICODE) for item in st.session_state.docids]
 						if min([len(item) for item in doc_cats]) == 0:
 							st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
-						elif len(set(doc_cats)) > 1 and len(set(doc_cats < 21)):
+						elif len(set(doc_cats)) > 1 and len(set(doc_cats)) < 21:
 							st.session_state.doccats = doc_cats
 							st.success('Processing complete!')
 							st.experimental_rerun()
@@ -115,7 +116,7 @@ if st.session_state.ndocs > 0:
 						st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
 
 	if st.session_state.reference != '':
-		st.markdown('## Reference corpus information:\n')
+		st.markdown('## Reference corpus information:')
 		st.write('Number of tokens in reference corpus: ', str(st.session_state.ref_tokens))
 		st.write('Number of word tokens in reference corpus: ', str(st.session_state.ref_words))
 		st.write('Number of documents in reference corpus: ', str(st.session_state.ref_ndocs))

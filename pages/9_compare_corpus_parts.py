@@ -15,73 +15,87 @@ st.title("Create a keyness table")
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
-if 'reference' not in st.session_state:
-	st.session_state.reference = ''
+if 'doccats' not in st.session_state:
+	st.session_state.doccats = ''
 
-if 'ft_pos' not in st.session_state:
-	st.session_state.ft_pos = ''
+if 'kw_pos_cp' not in st.session_state:
+	st.session_state.kw_pos_cp = ''
 
-if 'ft_ds' not in st.session_state:
-	st.session_state.ft_ds = ''
-
-if 'tt_pos' not in st.session_state:
-	st.session_state.tt_pos = ''
-
-if 'tt_ds' not in st.session_state:
-	st.session_state.tt_ds = ''
-
-if 'kw_pos' not in st.session_state:
-	st.session_state.kw_pos = ''
-
-if 'kw_ds' not in st.session_state:
-	st.session_state.kw_ds = ''
+if 'kw_ds_cp' not in st.session_state:
+	st.session_state.kw_ds_cp = ''
 
 # a method for preserving button selection on page interactions
 # with quick clicking it can lag
-if 'count_5' not in st.session_state:
-	st.session_state.count_5 = 0
+if 'count_8' not in st.session_state:
+	st.session_state.count_8 = 0
 
-def increment_counter_5():
-	st.session_state.count_5 += 1
+def increment_counter_8():
+	st.session_state.count_8 += 1
 
-if st.session_state.count_5 % 2 == 0:
-    idx_5 = 0
+if st.session_state.count_8 % 2 == 0:
+    idx_8 = 0
 else:
-    idx_5 = 1
+    idx_8 = 1
 
-if 'count_6' not in st.session_state:
-	st.session_state.count_6 = 0
+if 'count_9' not in st.session_state:
+	st.session_state.count_9 = 0
 
-def increment_counter_6():
-	st.session_state.count_6 += 1
+def increment_counter_9():
+	st.session_state.count_9 += 1
 
-if st.session_state.count_6 % 2 == 0:
-    idx_6 = 0
+if st.session_state.count_9 % 2 == 0:
+    idx_9 = 0
 else:
-    idx_6 = 1
+    idx_9 = 1
 
-if 'count_7' not in st.session_state:
-	st.session_state.count_7 = 0
+if 'count_10' not in st.session_state:
+	st.session_state.count_10 = 0
 
-def increment_counter_7():
-	st.session_state.count_7 += 1
+def increment_counter_10():
+	st.session_state.count_10 += 1
 
-if st.session_state.count_7 % 2 == 0:
-    idx_7 = 0
+if st.session_state.count_10 % 2 == 0:
+    idx_10 = 0
 else:
-    idx_7 = 1
+    idx_10 = 1
 
-if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
+#prevent categories from being chosen in both multiselect
+def update_tar():
+	if len(list(set(st.session_state.tar) & set(st.session_state.ref))) > 0:
+		item = list(set(st.session_state.tar) & set(st.session_state.ref))
+		st.session_state.tar = list(set(list(st.session_state.tar))^set(item))
 
-	table_radio = st.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), index=idx_5, on_change=increment_counter_5, horizontal=True)
+def update_ref():
+	if len(list(set(st.session_state.tar) & set(st.session_state.ref))) > 0:
+		item = list(set(st.session_state.tar) & set(st.session_state.ref))
+		st.session_state.ref = list(set(list(st.session_state.ref))^set(item))
+
+if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
+
+	table_radio = st.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), index=idx_8, on_change=increment_counter_8, horizontal=True)
 	if table_radio == 'Tokens':
-		tag_radio_tokens = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx_6, on_change=increment_counter_6, horizontal=True)
+		tag_radio_tokens = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx_9, on_change=increment_counter_9, horizontal=True)
 
 		if tag_radio_tokens == 'Parts-of-Speech':
-			df = st.session_state.kw_pos
+			df = st.session_state.kw_pos_cp
 		else:
-			df = st.session_state.kw_ds
-	
+			df = st.session_state.kw_ds_cp
+			
+		
+		col1, col2 = st.columns([1,1])
+		
+		with col1:
+			st.markdown("#### Target corpus:")
+			st.write("Document categories: ", ', '.join(st.session_state.tar_cats))
+			st.write("Number of tokens: ", str(st.session_state.tar_tokens))
+			st.write("Number of word tokens: ", str(st.session_state.tar_words))
+
+		with col2:
+			st.markdown("#### Reference corpus:")
+			st.write("Document categories: ", ', '.join(st.session_state.ref_cats))
+			st.write("Number of tokens: ", str(st.session_state.ref_tokens))
+			st.write("Number of word tokens: ", str(st.session_state.ref_words))
+
 		gb = GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 		gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
@@ -142,14 +156,27 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 				st.success('Link generated!')
 				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
 				st.markdown(linko, unsafe_allow_html=True)
+		
+		if st.button("Compare New Categories"):
+			st.session_state.kw_pos_cp = ''
+			st.session_state.kw_ds_cp = ''
+			st.session_state.kt_pos_cp = ''
+			st.session_state.kt_ds_cp = ''
+			st.session_state.tar_tokens = 0
+			st.session_state.tar_words = 0
+			st.session_state.ref_tokens = 0
+			st.session_state.tar_words = 0
+			st.session_state.tar_cats = []
+			st.session_state.ref_cats = []
+			st.experimental_rerun()
 
 	else:
-		tag_radio_tags = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx_7, on_change=increment_counter_7, horizontal=True)
+		tag_radio_tags = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx_10, on_change=increment_counter_10, horizontal=True)
 
 		if tag_radio_tags == 'Parts-of-Speech':
-			df = st.session_state.kt_pos
+			df = st.session_state.kt_pos_cp
 		else:
-			df = st.session_state.kt_ds
+			df = st.session_state.kt_ds_cp
 	
 		gb = GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -209,42 +236,83 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 					st.success('Link generated!')
 					linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
 					st.markdown(linko, unsafe_allow_html=True)
+		
+		if st.button("Compare New Categories"):
+			st.session_state.kw_pos_cp = ''
+			st.session_state.kw_ds_cp = ''
+			st.session_state.kt_pos_cp = ''
+			st.session_state.kt_ds_cp = ''
+			st.session_state.tar_tokens = 0
+			st.session_state.tar_words = 0
+			st.session_state.ref_tokens = 0
+			st.session_state.tar_words = 0
+			st.session_state.tar_cats = []
+			st.session_state.ref_cats = []
+			st.experimental_rerun()
+
 
 else:
-	st.write("Use the button to generate a tag frequency table from your corpus.")
-
-	if st.button("Keyness Table"):
-		if st.session_state.corpus == '':
-			st.write("It doesn't look like you've loaded a target corpus yet.")
-		elif st.session_state.reference == '':
-			st.write("It doesn't look like you've loaded a reference corpus yet.")
-		else:
+	st.markdown("Use the menus to select **target** and **reference** categories from you metadata.")
+	st.markdown(":lock: Selecting of the same category as target and reference is prevented.")
+	
+	st.markdown('#### Target corpus categories:')
+	st.multiselect("Select target categories:", (sorted(set(st.session_state.doccats))), on_change = update_tar, key='tar')
+	
+	st.markdown('#### Reference corpus categories:')
+	st.multiselect("Select reference categories:", (sorted(set(st.session_state.doccats))), on_change = update_ref, key='ref')
+	
+	if len(list(st.session_state.tar)) > 0 and len(list(st.session_state.ref)) > 0:
+		if st.button("Keyness Table of Corpus Parts"):
 			with st.spinner('Generating keywords...'):
-				tp_ref = st.session_state.reference
-				wc_ref_pos = ds.frequency_table(tp_ref, st.session_state.ref_words)
-				wc_ref_ds = ds.frequency_table(tp_ref, st.session_state.ref_tokens, count_by='ds')
-				tc_ref_pos = ds.tags_table(tp_ref, st.session_state.ref_words)
-				tc_ref_ds = ds.tags_table(tp_ref, st.session_state.ref_tokens, count_by='ds')
-				if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == False:
-					tp = st.session_state.corpus
-					tc_pos = ds.tags_table(tp, st.session_state.words)
-					tc_ds = ds.tags_table(tp, st.session_state.tokens, count_by='ds')
-					st.session_state.tt_pos = tc_pos
-					st.session_state.tt_ds = tc_ds
-				if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == False:
-					tp = st.session_state.corpus
-					wc_pos = ds.frequency_table(tp, st.session_state.words)
-					wc_ds = ds.frequency_table(tp, st.session_state.tokens, count_by='ds')
-					st.session_state.ft_pos = wc_pos
-					st.session_state.ft_ds = wc_ds
+				tp = st.session_state.corpus
+				tar_list = [item + "_" for item in list(st.session_state.tar)]
+				ref_list = [item + "_" for item in list(st.session_state.ref)]
+				tar_docs = {key: value for key, value in tp.items() if key.startswith(tuple(tar_list))}
+				ref_docs = {key: value for key, value in tp.items() if key.startswith(tuple(ref_list))}
+				#get target counts
+				tar_tok = list(tar_docs.values())
+				tar_tags = []
+				for i in range(0,len(tar_tok)):
+					tags = [x[1] for x in tar_tok[i]]
+					tar_tags.append(tags)
+				tar_tags = [x for xs in tar_tags for x in xs]
+				tar_tokens = len(tar_tags)
+				tar_words = len([x for x in tar_tags if not x.startswith('Y')])
+				#get reference counts
+				ref_tok = list(ref_docs.values())
+				ref_tags = []
+				for i in range(0,len(ref_tok)):
+					tags = [x[1] for x in ref_tok[i]]
+					ref_tags.append(tags)
+				ref_tags = [x for xs in ref_tags for x in xs]
+				ref_tokens = len(ref_tags)
+				ref_words = len([x for x in ref_tags if not x.startswith('Y')])
 			
-					kw_pos = ds.keyness_table(st.session_state.ft_pos, wc_ref_pos)
-					kw_ds = ds.keyness_table(st.session_state.ft_ds, wc_ref_ds)
-					kt_pos = ds.keyness_table(st.session_state.tt_pos, tc_ref_pos, tags_only=True)
-					kt_ds = ds.keyness_table(st.session_state.tt_ds, tc_ref_ds, tags_only=True)
-					st.session_state.kw_pos = kw_pos
-					st.session_state.kw_ds = kw_ds
-					st.session_state.kt_pos = kt_pos
-					st.session_state.kt_ds = kt_ds
+				wc_tar_pos = ds.frequency_table(tar_docs, tar_words)
+				wc_tar_ds = ds.frequency_table(tar_docs, tar_tokens, count_by='ds')
+				tc_tar_pos = ds.tags_table(tar_docs, tar_words)
+				tc_tar_ds = ds.tags_table(tar_docs, tar_tokens, count_by='ds')
+
+				wc_ref_pos = ds.frequency_table(ref_docs, ref_words)
+				wc_ref_ds = ds.frequency_table(ref_docs, ref_tokens, count_by='ds')
+				tc_ref_pos = ds.tags_table(ref_docs, ref_words)
+				tc_ref_ds = ds.tags_table(ref_docs, ref_tokens, count_by='ds')
+			
+				kw_pos_cp = ds.keyness_table(wc_tar_pos, wc_ref_pos)
+				kw_ds_cp = ds.keyness_table(wc_tar_ds, wc_ref_ds)
+				kt_pos_cp = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True)
+				kt_ds_cp = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True)
+				st.session_state.kw_pos_cp = kw_pos_cp
+				st.session_state.kw_ds_cp = kw_ds_cp
+				st.session_state.kt_pos_cp = kt_pos_cp
+				st.session_state.kt_ds_cp = kt_ds_cp
+				st.session_state.tar_tokens = tar_tokens
+				st.session_state.tar_words = tar_words
+				st.session_state.ref_tokens = ref_tokens
+				st.session_state.ref_words = ref_words
+				st.session_state.tar_cats = st.session_state.tar
+				st.session_state.ref_cats = st.session_state.ref
 				st.success('Keywords generated!')
 				st.experimental_rerun()
+
+		

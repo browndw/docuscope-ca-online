@@ -211,7 +211,7 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 else:
 	st.write("Use the menus to select the tags you would like to highlight.")
 	
-	doc_key = st.selectbox("Select document to view:", (st.session_state.docids))
+	doc_key = st.selectbox("Select document to view:", (sorted(st.session_state.docids)))
 	if st.button("Process Document"):
 		if st.session_state.corpus == '':
 			st.write("It doesn't look like you've loaded a corpus yet.")
