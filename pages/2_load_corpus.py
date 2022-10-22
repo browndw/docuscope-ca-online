@@ -126,14 +126,21 @@ if st.session_state.ndocs > 0:
 	else:
 		load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)
 		if load_ref == 'Yes':
-			ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True)
+			ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
 		
 			if len(ref_files) > 0:
 				if st.button("Process Reference Corpus"):
 					with st.spinner('Processing corpus data...'):
 						ref_corp = process_corpus(ref_files)
 					if ref_corp == None:
-						st.success('Fix or remove duplicate file names before processing corpus.')
+						st.success(':no_entry_sign: Fix or remove duplicate file names before processing corpus.')
+					elif len(list(set(list(ref_corp.keys())) & set(list(st.session_state.docids)))) > 0:
+						st.success(':no_entry_sign: You have duplicate document names in the target and reference corpora.')
+						dup_ids = list(set(list(ref_corp.keys())) & set(list(st.session_state.docids)))
+						st.markdown(f"""
+									The following documents are duplicated: {', '.join(dup_ids)}
+									**Remove to complete processing.** Toggling the reference 'Yes/No' button will clear all files.
+									""")
 					else:
 						st.success('Processing complete!')
 						tok = list(ref_corp.values())
@@ -158,7 +165,8 @@ if st.session_state.ndocs > 0:
 						st.session_state.ref_ndocs = len(list(ref_corp.keys()))
 						st.experimental_rerun()
 	
-	st.markdown('#### Reset all tools and files:\n')
+	st.markdown("""---""") 
+	st.markdown('#### Reset all tools and files')
 	st.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 	if st.button("Reset Corpus"):
 		for key in st.session_state.keys():

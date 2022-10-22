@@ -62,8 +62,8 @@ if st.session_state.count_4 % 2 == 0:
 else:
     idx = 1
     
-hex_highlights = ['#FEB7B3', '#97E5D7', '#FCF1DD', '#FFD4B8', '#D2EBD8']
-html_highlights = [' { background-color:#FEB7B3; }', ' { background-color:#97E5D7; }', ' { background-color:#FCF1DD; }', ' { background-color:#FFD4B8; }', ' { background-color:#D2EBD8; }']
+hex_highlights = ['#5fb7ca', '#e35be5', '#ffc701', '#fe5b05', '#cb7d60']
+html_highlights = [' { background-color:#5fb7ca; }', ' { background-color:#e35be5; }', ' { background-color:#ffc701; }', ' { background-color:#fe5b05; }', ' { background-color:#cb7d60; }']
 
 def html_build(tok, key, count_by="tag"):
     df = ds.tag_ruler(tok=tok, key=key, count_by=count_by)
@@ -149,9 +149,9 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 	
 	col1, col2= st.columns([1,1])
 	with col1:
-		if st.button("Plot"):
+		if st.button("Tag Density Plot"):
 			if len(tag_list) > 5:
-				st.write('You can only hightlight a maximum of 5 tags.')
+				st.write(':no_entry_sign: You can only plot a maximum of 5 tags.')
 			elif len(tag_list) == 0:
 				st.write('There are no tags to plot.')
 			else:
@@ -168,6 +168,17 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 			st.session_state.doc_key = ''
 			del st.session_state['tags']
 			st.experimental_rerun()
+	
+	with st.expander("Plot explanation"):
+		st.write("""
+				The plot(s) shows lines segment where tags occur in what might be called 'normalized text time.'
+				For example, if you had a text 100 tokens long and a tag occurred at the 10th, 25th, and 60th token,
+				the plot would show lines at 10%, 25%, and 60% along the x-axis.
+				""")
+
+
+	if len(tag_list) > 5:
+		st.write(':no_entry_sign: You can only hightlight a maximum of 5 tags.')
 
 	st.markdown(f"""
 				###  {st.session_state.doc_key}

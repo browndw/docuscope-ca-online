@@ -73,12 +73,15 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 		""")
 	
 	with st.expander("Filtering and saving"):
-		st.write("""
-				Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
-				Clicking on the middle funnel icon will show the various filtering options.
-				Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
-				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
-		""")
+		st.markdown("""
+				Filters can be accessed by clicking 'Filters' on the sidebar.
+				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+				Rows can be selected before or after filtering using the checkboxes.
+				(The checkbox in the header will select/deselect all rows.)\n
+				If rows are selected and appear in new table below the main one,
+				those selected rows will be available for download in an Excel file.
+				If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+				""")
 	
 	selected = grid_response['selected_rows'] 
 	if selected:
@@ -89,7 +92,7 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	col1, col2 = st.columns([1,1])
 		
 	with col1:
-		if st.button("Plot resutls"):
+		if st.button("Plot Frequencies"):
 			fig = px.bar(df, x='RF', y='Tag', template='plotly_white', orientation='h')
 			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
 			fig.update_yaxes(color='black', title_text='', zeroline=True, linecolor='black')
@@ -113,8 +116,6 @@ else:
 	st.write("Use the button to generate a tag frequency table from your corpus.")
 
 	if st.button("Tags Table"):
-		#st.write(token_tuple)
-		#wc = load_data()
 		if st.session_state.corpus == '':
 			st.write("It doesn't look like you've loaded a corpus yet.")
 		else:

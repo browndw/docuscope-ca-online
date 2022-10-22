@@ -10,8 +10,6 @@ import base64
 from io import BytesIO
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode
 
-st.title("Create a keyness table")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -69,6 +67,8 @@ def update_ref():
 	if len(list(set(st.session_state.tar) & set(st.session_state.ref))) > 0:
 		item = list(set(st.session_state.tar) & set(st.session_state.ref))
 		st.session_state.ref = list(set(list(st.session_state.ref))^set(item))
+
+st.title("Create a keyness tables using pairwise comparisions of corpus parts.")
 
 if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 
