@@ -27,6 +27,9 @@ if 'dtm_ds' not in st.session_state:
 if 'dtm_simple' not in st.session_state:
 	st.session_state.dtm_simple = ''
 
+if 'contrib' not in st.session_state:
+	st.session_state.contrib = ''
+
 if 'sums_pos' not in st.session_state:
 	st.session_state.sums_pos = 0
 
@@ -36,6 +39,13 @@ if 'sums_ds' not in st.session_state:
 if 'units' not in st.session_state:
 	st.session_state.dtm_ds = ''
 
+if 'pcacolors' not in st.session_state:
+	st.session_state.pcacolors = []
+	
+if 'pca' not in st.session_state:
+	st.session_state.pca = []
+
+	
 #prevent categories from being chosen in both multiselect
 def update_grpa():
 	if len(list(set(st.session_state.grpa) & set(st.session_state.grpb))) > 0:
@@ -46,6 +56,34 @@ def update_grpb():
 	if len(list(set(st.session_state.grpa) & set(st.session_state.grpb))) > 0:
 		item = list(set(st.session_state.grpa) & set(st.session_state.grpb))
 		st.session_state.grpb = list(set(list(st.session_state.grpb))^set(item))
+
+def update_pca(coord_data, contrib_data):
+	cats_list = [item + "_" for item in list(st.session_state.pcacolors)]
+	#var_contrib = st.session_state.contrib
+	coord_data.Group = 'Other'
+	for i in range(len(cats_list)):
+		coord_data.loc[coord_data['doc_id'].str.startswith(cats_list[i]), 'Group'] = cats_list[i]
+	pca_x = coord_data.columns[pca_idx - 1]
+	pca_y = coord_data.columns[pca_idx]
+	coord_plot = px.scatter(coord_data, x=pca_x, y=pca_y, template='plotly_white', color='Group', hover_data=['doc_id'])
+	coord_plot.update_layout(paper_bgcolor='white', plot_bgcolor='white')
+	
+	#contrib_1 = contrib_data.copy()
+	#contrib_2 = contrib_data.copy()
+	contrib_1 = contrib_data[contrib_data[pca_x].abs() > 1]
+	contrib_2 = contrib_data[contrib_data[pca_y].abs() > 1]
+	contrib_1.sort_values(by=pca_x, ascending=True, inplace=True)
+	contrib_2.sort_values(by=pca_y, ascending=True, inplace=True)
+	cp_1 = px.bar(contrib_1, x=pca_x, y='Tag', template='plotly_white')
+	cp_1.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
+	cp_2 = px.bar(contrib_2, x=pca_y, y='Tag', template='plotly_white')
+	cp_2.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
+	
+	st.plotly_chart(coord_plot)
+	col1,col2 = st.columns(2)
+	st.bar_chart(contrib_1, y=pca_x, x='Tag', use_container_width = True)
+	st.bar_chart(contrib_2, y=pca_y, x='Tag', use_container_width = True)
+	#col2.plotly_chart(cp_2, use_container_width = True)
 
 st.title("Create plots of frequencies or categories")
 
@@ -70,6 +108,18 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 
 	
 	st.dataframe(df)
+	st.write(len(df.columns))
+	
+	if st.button("Download"):
+		with st.spinner('Creating download link...'):
+			towrite = BytesIO()
+			downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
+			towrite.seek(0)  # reset pointer
+			b64 = base64.b64encode(towrite.read()).decode()  # some strings
+			st.success('Link generated!')
+			linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
+			st.markdown(linko, unsafe_allow_html=True)
+
 	
 	st.markdown("""---""")
 	
@@ -118,6 +168,7 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
 				#fig.update_layout(yaxis={'categoryorder':'total ascending'})
 				st.plotly_chart(fig)
+				
 
 
 		st.markdown("""---""") 
@@ -137,24 +188,47 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 			st.markdown(f"""Pearson's correlation coefficient: {cc.round(3)}
 					""")
 
-		st.markdown("""---""") 
-		st.markdown("#### Principal Component Analysis")
+	st.markdown("""---""") 
+	st.markdown("#### Principal Component Analysis")
 
-		if st.button("PCA"):
-			pca = PCA(n_components=2)
-			pca_result = pca.fit_transform(df.values)
-			pca_df = pd.DataFrame({'doc_id': list(df.index),'pca-one': pca_result[:,0], 'pca-two': pca_result[:,1]})
-
-			fig = px.scatter(pca_df, x='pca-one', y='pca-two', template='plotly_white', hover_data=['doc_id'])
-			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			#fig.update_yaxes(zeroline=True, linecolor='black', rangemode="tozero")
-			#fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
-
-			#fig.update_layout(yaxis={'categoryorder':'total ascending'})
-			st.plotly_chart(fig, use_container_width=True)
-			ve = np.array(pca.explained_variance_ratio_*100).round(2).astype('str').tolist()
-			st.markdown(f"""Explained variation per principal component: {', '.join(ve)}
+	if st.button("PCA"):
+		del st.session_state.pcacolors
+		del st.session_state.pca
+		del st.session_state.contrib
+		st.session_state.pcacolors = []
+		st.session_state.pca = ''
+		st.session_state.contrib = ''
+		pca = PCA(n_components=len(df.columns))
+		pca_result = pca.fit_transform(df.values)
+		pca_df = pd.DataFrame(pca_result)
+		pca_df.columns = ['PC' + str(col + 1) for col in pca_df.columns]
+		
+		#pca_df = pd.DataFrame({'doc_id': list(df.index),'PC1': pca_result[:,0], 'PC2': pca_result[:,1]})
+			
+		sdev = pca_df.std(ddof=0)
+		contrib = []
+		for i in range(0, len(sdev)):
+			coord = pca.components_[i] * sdev[i]
+			polarity = np.divide(coord, abs(coord))
+			coord = np.square(coord)
+			coord = np.divide(coord, sum(coord))*100
+			coord = np.multiply(coord, polarity)				
+			contrib.append(coord)
+		contrib_df =  pd.DataFrame(contrib).transpose()
+		contrib_df.columns = ['PC' + str(col + 1) for col in contrib_df.columns]
+		contrib_df['Tag'] = df.columns
+		#contrib_df = 
+		pca_df['Group'] = 'Other'
+		pca_df['doc_id'] = list(df.index)		
+		st.session_state.pca = pca_df
+		st.session_state.contrib = contrib_df
+		ve = np.array(pca.explained_variance_ratio_*100).round(2).astype('str').tolist()
+		st.markdown(f"""Explained variation per principal component: {', '.join(ve)}
 					""")
+		
+	if bool(isinstance(st.session_state.pca, pd.DataFrame)) == True:
+		pca_idx = st.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
+		st.multiselect("Select categories to highlight", (sorted(set(st.session_state.doccats))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pcacolors')
 			
 	
 	st.markdown("""---""") 
@@ -162,6 +236,11 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		st.session_state.dtm_pos = ''
 		st.session_state.dtm_simple = ''
 		st.session_state.dtm_ds = ''
+		del st.session_state.pcacolors
+		st.session_state.pcacolors = []
+		st.session_state.pca = ''
+		st.session_state.contrib = ''
+
 		st.experimental_rerun()
 	
 	#dtm_pos = dtm_pos.multiply(pos_sums, axis=0)

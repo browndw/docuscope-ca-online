@@ -35,7 +35,7 @@ if st.session_state.corpus != '':
 			zip_buf = BytesIO()
 			with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as file_zip:
 				for key in tp.keys():
-					doc_id = key.replace(r'\.txt$', '')
+					doc_id = key.replace('.txt', '')
 					df = ds.tag_ruler(tp, key, count_by=tagset)
 					df['Token'] = df['Token'].str.strip()
 					df['Token'] = df['Token'].str.replace(' ','_')
@@ -47,7 +47,7 @@ if st.session_state.corpus != '':
 					df['Token'] = df['Token'] + '|' + df['Tag']
 					df['Token'] = df['Token'].str.replace(r'\|$', '')
 					doc = ' '.join(df['Token'])
-					file_zip.writestr(doc_id + "_tagged"+".txt", doc)
+					file_zip.writestr(doc_id + "_tagged"+ ".txt", doc)
     				
 			zip_buf.seek(0)
 			#pass it to front end for download
