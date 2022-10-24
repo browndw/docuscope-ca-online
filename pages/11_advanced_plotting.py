@@ -7,6 +7,7 @@ from tmtoolkit.bow.bow_stats import tf_proportions, tfidf
 
 import pandas as pd
 import plotly.express as px
+import altair as alt
 
 import numpy as np
 from sklearn.decomposition import PCA
@@ -74,16 +75,17 @@ def update_pca(coord_data, contrib_data):
 	contrib_2 = contrib_data[contrib_data[pca_y].abs() > 1]
 	contrib_1.sort_values(by=pca_x, ascending=True, inplace=True)
 	contrib_2.sort_values(by=pca_y, ascending=True, inplace=True)
-	cp_1 = px.bar(contrib_1, x=pca_x, y='Tag', template='plotly_white')
-	cp_1.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
-	cp_2 = px.bar(contrib_2, x=pca_y, y='Tag', template='plotly_white')
-	cp_2.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
-	
+	#cp_1 = px.bar(contrib_1, x=pca_x, y='Tag', template='plotly_white')
+	#cp_1.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
+	#cp_2 = px.bar(contrib_2, x=pca_y, y='Tag', template='plotly_white')
+	#cp_2.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
+	cp_1 = alt.Chart(contrib_1).mark_bar().encode(x=pca_x, y=alt.Y('Tag', sort='-x'))
+	cp_2 = alt.Chart(contrib_2).mark_bar().encode(x=pca_y, y=alt.Y('Tag', sort='-x'))
+
 	st.plotly_chart(coord_plot)
 	col1,col2 = st.columns(2)
-	st.bar_chart(contrib_1, y=pca_x, x='Tag', use_container_width = True)
-	st.bar_chart(contrib_2, y=pca_y, x='Tag', use_container_width = True)
-	#col2.plotly_chart(cp_2, use_container_width = True)
+	col1.altair_chart(cp_1, use_container_width = True)
+	col2.altair_chart(cp_2, use_container_width = True)
 
 st.title("Create plots of frequencies or categories")
 
