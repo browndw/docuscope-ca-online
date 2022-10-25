@@ -131,18 +131,33 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		st.markdown("#### Boxplots")
 		box_vals = st.multiselect("Select variables for plotting:", (cats))
 		if st.button("Boxplots of Frequencies"):
-			df_plot = df[box_vals]
+			#df_plot = df[box_vals]
+			df_plot = df.copy()
+			tags = list(df_plot.columns)
 			df_plot.index.name = 'doc_id'
 			df_plot.reset_index(inplace=True)
 			df_plot = pd.melt(df_plot,id_vars=['doc_id'],var_name='Tag', value_name='RF')
 			df_plot['Median'] = df_plot.groupby(['Tag']).transform('median')
-			df_plot.sort_values(by='Median', inplace=True, ignore_index=True)
-			fig = px.box(df_plot, x='RF', y='Tag', template='plotly_white', orientation='h', hover_data=['doc_id'])
-			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			fig.update_yaxes(zeroline=True, linecolor='black')
-			fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
+			df_plot.sort_values(by='Median', inplace=True, ignore_index=True, ascending=False)
+			
+			#fig = px.box(df_plot, x='RF', y='Tag', template='plotly_white', orientation='h', hover_data=['doc_id'])
+			#fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
+			#fig.update_yaxes(zeroline=True, linecolor='black')
+			#fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
 			#fig.update_layout(yaxis={'categoryorder':'total ascending'})
-			st.plotly_chart(fig)
+			
+			base = alt.Chart(df_plot).mark_boxplot(extent='min-max').encode(
+    			alt.X('RF'),
+    			alt.Y('Tag', sort=alt.EncodingSortField(field='RF', op='median'))
+				)
+			# A dropdown filter
+			#tag_dropdown = alt.binding_select(options=tags)
+			#tag_select = alt.selection_single(fields=['Tag'], bind=tag_dropdown, name="Tag")
+
+			#filter_tags = base.add_selection(tag_select).transform_filter(tag_select)
+
+			
+			st.altair_chart(base, use_container_width=True)
 		
 		if st.session_state.doccats != '':
 			st.markdown('##### Add grouping variables')
