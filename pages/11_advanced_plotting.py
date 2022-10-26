@@ -6,7 +6,6 @@ from tmtoolkit.bow.dtm import dtm_to_dataframe
 from tmtoolkit.bow.bow_stats import tf_proportions, tfidf
 
 import pandas as pd
-import plotly.express as px
 import altair as alt
 
 import numpy as np
@@ -28,6 +27,9 @@ if 'dtm_ds' not in st.session_state:
 if 'dtm_simple' not in st.session_state:
 	st.session_state.dtm_simple = ''
 
+if 'pca' not in st.session_state:
+	st.session_state.pca = ''
+
 if 'contrib' not in st.session_state:
 	st.session_state.contrib = ''
 
@@ -43,7 +45,7 @@ if 'units' not in st.session_state:
 if 'pca_idx' not in st.session_state:
 	st.session_state.pca_idx = 1
 	
-if 'pca' not in st.session_state:
+if 'variance' not in st.session_state:
 	st.session_state.pca = []
 
 	
@@ -59,11 +61,8 @@ def update_grpb():
 		st.session_state.grpb = list(set(list(st.session_state.grpb))^set(item))
 
 def update_pca(coord_data, contrib_data):
-	coord_data.Group = st.session_state.doccats
 	pca_x = coord_data.columns[st.session_state.pca_idx - 1]
 	pca_y = coord_data.columns[st.session_state.pca_idx]
-	coord_plot = px.scatter(coord_data, x=pca_x, y=pca_y, template='plotly_white', color='Group', hover_data=['doc_id'])
-	coord_plot.update_layout(paper_bgcolor='white', plot_bgcolor='white')
 	
 	contrib_1 = contrib_data[contrib_data[pca_x].abs() > 1]
 	contrib_1[pca_x] = contrib_1[pca_x].div(100)
@@ -71,9 +70,24 @@ def update_pca(coord_data, contrib_data):
 	contrib_2[pca_y] = contrib_2[pca_y].div(100)
 	contrib_1.sort_values(by=pca_x, ascending=True, inplace=True)
 	contrib_2.sort_values(by=pca_y, ascending=True, inplace=True)
+	
+	ve_1 = "{:.2%}".format(st.session_state.variance[st.session_state.pca_idx - 1])
+	ve_2 = "{:.2%}".format(st.session_state.variance[st.session_state.pca_idx])
 
-	cp_1 = alt.Chart(contrib_1).mark_bar().encode(x=alt.X(pca_x, axis=alt.Axis(format='%')), y=alt.Y('Tag', sort='-x', title=None))
-	cp_2 = alt.Chart(contrib_2).mark_bar().encode(x=alt.X(pca_y, axis=alt.Axis(format='%')), y=alt.Y('Tag', sort='-x', title=None))
+	cp_1 = alt.Chart(contrib_1, height={"step": 12}).mark_bar(size=10).encode(
+				x=alt.X(pca_x, axis=alt.Axis(format='%')), 
+				y=alt.Y('Tag', sort='-x', title=None),
+	 			tooltip=[
+     	  		 alt.Tooltip(pca_x, title="Percentage of Contribution", format='.2%')
+    			])
+	
+	cp_2 = alt.Chart(contrib_2, height={"step": 12}).mark_bar(size=10).encode(
+				x=alt.X(pca_y, 
+				axis=alt.Axis(format='%')), 
+				y=alt.Y('Tag', sort='-x', title=None),
+				tooltip=[
+				alt.Tooltip(pca_y, title="Percentage of Contribution", format='.2%')
+				])
 	
 	base = alt.Chart(coord_data).mark_circle(size=50).encode(
 		alt.X(pca_x),
@@ -96,8 +110,11 @@ def update_pca(coord_data, contrib_data):
 	line_y = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule().encode(y=alt.Y('y', title=pca_y))
 	line_x = alt.Chart(pd.DataFrame({'x': [0]})).mark_rule().encode(x=alt.X('x', title=pca_x))
 
-	#st.plotly_chart(coord_plot)
 	st.altair_chart(highlight_groups + line_y + line_x, use_container_width = True)
+	
+	st.markdown(f""" Variance explained: {ve_1}, {ve_2}
+				""")
+	st.markdown("Variable contribution to principal component (showing only those > 1.0%):")
 	
 	col1,col2 = st.columns(2)
 	col1.altair_chart(cp_1, use_container_width = True)
@@ -124,19 +141,52 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		else:
 			df = st.session_state.dtm_ds
 
-	
 	st.dataframe(df)
-	st.write(len(df.columns))
 	
+	if st.session_state.units == 'norm':
+		de_norm = st.radio('Do you want to de-normalize the frequencies prior to download?', ('No', 'Yes'), horizontal = True)
+
 	if st.button("Download"):
-		with st.spinner('Creating download link...'):
-			towrite = BytesIO()
-			downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-			towrite.seek(0)  # reset pointer
-			b64 = base64.b64encode(towrite.read()).decode()  # some strings
-			st.success('Link generated!')
-			linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
-			st.markdown(linko, unsafe_allow_html=True)
+		if de_norm == 'Yes' and tag_radio_tokens == 'Parts-of-Speech':
+			with st.spinner('Creating download link...'):
+				output_df = df.copy()
+				output_df = output_df.multiply(st.session_state.sums_pos, axis=0)
+				output_df = output_df.divide(100, axis=0)
+				output_df.index.name = 'doc_id'
+				output_df.reset_index(inplace=True)
+				towrite = BytesIO()
+				downloaded_file = output_df.to_excel(towrite, encoding='utf-8', index=False, header=True)
+				towrite.seek(0)  # reset pointer
+				b64 = base64.b64encode(towrite.read()).decode()  # some strings
+				st.success('Link generated!')
+				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_dfm.xlsx">Download Excel file</a>'
+				st.markdown(linko, unsafe_allow_html=True)
+		elif de_norm == 'Yes' and tag_radio_tokens == 'DocuScope':
+			with st.spinner('Creating download link...'):
+				output_df = df.copy()
+				output_df = output_df.multiply(st.session_state.sums_ds, axis=0)
+				output_df = output_df.divide(100, axis=0)
+				output_df.index.name = 'doc_id'
+				output_df.reset_index(inplace=True)
+				towrite = BytesIO()
+				downloaded_file = output_df.to_excel(towrite, encoding='utf-8', index=False, header=True)
+				towrite.seek(0)  # reset pointer
+				b64 = base64.b64encode(towrite.read()).decode()  # some strings
+				st.success('Link generated!')
+				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_dfm.xlsx">Download Excel file</a>'
+				st.markdown(linko, unsafe_allow_html=True)
+		else:
+			with st.spinner('Creating download link...'):
+				output_df = df.copy()
+				output_df.index.name = 'doc_id'
+				output_df.reset_index(inplace=True)
+				towrite = BytesIO()
+				downloaded_file = output_df.to_excel(towrite, encoding='utf-8', index=False, header=True)
+				towrite.seek(0)  # reset pointer
+				b64 = base64.b64encode(towrite.read()).decode()  # some strings
+				st.success('Link generated!')
+				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_dfm.xlsx">Download Excel file</a>'
+				st.markdown(linko, unsafe_allow_html=True)
 
 	
 	st.markdown("""---""")
@@ -151,8 +201,6 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				st.markdown("Choose a variable to plot")
 			elif len(box_vals) > 0:
 				df_plot = df[box_vals]
-				#df_plot = df.copy()
-				#tags = list(df_plot.columns)
 				df_plot.index.name = 'doc_id'
 				df_plot.reset_index(inplace=True)
 				df_plot = pd.melt(df_plot,id_vars=['doc_id'],var_name='Tag', value_name='RF')
@@ -160,18 +208,13 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				df_plot.sort_values(by='Median', inplace=True, ignore_index=True, ascending=False)
 				cols = df_plot['Tag'].drop_duplicates().tolist()
 			
-				#fig = px.box(df_plot, x='RF', y='Tag', template='plotly_white', orientation='h', hover_data=['doc_id'])
-				#fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-				#fig.update_yaxes(zeroline=True, linecolor='black')
-				#fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
-				#fig.update_layout(yaxis={'categoryorder':'total ascending'})
 			
-				fig = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
+				base = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
     				x = alt.X('RF', title='Frequency (per 100 tokens)'),
     				y = alt.Y('Tag', sort=cols, title='')
 					)
 					
-				st.altair_chart(fig, use_container_width=True)
+				st.altair_chart(base, use_container_width=True)
 		
 		if st.session_state.doccats != '':
 			st.markdown('##### Add grouping variables')
@@ -193,11 +236,6 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				df_plot = pd.melt(df_plot,id_vars=['doc_id', 'Group'],var_name='Tag', value_name='RF')
 				df_plot['Median'] = df_plot.groupby(['Tag', 'Group']).transform('median')
 				df_plot.sort_values(by=['Group', 'Median'], ascending=[False, True], inplace=True, ignore_index=True)
-				fig = px.box(df_plot, x='RF', y='Tag', template='plotly_white', orientation='h', hover_data=['doc_id'], color="Group")
-				fig.update_layout(paper_bgcolor='white', plot_bgcolor='white', legend={'traceorder':'reversed'})
-				fig.update_yaxes(zeroline=True, linecolor='black')
-				fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
-				#fig.update_layout(yaxis={'categoryorder':'total ascending'})
 				plot = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
     				alt.X('RF', title='Frequency (per 100 tokens)'),
     				alt.Y('Group', title='', axis=alt.Axis(labels=False, ticks=False)),
@@ -211,7 +249,6 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				
 				st.altair_chart(plot, use_container_width=False)
 				
-
 
 		st.markdown("""---""") 
 		st.markdown("#### Scatterplots")
@@ -245,19 +282,17 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 	st.markdown("#### Principal Component Analysis")
 
 	if st.button("PCA"):
-		del st.session_state.pcacolors
+		del st.session_state.pca_idx
 		del st.session_state.pca
 		del st.session_state.contrib
-		st.session_state.pcacolors = []
+		st.session_state.pca_idx = 1
 		st.session_state.pca = ''
 		st.session_state.contrib = ''
 		pca = PCA(n_components=len(df.columns))
 		pca_result = pca.fit_transform(df.values)
 		pca_df = pd.DataFrame(pca_result)
 		pca_df.columns = ['PC' + str(col + 1) for col in pca_df.columns]
-		
-		#pca_df = pd.DataFrame({'doc_id': list(df.index),'PC1': pca_result[:,0], 'PC2': pca_result[:,1]})
-			
+					
 		sdev = pca_df.std(ddof=0)
 		contrib = []
 		for i in range(0, len(sdev)):
@@ -270,14 +305,12 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		contrib_df =  pd.DataFrame(contrib).transpose()
 		contrib_df.columns = ['PC' + str(col + 1) for col in contrib_df.columns]
 		contrib_df['Tag'] = df.columns
-		#contrib_df = 
-		pca_df['Group'] = 'Other'
+		pca_df['Group'] = st.session_state.doccats
 		pca_df['doc_id'] = list(df.index)		
+		ve = np.array(pca.explained_variance_ratio_).tolist()
+		st.session_state.variance = ve
 		st.session_state.pca = pca_df
 		st.session_state.contrib = contrib_df
-		ve = np.array(pca.explained_variance_ratio_*100).round(2).astype('str').tolist()
-		st.markdown(f"""Explained variation per principal component: {', '.join(ve)}
-					""")
 		
 	if bool(isinstance(st.session_state.pca, pd.DataFrame)) == True:
 		st.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pca_idx')
@@ -286,17 +319,16 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 	
 	st.markdown("""---""") 
 	if st.button("Create New DTM"):
+		del st.session_state.pca_idx
 		st.session_state.dtm_pos = ''
 		st.session_state.dtm_simple = ''
 		st.session_state.dtm_ds = ''
-		del st.session_state.pcacolors
-		st.session_state.pcacolors = []
 		st.session_state.pca = ''
 		st.session_state.contrib = ''
-
+		st.session_state.variance = []
+		st.session_state.pca_idx = 1
 		st.experimental_rerun()
 	
-	#dtm_pos = dtm_pos.multiply(pos_sums, axis=0)
 
 else:
 	st.markdown("Use the menus to generate a document-term matrix for plotting and analysis.")
