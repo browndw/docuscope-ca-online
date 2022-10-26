@@ -40,8 +40,8 @@ if 'sums_ds' not in st.session_state:
 if 'units' not in st.session_state:
 	st.session_state.dtm_ds = ''
 
-if 'pcacolors' not in st.session_state:
-	st.session_state.pcacolors = []
+if 'pca_idx' not in st.session_state:
+	st.session_state.pca_idx = 1
 	
 if 'pca' not in st.session_state:
 	st.session_state.pca = []
@@ -59,30 +59,46 @@ def update_grpb():
 		st.session_state.grpb = list(set(list(st.session_state.grpb))^set(item))
 
 def update_pca(coord_data, contrib_data):
-	cats_list = [item + "_" for item in list(st.session_state.pcacolors)]
-	#var_contrib = st.session_state.contrib
-	coord_data.Group = 'Other'
-	for i in range(len(cats_list)):
-		coord_data.loc[coord_data['doc_id'].str.startswith(cats_list[i]), 'Group'] = cats_list[i]
-	pca_x = coord_data.columns[pca_idx - 1]
-	pca_y = coord_data.columns[pca_idx]
+	coord_data.Group = st.session_state.doccats
+	pca_x = coord_data.columns[st.session_state.pca_idx - 1]
+	pca_y = coord_data.columns[st.session_state.pca_idx]
 	coord_plot = px.scatter(coord_data, x=pca_x, y=pca_y, template='plotly_white', color='Group', hover_data=['doc_id'])
 	coord_plot.update_layout(paper_bgcolor='white', plot_bgcolor='white')
 	
-	#contrib_1 = contrib_data.copy()
-	#contrib_2 = contrib_data.copy()
 	contrib_1 = contrib_data[contrib_data[pca_x].abs() > 1]
+	contrib_1[pca_x] = contrib_1[pca_x].div(100)
 	contrib_2 = contrib_data[contrib_data[pca_y].abs() > 1]
+	contrib_2[pca_y] = contrib_2[pca_y].div(100)
 	contrib_1.sort_values(by=pca_x, ascending=True, inplace=True)
 	contrib_2.sort_values(by=pca_y, ascending=True, inplace=True)
-	#cp_1 = px.bar(contrib_1, x=pca_x, y='Tag', template='plotly_white')
-	#cp_1.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
-	#cp_2 = px.bar(contrib_2, x=pca_y, y='Tag', template='plotly_white')
-	#cp_2.update_layout(paper_bgcolor='white', plot_bgcolor='white', yaxis={'categoryorder':'total ascending'})
-	cp_1 = alt.Chart(contrib_1).mark_bar().encode(x=pca_x, y=alt.Y('Tag', sort='-x'))
-	cp_2 = alt.Chart(contrib_2).mark_bar().encode(x=pca_y, y=alt.Y('Tag', sort='-x'))
 
-	st.plotly_chart(coord_plot)
+	cp_1 = alt.Chart(contrib_1).mark_bar().encode(x=alt.X(pca_x, axis=alt.Axis(format='%')), y=alt.Y('Tag', sort='-x', title=None))
+	cp_2 = alt.Chart(contrib_2).mark_bar().encode(x=alt.X(pca_y, axis=alt.Axis(format='%')), y=alt.Y('Tag', sort='-x', title=None))
+	
+	base = alt.Chart(coord_data).mark_circle(size=50).encode(
+		alt.X(pca_x),
+		alt.Y(pca_y),
+		tooltip=['doc_id:N']
+		)
+	
+	groups = sorted(set(st.session_state.doccats))
+	
+	# A dropdown filter
+	group_dropdown = alt.binding_select(options=groups)
+	group_select = alt.selection_single(fields=['Group'], bind=group_dropdown, name="Select")
+	group_color_condition = alt.condition(group_select,
+                      alt.Color('Group:N', legend=None),
+                      alt.value('lightgray'))
+    
+	highlight_groups = base.add_selection(group_select).encode(color=group_color_condition)
+	
+	#zero axes
+	line_y = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule().encode(y=alt.Y('y', title=pca_y))
+	line_x = alt.Chart(pd.DataFrame({'x': [0]})).mark_rule().encode(x=alt.X('x', title=pca_x))
+
+	#st.plotly_chart(coord_plot)
+	st.altair_chart(highlight_groups + line_y + line_x, use_container_width = True)
+	
 	col1,col2 = st.columns(2)
 	col1.altair_chart(cp_1, use_container_width = True)
 	col2.altair_chart(cp_2, use_container_width = True)
@@ -131,33 +147,31 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		st.markdown("#### Boxplots")
 		box_vals = st.multiselect("Select variables for plotting:", (cats))
 		if st.button("Boxplots of Frequencies"):
-			#df_plot = df[box_vals]
-			df_plot = df.copy()
-			tags = list(df_plot.columns)
-			df_plot.index.name = 'doc_id'
-			df_plot.reset_index(inplace=True)
-			df_plot = pd.melt(df_plot,id_vars=['doc_id'],var_name='Tag', value_name='RF')
-			df_plot['Median'] = df_plot.groupby(['Tag']).transform('median')
-			df_plot.sort_values(by='Median', inplace=True, ignore_index=True, ascending=False)
+			if len(box_vals) == 0:
+				st.markdown("Choose a variable to plot")
+			elif len(box_vals) > 0:
+				df_plot = df[box_vals]
+				#df_plot = df.copy()
+				#tags = list(df_plot.columns)
+				df_plot.index.name = 'doc_id'
+				df_plot.reset_index(inplace=True)
+				df_plot = pd.melt(df_plot,id_vars=['doc_id'],var_name='Tag', value_name='RF')
+				df_plot['Median'] = df_plot.groupby(['Tag']).transform('median')
+				df_plot.sort_values(by='Median', inplace=True, ignore_index=True, ascending=False)
+				cols = df_plot['Tag'].drop_duplicates().tolist()
 			
-			#fig = px.box(df_plot, x='RF', y='Tag', template='plotly_white', orientation='h', hover_data=['doc_id'])
-			#fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			#fig.update_yaxes(zeroline=True, linecolor='black')
-			#fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
-			#fig.update_layout(yaxis={'categoryorder':'total ascending'})
+				#fig = px.box(df_plot, x='RF', y='Tag', template='plotly_white', orientation='h', hover_data=['doc_id'])
+				#fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
+				#fig.update_yaxes(zeroline=True, linecolor='black')
+				#fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
+				#fig.update_layout(yaxis={'categoryorder':'total ascending'})
 			
-			base = alt.Chart(df_plot).mark_boxplot(extent='min-max').encode(
-    			alt.X('RF'),
-    			alt.Y('Tag', sort=alt.EncodingSortField(field='RF', op='median'))
-				)
-			# A dropdown filter
-			#tag_dropdown = alt.binding_select(options=tags)
-			#tag_select = alt.selection_single(fields=['Tag'], bind=tag_dropdown, name="Tag")
-
-			#filter_tags = base.add_selection(tag_select).transform_filter(tag_select)
-
-			
-			st.altair_chart(base, use_container_width=True)
+				fig = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
+    				x = alt.X('RF', title='Frequency (per 100 tokens)'),
+    				y = alt.Y('Tag', sort=cols, title='')
+					)
+					
+				st.altair_chart(fig, use_container_width=True)
 		
 		if st.session_state.doccats != '':
 			st.markdown('##### Add grouping variables')
@@ -184,7 +198,18 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				fig.update_yaxes(zeroline=True, linecolor='black')
 				fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
 				#fig.update_layout(yaxis={'categoryorder':'total ascending'})
-				st.plotly_chart(fig)
+				plot = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
+    				alt.X('RF', title='Frequency (per 100 tokens)'),
+    				alt.Y('Group', title='', axis=alt.Axis(labels=False, ticks=False)),
+    				alt.Color('Group'),
+    					row=alt.Row('Tag', title='', header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Median', order='descending'))
+						).configure_facet(
+						spacing=10
+						).configure_view(
+						stroke=None
+					)
+				
+				st.altair_chart(plot, use_container_width=False)
 				
 
 
@@ -194,13 +219,24 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		yaxis = st.selectbox("Select variable for the y-axis", (cats))
 
 		if st.button("Scatterplot of Frequencies"):
+			df_plot = df.copy()
+			df_plot.index.name = 'doc_id'
+			df_plot.reset_index(inplace=True)
 			fig = px.scatter(df, x=xaxis, y=yaxis, template='plotly_white', hover_data=[df.index])
 			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
 			fig.update_yaxes(zeroline=True, linecolor='black', rangemode="tozero")
 			fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
 
 			#fig.update_layout(yaxis={'categoryorder':'total ascending'})
-			st.plotly_chart(fig, use_container_width=True)
+			#st.plotly_chart(fig, use_container_width=True)
+			base = alt.Chart(df_plot).mark_circle().encode(
+    			alt.X(xaxis),
+    			alt.Y(yaxis),
+    			tooltip=['doc_id:N']
+			)
+			
+			st.altair_chart(base, use_container_width=False)
+			
 			cc = np.corrcoef(df[xaxis], df[yaxis])[0, 1]
 			st.markdown(f"""Pearson's correlation coefficient: {cc.round(3)}
 					""")
@@ -244,8 +280,8 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 					""")
 		
 	if bool(isinstance(st.session_state.pca, pd.DataFrame)) == True:
-		pca_idx = st.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
-		st.multiselect("Select categories to highlight", (sorted(set(st.session_state.doccats))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pcacolors')
+		st.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pca_idx')
+		#st.multiselect("Select categories to highlight", (sorted(set(st.session_state.doccats))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pcacolors')
 			
 	
 	st.markdown("""---""") 
@@ -330,6 +366,7 @@ else:
 					dtm_pos = tfidf(dtm_pos)
 					dtm_ds = tfidf(dtm_ds)
 					units = 'tfidf'
+				dtm_ds.drop('Untagged', axis=1, inplace=True, errors='ignore')
 				st.session_state.dtm_pos = dtm_pos
 				st.session_state.dtm_ds = dtm_ds
 				st.session_state.sums_pos = sums_pos

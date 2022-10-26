@@ -4,7 +4,7 @@ import streamlit as st
 import docuscospacy.corpus_analysis as ds
 
 import pandas as pd
-import plotly.express as px
+import altair as alt
 
 import base64
 from io import BytesIO
@@ -92,13 +92,9 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	col1, col2 = st.columns([1,1])
 		
 	with col1:
-		if st.button("Plot Frequencies"):
-			fig = px.bar(df, x='RF', y='Tag', template='plotly_white', orientation='h')
-			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			fig.update_yaxes(color='black', title_text='', zeroline=True, linecolor='black')
-			fig.update_xaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
-			fig.update_layout(yaxis={'categoryorder':'total ascending'})
-			st.plotly_chart(fig)
+		if st.button("Plot Frequencies"):			
+			fig = alt.Chart(df).mark_bar().encode(x=alt.X('RF', title='Frequency (per 100 tokens)'), y=alt.Y('Tag', sort='-x', title=None))
+			st.altair_chart(fig, use_container_width=False)
 
 	with col2:
 		if st.button("Download"):

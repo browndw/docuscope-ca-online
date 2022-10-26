@@ -6,6 +6,7 @@ import docuscospacy.corpus_analysis as ds
 
 import pandas as pd
 import plotly.express as px
+import altair as alt
 from collections import Counter
 
 import base64
@@ -155,7 +156,16 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 			elif len(tag_list) == 0:
 				st.write('There are no tags to plot.')
 			else:
-				st.plotly_chart(lexdensity_plot(tag_loc, tag_list), use_container_width=False)
+				#st.plotly_chart(lexdensity_plot(tag_loc, tag_list), use_container_width=False)
+				plot_colors = hex_highlights[:len(tag_list)]
+				df_plot = tag_loc.copy()
+				df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
+				df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
+				base = alt.Chart(df_plot).mark_tick().encode(x=alt.X('X:Q', axis=alt.Axis(format='%'), title=None), y=alt.Y('Tag:N', title = None)).properties(width=600)
+				lex_density = base.encode(
+					color=alt.Color('Tag:N', legend=None),
+					)
+				st.altair_chart(lex_density, use_container_width=False)
 
 	with col2:
 		if st.button("Select a new document"):
