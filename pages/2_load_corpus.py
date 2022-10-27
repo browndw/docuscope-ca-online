@@ -50,7 +50,14 @@ if 'ref_ndocs' not in st.session_state:
 	st.session_state.ref_ndocs = 0
 
 
-nlp = spacy.load('en_docusco_spacy')
+#nlp = spacy.load('en_docusco_spacy')
+
+@st.cache(show_spinner=False, allow_output_mutation=True, suppress_st_warning=True)
+def load_models():
+    large_model = spacy.load("./models/en_docusco_spacy/")
+    #commone_model = spacy.load("./models/en/")
+    models = {"Large Dictionary": large_model}
+    return models
 
 def pre_process(txt):
 	txt = re.sub(r'\bits\b', 'it s', txt)
@@ -177,7 +184,12 @@ else:
 
 	st.markdown("From this page you can load a corpus from a selection of text (**.txt**) files or reset a corpus once one has been processed.")
 	st.markdown(":warning: Be sure that all file names are unique.")
-
+	
+	models = load_models()
+	
+	selected_dict = st.selectbox("Select a DocuScope Dictionary", options=["Large Dictionary"])
+	nlp = models[selected_dict]
+	
 	corp_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True)
 	
 	if len(corp_files) > 0:
