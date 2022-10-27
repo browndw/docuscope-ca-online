@@ -10,8 +10,6 @@ import base64
 from io import BytesIO
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode
 
-st.title("Create a tag frequency table")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -34,6 +32,7 @@ if st.session_state.count_2 % 2 == 0:
 else:
     idx = 1
 
+st.title("Create a tag frequency table")
 if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 
@@ -89,12 +88,18 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 		df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
 		st.dataframe(df)
 
-	col1, col2 = st.columns([1,1])
+	col1, col2 = st.columns([.75,.25])
 		
 	with col1:
 		if st.button("Plot Frequencies"):			
-			fig = alt.Chart(df).mark_bar().encode(x=alt.X('RF', title='Frequency (per 100 tokens)'), y=alt.Y('Tag', sort='-x', title=None))
-			st.altair_chart(fig, use_container_width=False)
+			base = alt.Chart(df, height={"step": 12}).mark_bar(size=10).encode(
+					x=alt.X('RF', title='Frequency (per 100 tokens)'), 
+					y=alt.Y('Tag', sort='-x', title=None),
+					tooltip=[
+					alt.Tooltip('RF', title="Relative Frequency:", format='.2')
+				])
+					
+			st.altair_chart(base, use_container_width=True)
 
 	with col2:
 		if st.button("Download"):
@@ -115,9 +120,10 @@ else:
 		if st.session_state.corpus == '':
 			st.write("It doesn't look like you've loaded a corpus yet.")
 		else:
-			tp = st.session_state.corpus
-			tc_pos = ds.tags_table(tp, st.session_state.words)
-			tc_ds = ds.tags_table(tp, st.session_state.tokens, count_by='ds')
+			with st.spinner('Processing frequencies...'):
+				tp = st.session_state.corpus
+				tc_pos = ds.tags_table(tp, st.session_state.words)
+				tc_ds = ds.tags_table(tp, st.session_state.tokens, count_by='ds')
 			st.session_state.tt_pos = tc_pos
 			st.session_state.tt_ds = tc_ds
 			st.experimental_rerun()

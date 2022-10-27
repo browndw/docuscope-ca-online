@@ -9,8 +9,6 @@ import base64
 from io import BytesIO
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode
 
-st.title("Create a token frequency table")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -32,7 +30,9 @@ if st.session_state.count_1 % 2 == 0:
     idx = 0
 else:
     idx = 1
-	
+
+st.title("Create a token frequency table")
+
 if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 	
@@ -73,12 +73,15 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 		""")
 	
 	with st.expander("Filtering and saving"):
-		st.write("""
-				Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
-				Clicking on the middle funnel icon will show the various filtering options.
-				Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
-				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
-		""")
+		st.markdown("""
+				Filters can be accessed by clicking 'Filters' on the sidebar.
+				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+				Rows can be selected before or after filtering using the checkboxes.
+				(The checkbox in the header will select/deselect all rows.)\n
+				If rows are selected and appear in new table below the main one,
+				those selected rows will be available for download in an Excel file.
+				If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+				""")
 		
 	selected = grid_response['selected_rows'] 
 	if selected:
@@ -106,9 +109,10 @@ else:
 		if st.session_state.corpus == "":
 			st.write("It doesn't look like you've loaded a corpus yet.")
 		else:
-			tp = st.session_state.corpus
-			wc_pos = ds.frequency_table(tp, st.session_state.words)
-			wc_ds = ds.frequency_table(tp, st.session_state.tokens, count_by='ds')
+			with st.spinner('Processing frequencies...'):
+				tp = st.session_state.corpus
+				wc_pos = ds.frequency_table(tp, st.session_state.words)
+				wc_ds = ds.frequency_table(tp, st.session_state.tokens, count_by='ds')
 			st.session_state.ft_pos = wc_pos
 			st.session_state.ft_ds = wc_ds
 			st.experimental_rerun()

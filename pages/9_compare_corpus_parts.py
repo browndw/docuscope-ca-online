@@ -69,7 +69,7 @@ def update_ref():
 		item = list(set(st.session_state.tar) & set(st.session_state.ref))
 		st.session_state.ref = list(set(list(st.session_state.ref))^set(item))
 
-st.title("Create a keyness tables using pairwise comparisions of corpus parts.")
+st.title("Create a keyness tables using pairwise comparisions of corpus parts")
 
 if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 

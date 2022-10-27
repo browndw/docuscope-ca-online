@@ -8,8 +8,6 @@ import re
 import string
 from collections import Counter
 
-st.title("Load and manage your corpus")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -91,7 +89,9 @@ def process_corpus(corp):
 			tag_list = ['MC' if bool(is_digit.match(token_list[i])) and tag_list[i] != 'Y' else v for i, v in enumerate(tag_list)]
 			tp.update({doc_id: (list(zip(token_list, tag_list, iob_ent)))})
 		return tp
-	
+		
+st.title("Load and manage your corpus")
+
 if st.session_state.ndocs > 0:
 	st.markdown('## Target corpus information:')
 	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
@@ -105,6 +105,7 @@ if st.session_state.ndocs > 0:
 		with st.expander("Counts of document categories:"):
 			st.write(Counter(st.session_state.doccats))
 	else:
+		st.markdown('### Target corpus metadata:')
 		load_cats = st.radio("Do you have categories in your file names to process?", ("No", "Yes"), horizontal=True)
 		if load_cats == 'Yes':
 			if st.button("Process Document Metadata"):
@@ -131,6 +132,7 @@ if st.session_state.ndocs > 0:
 			st.write(sorted(st.session_state.ref_docids))
 			
 	else:
+		st.markdown('### Reference corpus:')
 		load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)
 		if load_ref == 'Yes':
 			ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
@@ -182,14 +184,41 @@ if st.session_state.ndocs > 0:
 		st.experimental_rerun()
 else:
 
-	st.markdown("From this page you can load a corpus from a selection of text (**.txt**) files or reset a corpus once one has been processed.")
-	st.markdown(":warning: Be sure that all file names are unique.")
+	st.markdown("### Processing a target corpus :dart:")
+	st.markdown("""
+				From this page you can load a corpus from a selection of text (**.txt**)
+				files or reset a corpus once one has been processed.\n
+				Once you have loaded a target corpus, you can add a reference corpus for comparison.
+				Also note that you can encode metadata into your filenames, which can used for further analysis.
+				(See naming tips.)
+				""")
+	
+	with st.expander("File preparation and file naming tips"):
+		st.markdown("""
+				Files must be in a \*.txt format. If you are preparing files for the first time,
+				it is recommended that you use a plain text editor (rather than an application like Word).
+				Also, you needn't worry about preserving paragraph breaks, as those will be stripped out during processing.\n
+				Metadata can be encoded at the beginning of a file name, before an underscore. For example: acad_01.txt, acad_02.txt, 
+				blog_01.txt, blog_02.txt.
+				""")
+	
+	st.markdown("""---""")
 	
 	models = load_models()
-	
 	selected_dict = st.selectbox("Select a DocuScope Dictionary", options=["Large Dictionary"])
 	nlp = models[selected_dict]
+
+	with st.expander("Which dictionary do I choose?"):
+		st.markdown("""
+				DocuScope has been in development since the late 1990s. Not surprisingly, the tagsets have changed.
+				Additionally, specialized versions of the dictionary have been developed.
+				As new spaCy models are trained on various tagsets, those will become available to use here.
+				In the initial version of this tool, only one model is available.
+				""")
+
+	st.markdown("""---""")
 	
+	st.markdown(":warning: Be sure that all file names are unique.")
 	corp_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True)
 	
 	if len(corp_files) > 0:
