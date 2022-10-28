@@ -282,13 +282,13 @@ else:
 					st.session_state.ft_pos = wc_pos
 					st.session_state.ft_ds = wc_ds
 			
-					kw_pos = ds.keyness_table(st.session_state.ft_pos, wc_ref_pos)
-					kw_ds = ds.keyness_table(st.session_state.ft_ds, wc_ref_ds)
-					kt_pos = ds.keyness_table(st.session_state.tt_pos, tc_ref_pos, tags_only=True)
-					kt_ds = ds.keyness_table(st.session_state.tt_ds, tc_ref_ds, tags_only=True)
-					st.session_state.kw_pos = kw_pos
-					st.session_state.kw_ds = kw_ds
-					st.session_state.kt_pos = kt_pos
-					st.session_state.kt_ds = kt_ds
+				kw_pos = ds.keyness_table(st.session_state.ft_pos, wc_ref_pos)
+				kw_ds = ds.keyness_table(st.session_state.ft_ds, wc_ref_ds)
+				kt_pos = ds.keyness_table(st.session_state.tt_pos, tc_ref_pos, tags_only=True)
+				kt_ds = ds.keyness_table(st.session_state.tt_ds, tc_ref_ds, tags_only=True)
+				st.session_state.kw_pos = kw_pos
+				st.session_state.kw_ds = kw_ds
+				st.session_state.kt_pos = kt_pos
+				st.session_state.kt_ds = kt_ds
 				st.success('Keywords generated!')
 				st.experimental_rerun()
