@@ -19,7 +19,6 @@ if 'collocations' not in st.session_state:
 st.title("Create tables of collocations")
 st.markdown("""[Collocations](https://www.lancaster.ac.uk/fss/courses/ling/corpus/Corpus3/3COLL.HTM) are characteristic, co-occurence patterns of tokens (or words).
 			""")
-
 if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	
 	df = st.session_state.collocations
@@ -47,6 +46,9 @@ if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	
 	with st.expander("Column explanation"):
 		st.markdown("""
+					The 'Freq Span' columns refers to the collocate's frequency within the given window,
+					while 'Freq Total' refers to its overall frequency in the corpus. 
+					Note that is possible for a collocate to have a *higher* frequency within a window, than a total frequency.\n
 					The 'MI' column refers to the association measure selected when the table was generated
 					(one of NPMI, PMI2, PMI3, or PMI).
 					""")
@@ -178,7 +180,7 @@ else:
 			#st.write(token_tuple)
 			#wc = load_data()
 			if st.session_state.corpus == "":
-				st.write("It doesn't look like you've loaded a corpus yet.")
+				st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 			else:
 				tp = st.session_state.corpus
 				df = ds.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)

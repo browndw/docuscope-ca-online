@@ -136,10 +136,11 @@ if st.session_state.ndocs > 0:
 		load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)
 		if load_ref == 'Yes':
 			ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
-		
 			if len(ref_files) > 0:
 				if st.button("Process Reference Corpus"):
 					with st.spinner('Processing corpus data...'):
+						models = load_models()
+						nlp = models[st.session_state.model]
 						ref_corp = process_corpus(ref_files)
 					if ref_corp == None:
 						st.success(':no_entry_sign: Fix or remove duplicate file names before processing corpus.')
@@ -190,16 +191,20 @@ else:
 				files or reset a corpus once one has been processed.\n
 				Once you have loaded a target corpus, you can add a reference corpus for comparison.
 				Also note that you can encode metadata into your filenames, which can used for further analysis.
-				(See naming tips.)
+				(See naming tips.)\n
+				The tool is designed to work with smallish corpora (~2 million words or less).
+				Processing times may vary, but you can expect the initial corpus processing to take roughly 1 minute for every 1 million words.
 				""")
 	
 	with st.expander("File preparation and file naming tips"):
 		st.markdown("""
 				Files must be in a \*.txt format. If you are preparing files for the first time,
 				it is recommended that you use a plain text editor (rather than an application like Word).
+				Avoid using spaces in file names.
 				Also, you needn't worry about preserving paragraph breaks, as those will be stripped out during processing.\n
 				Metadata can be encoded at the beginning of a file name, before an underscore. For example: acad_01.txt, acad_02.txt, 
-				blog_01.txt, blog_02.txt.
+				blog_01.txt, blog_02.txt. These would allow you to compare **acad** vs. **blog** as categories.
+				You can designate up to 20 categories.
 				""")
 	
 	st.markdown("""---""")
@@ -207,10 +212,11 @@ else:
 	models = load_models()
 	selected_dict = st.selectbox("Select a DocuScope Dictionary", options=["Large Dictionary"])
 	nlp = models[selected_dict]
+	st.session_state.model = selected_dict
 
 	with st.expander("Which dictionary do I choose?"):
 		st.markdown("""
-				DocuScope has been in development since the late 1990s. Not surprisingly, the tagsets have changed.
+				(:construction_worker: Under construction.) DocuScope has been in development since the late 1990s. Not surprisingly, the tagsets have changed.
 				Additionally, specialized versions of the dictionary have been developed.
 				As new spaCy models are trained on various tagsets, those will become available to use here.
 				In the initial version of this tool, only one model is available.
@@ -219,7 +225,7 @@ else:
 	st.markdown("""---""")
 	
 	st.markdown(":warning: Be sure that all file names are unique.")
-	corp_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True)
+	corp_files = st.file_uploader("Upload your target corpus", type=["txt"], accept_multiple_files=True)
 	
 	if len(corp_files) > 0:
 		if st.button("Process Corpus"):

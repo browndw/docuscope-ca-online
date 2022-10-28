@@ -41,6 +41,11 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	else:
 		df = st.session_state.tt_ds
 	
+	st.markdown('### Target corpus information:')
+	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
+	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
+	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
+	
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 	gb.configure_column("Tag", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
@@ -63,13 +68,13 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 		)
 	
 	with st.expander("Column explanation"):
-		st.write("""
+		st.markdown("""
 				The 'AF' column refers to the absolute token frequency.
 				The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
 				Note that for part-of-speech tags, tokens are normalized against word tokens,
 				while DocuScope tags are normalized against counts of all tokens including punctuation.
 				The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-		""")
+				""")
 	
 	with st.expander("Filtering and saving"):
 		st.markdown("""
@@ -111,14 +116,17 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 				st.success('Link generated!')
 				linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
 				st.markdown(linko, unsafe_allow_html=True)
-		
-		
+
 else:
-	st.write("Use the button to generate a tag frequency table from your corpus.")
+	st.markdown("""
+				Use the button to generate a table of tag frequencies that can be sorted and filtered.
+				This will generate a table similar to a word list, but show **only** the frequencies of tags
+				(either part-of-speech or DocuScope).
+				""")
 
 	if st.button("Tags Table"):
 		if st.session_state.corpus == '':
-			st.write("It doesn't look like you've loaded a corpus yet.")
+			st.markdown(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 		else:
 			with st.spinner('Processing frequencies...'):
 				tp = st.session_state.corpus

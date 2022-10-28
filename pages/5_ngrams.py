@@ -9,8 +9,6 @@ import base64
 from io import BytesIO
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode
 
-st.title("Create a table of ngram frequencies")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -33,6 +31,12 @@ if st.session_state.count_3 % 2 == 0:
 else:
     idx = 1
 
+st.title("Create a table of n-gram frequencies")
+st.markdown("""
+			[N-grams](https://en.wikipedia.org/wiki/N-gram) are sequences of tokens.
+			A 2-gram (or bigram) is two word sequence; a 3-gram (or trigram), a three word sequence, etc.
+			""")
+
 if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 	
@@ -40,6 +44,11 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 		df = st.session_state.ng_pos
 	else:
 		df = st.session_state.ng_ds
+
+	st.markdown('## Target corpus information:')
+	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
+	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
+	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
 		
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -64,21 +73,25 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 		)
 		
 	with st.expander("Column explanation"):
-		st.write("""
+		st.markdown("""
+				Columns will show the the n-gram tokens in sequence, followed by each of their tags.
 				The 'AF' column refers to the absolute token frequency.
-				The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
+				The 'RF'column refers to the relative token frequency (normalized per million tokens).
 				Note that for part-of-speech tags, tokens are normalized against word tokens,
 				while DocuScope tags are normalized against counts of all tokens including punctuation.
 				The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-		""")
+				""")
 	
 	with st.expander("Filtering and saving"):
-		st.write("""
-				Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
-				Clicking on the middle funnel icon will show the various filtering options.
-				Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
-				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
-		""")
+		st.markdown("""
+				Filters can be accessed by clicking 'Filters' on the sidebar.
+				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+				Rows can be selected before or after filtering using the checkboxes.
+				(The checkbox in the header will select/deselect all rows.)\n
+				If rows are selected and appear in new table below the main one,
+				those selected rows will be available for download in an Excel file.
+				If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+				""")
 
 	selected = grid_response['selected_rows'] 
 	if selected:
@@ -107,15 +120,17 @@ if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 			st.experimental_rerun()
 		
 else:
-	st.write("Use the button to generate an ngrams table from your corpus.")
-
+	st.markdown("""
+		Use the button to generate an n-grams table from your corpus.
+		Note that n-grams take a little longer to process than other kinds of tables.
+		""")
 	span = st.radio('Choose the span of your ngrams.', (2, 3, 4), horizontal=True)
 	
-	if st.button("Ngrams Table"):
+	if st.button("N-grams Table"):
 		#st.write(token_tuple)
 		#wc = load_data()
 		if st.session_state.corpus == "":
-			st.write("It doesn't look like you've loaded a corpus yet.")
+			st.markdown(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 		else:
 			tp = st.session_state.corpus
 			with st.spinner('Processing ngrams...'):

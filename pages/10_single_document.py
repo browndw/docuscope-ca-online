@@ -5,7 +5,6 @@ import streamlit.components.v1 as components
 import docuscospacy.corpus_analysis as ds
 
 import pandas as pd
-import plotly.express as px
 import altair as alt
 from collections import Counter
 
@@ -97,23 +96,6 @@ def doc_counts(doc_span, n_tokens, count_by='pos'):
         df.reset_index(drop=True, inplace=True)
     return(df)
 
-def lexdensity_plot(df, tag_list):
-	plot_colors = hex_highlights[:len(tag_list)]
-	hts = [200, 280, 340, 420, 500]
-	ht = hts[len(tag_list)-1]
-	df['X'] = (df.index + 1)/(len(df.index))
-	df = df[df['Tag'].isin(tag_list)]
-	df['Y'] = 1
-	df_b = df.copy()
-	df_b['Y'] = 0
-	df = pd.concat([df, df_b], axis=0)
-	plot = px.line(df, x='X', y='Y', color='Tag', line_group='X', color_discrete_sequence=plot_colors, facet_row='Tag', category_orders = {'Tag':tag_list})
-	plot.update_yaxes(title_text='', showticklabels=False, range = [0,1], showgrid=False, mirror=True, showline=True, linecolor='black')
-	plot.update_xaxes(title_text='', range = [0,1], tick0=.25, dtick=.25, tickformat=".0%", mirror=True, showline=True, linecolor='black')
-	plot.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-	plot.update_layout(showlegend=False, paper_bgcolor='white', plot_bgcolor='white', height=ht)
-	return(plot)
-
 def update_tags(html_state):
 	tags = st.session_state.tags
 	tags = ['.' + x for x in tags]
@@ -148,7 +130,7 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 		tag_loc = st.session_state.doc_ds
 		df = st.session_state.dc_ds
 	
-	col1, col2= st.columns([1,1])
+	col1, col2= st.columns([.7,.3])
 	with col1:
 		if st.button("Tag Density Plot"):
 			if len(tag_list) > 5:
@@ -156,16 +138,18 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 			elif len(tag_list) == 0:
 				st.write('There are no tags to plot.')
 			else:
-				#st.plotly_chart(lexdensity_plot(tag_loc, tag_list), use_container_width=False)
 				plot_colors = hex_highlights[:len(tag_list)]
 				df_plot = tag_loc.copy()
 				df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
 				df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
-				base = alt.Chart(df_plot).mark_tick().encode(x=alt.X('X:Q', axis=alt.Axis(format='%'), title=None), y=alt.Y('Tag:N', title = None)).properties(width=600)
-				lex_density = base.encode(
-					color=alt.Color('Tag:N', legend=None),
+				base = alt.Chart(df_plot, height={"step": 30}).mark_tick(size=25).encode(
+					x=alt.X('X:Q', axis=alt.Axis(format='%'), title=None),
+					y=alt.Y('Tag:N', title = None)
 					)
-				st.altair_chart(lex_density, use_container_width=False)
+				lex_density = base.encode(
+					color=alt.Color('Tag:N', scale=alt.Scale(range=plot_colors), legend=None),
+					)
+				st.altair_chart(lex_density, use_container_width=True)
 
 	with col2:
 		if st.button("Select a new document"):

@@ -4,7 +4,7 @@ import streamlit as st
 import docuscospacy.corpus_analysis as ds
 
 import pandas as pd
-import plotly.express as px
+import altair as alt
 
 import base64
 from io import BytesIO
@@ -81,6 +81,19 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 			df = st.session_state.kw_pos
 		else:
 			df = st.session_state.kw_ds
+		
+		col1, col2 = st.columns([1,1])
+		with col1:
+			st.markdown('### Target corpus:')
+			st.write('Number of tokens in target corpus: ', str(st.session_state.tokens))
+			st.write('Number of word tokens in target corpus: ', str(st.session_state.words))
+			st.write('Number of documents in target corpus: ', str(st.session_state.ndocs))
+		with col2:
+			st.markdown('### Reference corpus:')
+			st.write('Number of tokens in reference corpus: ', str(st.session_state.ref_tokens))
+			st.write('Number of word tokens in referencecorpus: ', str(st.session_state.ref_words))
+			st.write('Number of documents in creferenceorpus: ', str(st.session_state.ref_ndocs))
+			
 	
 		gb = GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -110,16 +123,21 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 			)
 	
 		with st.expander("Column explanation"):
-			st.write("""
-					The 'AF' column refers to the absolute token frequency.
-					The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
+			st.markdown("""
+					The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
+					a hypothesis test measuring observed vs. expected frequencies.
+					Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
+					'LR' refers to [Log-Ratio](http://cass.lancs.ac.uk/log-ratio-an-informal-introduction/), which is an [effect size](https://www.scribbr.com/statistics/effect-size/).
+					And 'PV' refers to the [p-value](https://scottbot.net/friends-dont-let-friends-calculate-p-values-without-fully-understanding-them/).\n
+					The 'AF' columns refer to the absolute token frequencies in the target and reference.
+					The 'RF' columns refer to the relative token frequencies (normalized per million tokens).
 					Note that for part-of-speech tags, tokens are normalized against word tokens,
 					while DocuScope tags are normalized against counts of all tokens including punctuation.
 					The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
 					""")
 	
 		with st.expander("Filtering and saving"):
-			st.write("""
+			st.markdown("""
 					Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
 					Clicking on the middle funnel icon will show the various filtering options.
 					Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
@@ -177,6 +195,27 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 			reload_data=False
 			)
 		
+		with st.expander("Column explanation"):
+			st.markdown("""
+					The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
+					a hypothesis test measuring observed vs. expected frequencies.
+					Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
+					'LR' refers to [Log-Ratio](http://cass.lancs.ac.uk/log-ratio-an-informal-introduction/), which is an [effect size](https://www.scribbr.com/statistics/effect-size/).
+					And 'PV' refers to the [p-value](https://scottbot.net/friends-dont-let-friends-calculate-p-values-without-fully-understanding-them/).\n
+					The 'AF' columns refer to the absolute token frequencies in the target and reference.
+					The 'RF' columns refer to the relative token frequencies (normalized per 100 tokens).
+					Note that for part-of-speech tags, tokens are normalized against word tokens,
+					while DocuScope tags are normalized against counts of all tokens including punctuation.
+					The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
+					""")
+	
+		with st.expander("Filtering and saving"):
+			st.markdown("""
+					Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
+					Clicking on the middle funnel icon will show the various filtering options.
+					Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
+					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
+					""")
 		selected = grid_response['selected_rows'] 
 		if selected:
 			st.write('Selected rows')
@@ -184,21 +223,26 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 			st.dataframe(df)
 
 
-		col1, col2 = st.columns([1,1])
+		col1, col2 = st.columns([.75,.25])
 		
 		with col1:
-			if st.button("Plot resutls"):
-				df_plot = df[["Tag", "RF", "RF Ref"]]
-				df_plot["Mean"] = df_plot.mean(numeric_only=True, axis=1)
-				df_plot.rename(columns={"Tag": "Tag", "Mean": "Mean", "RF": "Target", "RF Ref": "Reference"}, inplace = True)
+			if st.button('Plot resutls'):
+				df_plot = df[['Tag', 'RF', 'RF Ref']]
+				df_plot['Mean'] = df_plot.mean(numeric_only=True, axis=1)
+				df_plot.rename(columns={'Tag': 'Tag', 'Mean': 'Mean', 'RF': 'Target', 'RF Ref': 'Reference'}, inplace = True)
 				df_plot = pd.melt(df_plot, id_vars=['Tag', 'Mean'],var_name='Corpus', value_name='RF')
-				df_plot.sort_values(by=["Mean", "Corpus"], ascending=[True, True], inplace=True)
-				fig = px.bar(df_plot, x='RF', y='Tag', color='Corpus', barmode='group', template='plotly_white', orientation='h')
-				fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-				fig.update_yaxes(color='black', title_text='', zeroline=True, linecolor='black')
-				fig.update_xaxes(color='black', gridcolor='gray', title_text='Frequency (per 100 tokens)')
-				st.plotly_chart(fig)
-
+				df_plot.sort_values(by=['Mean', 'Corpus'], ascending=[True, True], inplace=True)
+				
+				order = ['Target', 'Reference']
+				base = alt.Chart(df_plot, height={"step": 12}).mark_bar(size=10).encode(
+							x=alt.X('RF', title='Frequency (per 100 tokens)'),
+							y=alt.Y('Corpus:N', title=None, sort=order, axis=alt.Axis(labels=False, ticks=False)),
+							color=alt.Color('Corpus:N', sort=order),
+							row=alt.Row('Tag', title=None, header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Mean', order='descending')),
+							tooltip=[
+							alt.Tooltip('RF:Q', title="Per 100 Tokens", format='.2')
+							]).configure_facet(spacing=0.5).configure_legend(orient='bottom')				
+				st.altair_chart(base, use_container_width=True)
 		with col2:
 			if st.button("Download"):
 				with st.spinner('Creating download link...'):
@@ -215,9 +259,9 @@ else:
 
 	if st.button("Keyness Table"):
 		if st.session_state.corpus == '':
-			st.write("It doesn't look like you've loaded a target corpus yet.")
+			st.markdown(":neutral_face: It doesn't look like you've loaded a target corpus yet.")
 		elif st.session_state.reference == '':
-			st.write("It doesn't look like you've loaded a reference corpus yet.")
+			st.markdown(":neutral_face: It doesn't look like you've loaded a reference corpus yet.")
 		else:
 			with st.spinner('Generating keywords...'):
 				tp_ref = st.session_state.reference

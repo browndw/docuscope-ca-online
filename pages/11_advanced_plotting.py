@@ -64,9 +64,11 @@ def update_pca(coord_data, contrib_data):
 	pca_x = coord_data.columns[st.session_state.pca_idx - 1]
 	pca_y = coord_data.columns[st.session_state.pca_idx]
 	
-	contrib_1 = contrib_data[contrib_data[pca_x].abs() > 1]
+	mean_x = contrib_data[pca_x].abs().mean()
+	mean_y = contrib_data[pca_y].abs().mean()
+	contrib_1 = contrib_data[contrib_data[pca_x].abs() > mean_x]
 	contrib_1[pca_x] = contrib_1[pca_x].div(100)
-	contrib_2 = contrib_data[contrib_data[pca_y].abs() > 1]
+	contrib_2 = contrib_data[contrib_data[pca_y].abs() > mean_y]
 	contrib_2[pca_y] = contrib_2[pca_y].div(100)
 	contrib_1.sort_values(by=pca_x, ascending=True, inplace=True)
 	contrib_2.sort_values(by=pca_y, ascending=True, inplace=True)
@@ -114,7 +116,7 @@ def update_pca(coord_data, contrib_data):
 	
 	st.markdown(f""" Variance explained: {ve_1}, {ve_2}
 				""")
-	st.markdown("Variable contribution to principal component (showing only those > 1.0%):")
+	st.markdown("Variable contribution (by %) to principal component (showing only those > mean):")
 	
 	col1,col2 = st.columns(2)
 	col1.altair_chart(cp_1, use_container_width = True)
@@ -207,8 +209,7 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 				df_plot['Median'] = df_plot.groupby(['Tag']).transform('median')
 				df_plot.sort_values(by='Median', inplace=True, ignore_index=True, ascending=False)
 				cols = df_plot['Tag'].drop_duplicates().tolist()
-			
-			
+					
 				base = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
     				x = alt.X('RF', title='Frequency (per 100 tokens)'),
     				y = alt.Y('Tag', sort=cols, title='')
@@ -259,13 +260,7 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 			df_plot = df.copy()
 			df_plot.index.name = 'doc_id'
 			df_plot.reset_index(inplace=True)
-			fig = px.scatter(df, x=xaxis, y=yaxis, template='plotly_white', hover_data=[df.index])
-			fig.update_layout(paper_bgcolor='white', plot_bgcolor='white')
-			fig.update_yaxes(zeroline=True, linecolor='black', rangemode="tozero")
-			fig.update_xaxes(zeroline=True, linecolor='black', rangemode="tozero")
 
-			#fig.update_layout(yaxis={'categoryorder':'total ascending'})
-			#st.plotly_chart(fig, use_container_width=True)
 			base = alt.Chart(df_plot).mark_circle().encode(
     			alt.X(xaxis),
     			alt.Y(yaxis),
@@ -288,7 +283,8 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		st.session_state.pca_idx = 1
 		st.session_state.pca = ''
 		st.session_state.contrib = ''
-		pca = PCA(n_components=len(df.columns))
+		n = min(len(df.index), len(df.columns))
+		pca = PCA(n_components=n)
 		pca_result = pca.fit_transform(df.values)
 		pca_df = pd.DataFrame(pca_result)
 		pca_df.columns = ['PC' + str(col + 1) for col in pca_df.columns]
@@ -315,8 +311,7 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 	if bool(isinstance(st.session_state.pca, pd.DataFrame)) == True:
 		st.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pca_idx')
 		#st.multiselect("Select categories to highlight", (sorted(set(st.session_state.doccats))), on_change=update_pca(st.session_state.pca, st.session_state.contrib), key='pcacolors')
-			
-	
+				
 	st.markdown("""---""") 
 	if st.button("Create New DTM"):
 		del st.session_state.pca_idx
@@ -328,7 +323,6 @@ if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 		st.session_state.variance = []
 		st.session_state.pca_idx = 1
 		st.experimental_rerun()
-	
 
 else:
 	st.markdown("Use the menus to generate a document-term matrix for plotting and analysis.")
@@ -339,7 +333,7 @@ else:
 	
 	if st.button("Document-Term Matrix"):
 		if st.session_state.corpus == '':
-			st.write("It doesn't look like you've loaded a corpus yet.")
+			st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 		else:
 			with st.spinner('Generating dtm for plotting...'):
 				tp = st.session_state.corpus

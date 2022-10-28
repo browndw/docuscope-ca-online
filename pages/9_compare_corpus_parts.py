@@ -4,7 +4,6 @@ import streamlit as st
 import docuscospacy.corpus_analysis as ds
 
 import pandas as pd
-import plotly.express as px
 import altair as alt
 
 import base64
@@ -81,8 +80,7 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 			df = st.session_state.kw_pos_cp
 		else:
 			df = st.session_state.kw_ds_cp
-			
-		
+
 		col1, col2 = st.columns([1,1])
 		
 		with col1:
@@ -90,7 +88,6 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 			st.write("Document categories: ", ', '.join(st.session_state.tar_cats))
 			st.write("Number of tokens: ", str(st.session_state.tar_tokens))
 			st.write("Number of word tokens: ", str(st.session_state.tar_words))
-
 		with col2:
 			st.markdown("#### Reference corpus:")
 			st.write("Document categories: ", ', '.join(st.session_state.ref_cats))
@@ -125,7 +122,10 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 			)
 	
 		with st.expander("Column explanation"):
-			st.write("""
+			st.markdown("""
+					The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
+					a hypothesis test measuring observed vs. expected frequencies.
+					Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
 					The 'AF' column refers to the absolute token frequency.
 					The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
 					Note that for part-of-speech tags, tokens are normalized against word tokens,
@@ -134,7 +134,7 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 					""")
 	
 		with st.expander("Filtering and saving"):
-			st.write("""
+			st.markdown("""
 					Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
 					Clicking on the middle funnel icon will show the various filtering options.
 					Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
