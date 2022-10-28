@@ -1,0 +1,10 @@
+altair==4.2.0
+docuscospacy==0.2.3
+docx==0.2.4
+numpy==1.23.3
+pandas==1.5.0
+python_docx==0.8.11
+scikit_learn==1.1.3
+spacy==3.4.1
+streamlit==1.13.0
+tmtoolkit==0.11.2
