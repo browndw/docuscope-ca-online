@@ -7,6 +7,7 @@ with st.expander("About the app"):
 		The model, package and app were created by David West Brown at Carnegie Mellon University.
 		""")
 
+st.markdown(":speech_balloon: :dolphin: porpoise linguistics 4 everyone")
 
 st.title("DocuScope and Part-of-Speech tagging with spaCy")
 st.markdown("""
