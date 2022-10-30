@@ -4,7 +4,7 @@
 
 # DocuScope Corpus Analysis
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/browndw/corpus-tagger/corpus_analysis.py/) [![](https://badge.fury.io/py/docuscospacy.svg)](https://badge.fury.io/py/docuscospacy) [![](https://readthedocs.org/projects/docuscospacy/badge/?version=latest)](https://docuscospacy.readthedocs.io/) [![](https://zenodo.org/badge/512227318.svg)](https://zenodo.org/badge/latestdoi/512227318) [![Built with spaCy](https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg)](https://spacy.io)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/browndw/corpus-tagger/corpus_analysis/) [![](https://badge.fury.io/py/docuscospacy.svg)](https://badge.fury.io/py/docuscospacy) [![](https://readthedocs.org/projects/docuscospacy/badge/?version=latest)](https://docuscospacy.readthedocs.io/) [![](https://zenodo.org/badge/512227318.svg)](https://zenodo.org/badge/latestdoi/512227318) [![Built with spaCy](https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg)](https://spacy.io)
 
 ## DocuScope and Part-of-Speech tagging with spaCy
 
