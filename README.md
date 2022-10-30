@@ -1,7 +1,7 @@
 
 [![](https://avatars.githubusercontent.com/u/21162269?s=200&v=4)](https://www.cmu.edu/dietrich/english/research-and-publications/docuscope.html)
 
-:dolphin: :speech_balloon: porpoise linguistics 4 everyone
+speech_balloon: :dolphin: :porpoise linguistics 4 everyone
 
 # DocuScope Corpus Analysis
 
