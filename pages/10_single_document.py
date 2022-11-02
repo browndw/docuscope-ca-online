@@ -219,7 +219,7 @@ else:
 	doc_key = st.selectbox("Select document to view:", (sorted(st.session_state.docids)))
 	if st.button("Process Document"):
 		if st.session_state.corpus == '':
-			st.write("It doesn't look like you've loaded a corpus yet.")
+			st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 		else:
 			doc_pos = ds.tag_ruler(st.session_state.corpus, doc_key, count_by='pos')
 			doc_ds = ds.tag_ruler(st.session_state.corpus, doc_key, count_by='ds')

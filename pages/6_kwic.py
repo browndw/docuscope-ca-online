@@ -151,10 +151,8 @@ else:
 		st.write("Your node word contains too many characters. Try something shorter.")
 	elif node_word != "":
 		if st.button("KWIC"):
-			#st.write(token_tuple)
-			#wc = load_data()
 			if st.session_state.corpus == "":
-				st.write("It doesn't look like you've loaded a corpus yet.")
+				st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 			else:
 				tp = st.session_state.corpus
 				df = kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
