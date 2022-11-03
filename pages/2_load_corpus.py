@@ -7,6 +7,7 @@ import docuscospacy.corpus_analysis as ds
 import re
 import string
 from collections import Counter
+from unidecode import unidecode
 
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
@@ -73,8 +74,9 @@ def process_corpus(corp):
 		is_punct = re.compile("[{}]+\s*$".format(re.escape(string.punctuation)))
 		is_digit = re.compile("\d[\d{}]*\s*$".format(re.escape(string.punctuation)))
 		tp = {}
-		for doc in corp:	
-			doc_txt = doc.getvalue().decode("utf-8")
+		for doc in corp:
+			doc_txt = doc.getvalue().decode('utf-8', 'ignore')
+			doc_txt = unidecode(doc_txt)
 			doc_id = doc.name.replace(" ", "")
 			doc_txt = pre_process(doc_txt)
 			doc_taged = nlp(doc_txt)
