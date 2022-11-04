@@ -58,6 +58,7 @@ if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	grid_response = AgGrid(
 		df,
 		gridOptions=go,
+		enable_enterprise_modules = False,
 		data_return_mode='FILTERED_AND_SORTED', 
 		update_mode='MODEL_CHANGED', 
 		columns_auto_size_mode='FIT_CONTENTS',
