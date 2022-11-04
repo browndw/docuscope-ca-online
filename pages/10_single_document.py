@@ -130,38 +130,24 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 		tag_loc = st.session_state.doc_ds
 		df = st.session_state.dc_ds
 	
-	col1, col2= st.columns([.7,.3])
-	with col1:
-		if st.button("Tag Density Plot"):
-			if len(tag_list) > 5:
-				st.write(':no_entry_sign: You can only plot a maximum of 5 tags.')
-			elif len(tag_list) == 0:
-				st.write('There are no tags to plot.')
-			else:
-				plot_colors = hex_highlights[:len(tag_list)]
-				df_plot = tag_loc.copy()
-				df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
-				df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
-				base = alt.Chart(df_plot, height={"step": 30}).mark_tick(size=25).encode(
-					x=alt.X('X:Q', axis=alt.Axis(format='%'), title=None),
-					y=alt.Y('Tag:N', title = None)
-					)
-				lex_density = base.encode(
-					color=alt.Color('Tag:N', scale=alt.Scale(range=plot_colors), legend=None),
-					)
-				st.altair_chart(lex_density, use_container_width=True)
-
-	with col2:
-		if st.button("Select a new document"):
-			st.session_state.doc_pos = ''
-			st.session_state.doc_ds = ''
-			st.session_state.dc_pos = ''
-			st.session_state.dc_ds = ''
-			st.session_state.html_pos = ''
-			st.session_state.html_ds = ''
-			st.session_state.doc_key = ''
-			del st.session_state['tags']
-			st.experimental_rerun()
+	if st.button("Tag Density Plot"):
+		if len(tag_list) > 5:
+			st.write(':no_entry_sign: You can only plot a maximum of 5 tags.')
+		elif len(tag_list) == 0:
+			st.write('There are no tags to plot.')
+		else:
+			plot_colors = hex_highlights[:len(tag_list)]
+			df_plot = tag_loc.copy()
+			df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
+			df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
+			base = alt.Chart(df_plot, height={"step": 45}).mark_tick(size=35).encode(
+				x=alt.X('X:Q', axis=alt.Axis(values=[0, .25, .5, .75, 1], format='%'), title=None),
+				y=alt.Y('Tag:N', title = None, sort=tag_list)
+				)
+			lex_density = base.encode(
+				color=alt.Color('Tag:N', scale=alt.Scale(range=plot_colors), legend=None),
+				)
+			st.altair_chart(lex_density, use_container_width=True)
 	
 	with st.expander("Plot explanation"):
 		st.write("""
@@ -170,9 +156,19 @@ if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 				the plot would show lines at 10%, 25%, and 60% along the x-axis.
 				""")
 
-
 	if len(tag_list) > 5:
 		st.write(':no_entry_sign: You can only hightlight a maximum of 5 tags.')
+
+	if st.button("Select a new document"):
+		st.session_state.doc_pos = ''
+		st.session_state.doc_ds = ''
+		st.session_state.dc_pos = ''
+		st.session_state.dc_ds = ''
+		st.session_state.html_pos = ''
+		st.session_state.html_ds = ''
+		st.session_state.doc_key = ''
+		del st.session_state['tags']
+		st.experimental_rerun()
 
 	st.markdown(f"""
 				###  {st.session_state.doc_key}
