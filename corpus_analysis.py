@@ -23,15 +23,19 @@ st.markdown("""
 			7. practice advanced plotting
 		""")
 
+st.markdown("---")
+
 st.markdown("## How to use the tool")
 st.markdown("""
-			If you've used a concordancer like AntConc or WordSmith, using DocuScope CA should be relatively intuitive.
+			If you've used a concordancer like [AntConc](https://www.laurenceanthony.net/software/antconc/) or WordSmith, using DocuScope CA should be relatively intuitive.
 			If you're new to corpus analysis, you will need to:\n
 			1. create a corpus of plain text files;\n
 			2. load the corpus into the tool;\n
 			3. explore!
 		""")
-		
+
+st.markdown("---")
+
 st.markdown("""
 			Below are basic instructions for:\n
 			* creating a corpus\n
