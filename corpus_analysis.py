@@ -1,7 +1,5 @@
 import streamlit as st
 
-st.markdown(":speech_balloon: :dolphin: porpoise linguistics 4 everyone")
-
 with st.expander("About the app"):
 	st.markdown("""
 		The app is wrapper for the [docuscospacy](https://docuscospacy.readthedocs.io/en/latest/) Python package.
@@ -9,6 +7,7 @@ with st.expander("About the app"):
 		The model, package and app were created by David West Brown at Carnegie Mellon University.
 		""")
 
+st.markdown("![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)")
 st.markdown("[user guide](https://browndw.github.io/docuscope-docs/)")
 
 st.title("DocuScope Corpus Analysis Online")
