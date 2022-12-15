@@ -9,6 +9,8 @@ with st.expander("About the app"):
 		The model, package and app were created by David West Brown at Carnegie Mellon University.
 		""")
 
+st.markdown("[user guide](https://browndw.github.io/docuscope-docs/)")
+
 st.title("DocuScope Corpus Analysis Online")
 st.markdown("## DocuScope and part-of-speech tagging with spaCy")
 st.markdown("""
