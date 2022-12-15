@@ -25,27 +25,20 @@ st.markdown("""
 
 st.markdown("---")
 
-st.markdown("## How to use the tool")
+st.markdown("## Using the tool")
 st.markdown("""
 			If you've used a concordancer like [AntConc](https://www.laurenceanthony.net/software/antconc/) or WordSmith, using DocuScope CA should be relatively intuitive.
-			If you're new to corpus analysis, you will need to:\n
+			You simply need to:\n
 			1. create a corpus of plain text files;\n
-			2. load the corpus into the tool;\n
+			2. load the corpus into the tool (using the **load corpus** tab on the left);\n
 			3. explore!
 		""")
 
 st.markdown("---")
 
+st.markdown("### User guide")
 st.markdown("""
-			Below are basic instructions for:\n
-			* creating a corpus\n
-			* including metadata in file names\n
-			* loading a corpus\n
-			* generating frequency tables\n
-			* generating KWIC\n
-			* comparing corpora\n
-			* comparing corpus parts\n
-			* exploring single texts
+			For detailed instructions on how to use the tool, consult [the documentation](https://browndw.github.io/docuscope-docs/).
 		""")
 
 
