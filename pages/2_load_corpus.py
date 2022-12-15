@@ -54,8 +54,8 @@ if 'ref_ndocs' not in st.session_state:
 @st.cache(show_spinner=False, allow_output_mutation=True, suppress_st_warning=True)
 def load_models():
     large_model = spacy.load("./models/en_docusco_spacy/")
-    #commone_model = spacy.load("./models/en/")
-    models = {"Large Dictionary": large_model}
+    small_model = spacy.load("./models/en_docusco_spacy_fc/")
+    models = {"Large Dictionary": large_model, "Common Dictionary": small_model}
     return models
 
 def pre_process(txt):
@@ -212,7 +212,7 @@ else:
 	st.markdown("""---""")
 	
 	models = load_models()
-	selected_dict = st.selectbox("Select a DocuScope Dictionary", options=["Large Dictionary"])
+	selected_dict = st.selectbox("Select a DocuScope Dictionary", options=["Large Dictionary", "Common Dictionary"])
 	nlp = models[selected_dict]
 	st.session_state.model = selected_dict
 
