@@ -1,14 +1,14 @@
 import streamlit as st
 
+st.markdown("[![Made with DocuScope](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/docuscope_badge.svg)](https://www.cmu.edu/dietrich/english/research-and-publications/docuscope.html) ![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)")
+
 with st.expander("About the app"):
 	st.markdown("""
 		The app is wrapper for the [docuscospacy](https://docuscospacy.readthedocs.io/en/latest/) Python package.
 		The app and package are built around a specially trained [spaCy model](https://huggingface.co/browndw/en_docusco_spacy). 
 		The model, package and app were created by David West Brown at Carnegie Mellon University.
 		""")
-
-st.markdown("![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/docuscope_badge.svg) ![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)")
-st.markdown("[user guide](https://browndw.github.io/docuscope-docs/)")
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/)")
 
 st.title("DocuScope Corpus Analysis Online")
 st.markdown("## DocuScope and part-of-speech tagging with spaCy")
