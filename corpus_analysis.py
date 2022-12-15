@@ -8,9 +8,11 @@ with st.expander("About the app"):
 		The app and package are built around a specially trained [spaCy model](https://huggingface.co/browndw/en_docusco_spacy). 
 		The model, package and app were created by David West Brown at Carnegie Mellon University.
 		""")
-st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/)")
 
 st.title("DocuScope Corpus Analysis Online")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/)")
+
 st.markdown("## DocuScope and part-of-speech tagging with spaCy")
 st.markdown("""
 			This application is designed for the analysis of corpora assisted by part-of-speech and rhetorical tagging.
