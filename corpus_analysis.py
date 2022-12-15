@@ -7,7 +7,7 @@ with st.expander("About the app"):
 		The model, package and app were created by David West Brown at Carnegie Mellon University.
 		""")
 
-st.markdown("![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)")
+st.markdown("![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/docuscope_badge.svg) ![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)")
 st.markdown("[user guide](https://browndw.github.io/docuscope-docs/)")
 
 st.title("DocuScope Corpus Analysis Online")
