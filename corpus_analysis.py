@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.markdown("[![Made with DocuScope](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/docuscope_badge.svg)](https://www.cmu.edu/dietrich/english/research-and-publications/docuscope.html) ![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)")
+st.markdown("[![Made with DocuScope](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/docuscope_badge.svg)](https://www.cmu.edu/dietrich/english/research-and-publications/docuscope.html) [![Made for porpoise linguists](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)](https://github.com/browndw/corpus-tagger)")
 
 with st.expander("About the app"):
 	st.markdown("""

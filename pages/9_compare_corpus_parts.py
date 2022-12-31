@@ -124,23 +124,26 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 	
 		with st.expander("Column explanation"):
 			st.markdown("""
-					The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
-					a hypothesis test measuring observed vs. expected frequencies.
-					Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
-					The 'AF' column refers to the absolute token frequency.
-					The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
-					Note that for part-of-speech tags, tokens are normalized against word tokens,
-					while DocuScope tags are normalized against counts of all tokens including punctuation.
-					The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-					""")
+						The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
+						a hypothesis test measuring observed vs. expected frequencies.
+						Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
+						The 'AF' column refers to the absolute token frequency.
+						The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
+						Note that for part-of-speech tags, tokens are normalized against word tokens,
+						while DocuScope tags are normalized against counts of all tokens including punctuation.
+						The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
+						""")
 	
 		with st.expander("Filtering and saving"):
 			st.markdown("""
-					Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
-					Clicking on the middle funnel icon will show the various filtering options.
-					Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
-					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
-					""")
+						Filters can be accessed by clicking on the three that appear while hovering over a column header.
+						For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+						Rows can be selected before or after filtering using the checkboxes.
+						(The checkbox in the header will select/deselect all rows.)\n
+						If rows are selected and appear in new table below the main one,
+						those selected rows will be available for download in an Excel file.
+						If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+						""")
 	
 		selected = grid_response['selected_rows'] 
 		if selected:

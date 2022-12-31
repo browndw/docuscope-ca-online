@@ -56,14 +56,14 @@ if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	
 	with st.expander("Filtering and saving"):
 		st.markdown("""
-				Filters can be accessed by clicking 'Filters' on the sidebar.
-				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-				Rows can be selected before or after filtering using the checkboxes.
-				(The checkbox in the header will select/deselect all rows.)\n
-				If rows are selected and appear in new table below the main one,
-				those selected rows will be available for download in an Excel file.
-				If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-				""")
+					Filters can be accessed by clicking on the three that appear while hovering over a column header.
+					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+					Rows can be selected before or after filtering using the checkboxes.
+					(The checkbox in the header will select/deselect all rows.)\n
+					If rows are selected and appear in new table below the main one,
+					those selected rows will be available for download in an Excel file.
+					If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+					""")
 
 	selected = grid_response['selected_rows'] 
 	if selected:
@@ -125,29 +125,29 @@ else:
 	
 	with st.expander("Anchor tag explanation"):
 		st.markdown("""
-				You can choose to 'anchor' at token to a specific tag.
-				For example, if you wanted to disambiguate 'can' as a noun (e.g., 'can of soda')
-				from 'can' as a modal verb, you could 'anchor' the node word to a part-of-speech
-				tag (like 'Noun', 'Verb' or more specifically 'VM').
-				
-				For most cases, choosing an 'anchor' tag isn't necessary.
-				""")
+					You can choose to 'anchor' at token to a specific tag.
+					For example, if you wanted to disambiguate 'can' as a noun (e.g., 'can of soda')
+					from 'can' as a modal verb, you could 'anchor' the node word to a part-of-speech
+					tag (like 'Noun', 'Verb' or more specifically 'VM').
+					
+					For most cases, choosing an 'anchor' tag isn't necessary.
+					""")
 	
 	to_left = st.slider("Choose a span to the left of the node word:", 0, 9, (4))
 	to_right = st.slider("Choose a span to the right of the node word:", 0, 9, (4))
 
 	with st.expander("Span explanation"):
 		st.markdown("""
-				Associations are calculated by counting the observed frequency within a
-				span around a node word and comparing that to the frequency that we would expect
-				given its overall frequency in a corpus.
-				
-				You could adjust the span if, for example, you wanted look at
-				the subjects of a verb. For that, you would want to search only the left of
-				the node word, setting the right span to 0. For verb object, you would want to
-				do the opposite. There could be cases when you want a narrower window or a
-				wider one.
-				""")
+					Associations are calculated by counting the observed frequency within a
+					span around a node word and comparing that to the frequency that we would expect
+					given its overall frequency in a corpus.
+					
+					You could adjust the span if, for example, you wanted look at
+					the subjects of a verb. For that, you would want to search only the left of
+					the node word, setting the right span to 0. For verb object, you would want to
+					do the opposite. There could be cases when you want a narrower window or a
+					wider one.
+					""")
 		
 	stat_mode = st.radio("Select a statistic:", ("NPMI", "PMI 2", "PMI 3", "PMI"), horizontal=True)
 	
@@ -162,13 +162,13 @@ else:
 
 	with st.expander("Statistics explanation"):
 		st.markdown("""
-				The most common statistic for measuring token associations is Pointwise Mutual Information (PMI),
-				first developed by [Church and Hanks](https://aclanthology.org/J90-1003/). One potentially problematic
-				characteristic of PMI is that it rewards (or generates high scores) for low frequency tokens.
-				
-				This can be handled by filtering for minimum frequencies and MI scores. Alternatively,
-				[other measures have been proposed, which you can select from here.](https://en.wikipedia.org/wiki/Pointwise_mutual_information)
-				""")
+					The most common statistic for measuring token associations is Pointwise Mutual Information (PMI),
+					first developed by [Church and Hanks](https://aclanthology.org/J90-1003/). One potentially problematic
+					characteristic of PMI is that it rewards (or generates high scores) for low frequency tokens.
+					
+					This can be handled by filtering for minimum frequencies and MI scores. Alternatively,
+					[other measures have been proposed, which you can select from here.](https://en.wikipedia.org/wiki/Pointwise_mutual_information)
+					""")
 
 	if st.session_state.collocations == 'Empty':
 		st.markdown(":warning: Your search didn't return any matches.")

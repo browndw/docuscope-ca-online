@@ -227,11 +227,6 @@ else:
 	st.markdown("""---""")
 	
 	st.markdown(":warning: Be sure that all file names are unique.")
-	with st.expander("In case of error"):
-		st.markdown("""
-			With some browser configurations, you may receive an error after clicking the 'Process Corpus' button.
-			If that happens, rather than using 'Browse files', try dragging and dropping files directly from a finder window.
-			""")
 	corp_files = st.file_uploader("Upload your target corpus", type=["txt"], accept_multiple_files=True)
 	
 	if len(corp_files) > 0:

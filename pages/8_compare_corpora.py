@@ -139,10 +139,13 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 	
 		with st.expander("Filtering and saving"):
 			st.markdown("""
-					Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
-					Clicking on the middle funnel icon will show the various filtering options.
-					Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
-					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
+				    Filters can be accessed by clicking on the three that appear while hovering over a column header.
+				    For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+				    Rows can be selected before or after filtering using the checkboxes.
+				    (The checkbox in the header will select/deselect all rows.)\n
+				    If rows are selected and appear in new table below the main one,
+				    those selected rows will be available for download in an Excel file.
+				    If no rows are selected, the full table will be processed for downloading after clicking the Download button.
 					""")
 	
 		selected = grid_response['selected_rows'] 
@@ -187,6 +190,7 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 		grid_response = AgGrid(
 			df,
 			gridOptions=go,
+			enable_enterprise_modules = False,
 			data_return_mode='FILTERED_AND_SORTED', 
 			update_mode='MODEL_CHANGED', 
 			columns_auto_size_mode='FIT_CONTENTS',
@@ -212,10 +216,13 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 	
 		with st.expander("Filtering and saving"):
 			st.markdown("""
-					Columns can be filtered by hovering over the column header and clicking on the 3 lines that appear.
-					Clicking on the middle funnel icon will show the various filtering options.
-					Alternatively, filters can be accessed by clicking 'Filters' on the sidebar.\n
-					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.
+				    Filters can be accessed by clicking on the three that appear while hovering over a column header.
+				    For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+				    Rows can be selected before or after filtering using the checkboxes.
+				    (The checkbox in the header will select/deselect all rows.)\n
+				    If rows are selected and appear in new table below the main one,
+				    those selected rows will be available for download in an Excel file.
+				    If no rows are selected, the full table will be processed for downloading after clicking the Download button.
 					""")
 		selected = grid_response['selected_rows'] 
 		if selected:
