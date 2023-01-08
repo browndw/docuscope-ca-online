@@ -1,6 +1,9 @@
 import streamlit as st
 
 st.title("Linguistically-informed and rhetorically-informed tagging")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/tagset_docuscope.html)")
+
 st.markdown("""
 	The application is designed to bridge traditional linguistically-informed corpus analysis with
 	rhetorically-informed corpus analysis (or computational rhetoric). 
