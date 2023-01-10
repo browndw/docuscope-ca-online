@@ -16,8 +16,6 @@ from docx.oxml.ns import qn
 from docx.opc.part import Part
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
-st.title("Explore single texts")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 	
@@ -113,6 +111,10 @@ def add_alt_chunk(doc: Document, html: str):
     alt_chunk = OxmlElement('w:altChunk')
     alt_chunk.set(qn('r:id'), r_id)
     doc.element.body.sectPr.addprevious(alt_chunk)
+    
+st.title("Explore single texts")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/single_document.html)")
 
 if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
 	st.write("Use the menus to select the tags you would like to highlight.")
