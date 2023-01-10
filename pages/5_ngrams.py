@@ -32,10 +32,8 @@ else:
     idx = 1
 
 st.title("Create a table of n-gram frequencies")
-st.markdown("""
-			[N-grams](https://en.wikipedia.org/wiki/N-gram) are sequences of tokens.
-			A 2-gram (or bigram) is two word sequence; a 3-gram (or trigram), a three word sequence, etc.
-			""")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/ngrams.html)")
 
 if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
