@@ -82,7 +82,7 @@ if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == True:
 	
 	with st.expander("Filtering and saving"):
 		st.markdown("""
-				Filters can be accessed by clicking on the three that appear while hovering over a column header.
+				Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
 				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
 				Rows can be selected before or after filtering using the checkboxes.
 				(The checkbox in the header will select/deselect all rows.)\n
