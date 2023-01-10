@@ -33,6 +33,9 @@ else:
     idx = 1
 
 st.title("Create a tag frequency table")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/tag_frequencies.html)")
+
 if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
 	tag_radio = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 
