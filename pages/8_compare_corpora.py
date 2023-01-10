@@ -263,7 +263,7 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 							row=alt.Row('Tag', title=None, header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Mean', order='descending')),
 							tooltip=[
 							alt.Tooltip('RF:Q', title="Per 100 Tokens", format='.2')
-							]).configure_facet(spacing=0.5).configure_legend(orient='bottom')				
+							]).configure_facet(spacing=0.5).configure_legend(orient='top')				
 				st.altair_chart(base, use_container_width=True)
 		with col2:
 			if st.button("Download"):
