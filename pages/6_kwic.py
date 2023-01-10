@@ -57,6 +57,8 @@ def kwic_st(tok, node_word, search_type, ignore_case=True):
 
 st.title("Create key words in context (KWIC)")
 
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/kwic.html)")
+
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -89,12 +91,16 @@ if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
 		reload_data=False
 		)
 	
-	with st.expander("See explanation"):
-		st.write("""
-				The chart above shows some numbers I picked for you.
-				I rolled actual dice for these, so they're *guaranteed* to
-				be random.
-		""")
+	with st.expander("Filtering and saving"):
+		st.markdown("""
+				Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
+				For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+				Rows can be selected before or after filtering using the checkboxes.
+				(The checkbox in the header will select/deselect all rows.)\n
+				If rows are selected and appear in new table below the main one,
+				those selected rows will be available for download in an Excel file.
+				If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+				""")
 
 	selected = grid_response['selected_rows'] 
 	if selected:
