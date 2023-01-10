@@ -25,9 +25,7 @@ st.markdown("""
 		| can       | VM   | 423 | 3148.39  | 94%   |
 		| students  | NN2  | 149 | 1109.014 | 20%   |
 		| community | NN1  | 141 | 1049.46  | 30%   |
-		
-		[CLAWS7 tagset](https://ucrel.lancs.ac.uk/claws7tags.html)
-		
+				
 		Or like this:
 		
 		| Token        | Tag                    | AF  | RF      | Range |
@@ -36,12 +34,13 @@ st.markdown("""
 		| can be       | Confidence Hedged      | 118 | 770.07  | 62%   |
 		| will be      | Future                 | 113 | 737.44  | 52%   |
 		| participants | Character              | 103 | 672.18  | 14%   |
-		
-		[DocuScope tagset](https://docuscospacy.readthedocs.io/en/latest/docuscope.html#categories)
-		
+				
 		Users can toggle between the tagsets within each tool.
 		In this way, the tool invites users to explore linguistic structure and variation from multiple perspectives.
 		""")
+		
+st.markdown("Consult the [user guide](https://browndw.github.io/docuscope-docs/tagset_docuscope.html) for more details")
+
 
 st.markdown("---")
 
@@ -60,9 +59,7 @@ st.markdown("#### The model vs. the tools")
 st.markdown("""
 		Importantly, this application uses neither the CLAWS7 tagger nor DocuScope.
 		Rather, it relies on a [spaCy model](https://huggingface.co/browndw/en_docusco_spacy) trained on those tagsets.
-		Users interested in the fully functional tools can find them here:
-		* [CLAWS7](https://ucrel.lancs.ac.uk/claws/)
-		* [DocuScope CA](https://cmu.flintbox.com/technologies/dcb2a164-b661-495d-a5b5-404871842268)
+
 		If you are using this application for research, that distinction is important to make in your methodology.
 		And those whose work upon which this application is based should always be appropriately cited.
 		""")
@@ -80,7 +77,7 @@ st.markdown("""
 st.markdown("---")
 
 st.markdown("""
-	## Limitations and warnings
+	#### Limitations and warnings
 	""")
 
 st.markdown("""
