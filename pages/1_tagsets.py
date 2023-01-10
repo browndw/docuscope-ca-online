@@ -80,40 +80,6 @@ st.markdown("""
 st.markdown("---")
 
 st.markdown("""
-	## DocuScope\n
-	[DocuScope tagset](https://docuscospacy.readthedocs.io/en/latest/docuscope.html#categories)
-	""")
-
-st.markdown("""
-	DocuScope is a dictionary-based tagger, developed by [David Kaufer and Suguru Ishizaki](https://www.igi-global.com/chapter/computer-aided-rhetorical-analysis/61054) at Carnegie Mellon University.\n
-	It consists of an enormous lexicon organized into a 3-level taxonomy. 
-	An analogue would be the [lexicons typically used in sentiment analysis](https://saifmohammad.com/WebPages/lexicons.html). 
-	Those usually organize words and phrases into 2 categories (positive and negative) and work by matching strings over a corpus of texts.\n
-	DocuScope works in the same basic way, but organizes its strings into many more categories and is orders of magnitude larger.
-	A typical sentiment lexicon may match 3-5 thousand strings. 
-	DocuScope matches 100s of millions. You can find a small, early version of the dictionary [here](https://github.com/docuscope/DocuScope-Dictionary-June-26-2012).
-	""")
-
-st.markdown("---")
-
-st.markdown("""
-	## CLAWS7\n
-	[CLAWS7 tagset](https://ucrel.lancs.ac.uk/claws7tags.html)
-	""")
-
-st.markdown("""
-	CLAWS7 is robust part-of-speech tagset developed at Lancaster University. [(Try it!)](http://ucrel-api.lancaster.ac.uk/claws/free.html)
-	It is used in the [BYU family of corpora](https://www.english-corpora.org/), 
-	a project headed by Mark Davies and in ongoing development.
-	The popularity of those data sets partly motivated the choice to use this tagset -- as opposed to say the [Penn Treebank tagset](https://www.ling.upenn.edu/courses/Fall_2003/ling001/penn_treebank_pos.html).\n
-	This allows users to compare their results directly to those from much larger corpora.
-	The tradeoff, is that CLAWS7 has is large and relatively fine-grained, 
-	which can be challenging for users with less familiarity to English syntax.
-	""")
-
-st.markdown("---")
-
-st.markdown("""
 	## Limitations and warnings
 	""")
 
