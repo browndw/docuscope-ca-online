@@ -94,6 +94,8 @@ def process_corpus(corp):
 		
 st.title("Load and manage your corpus")
 
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/load_corpus.html)")
+
 if st.session_state.ndocs > 0:
 	st.markdown('## Target corpus information:')
 	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
