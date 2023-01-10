@@ -17,11 +17,18 @@ if 'collocations' not in st.session_state:
 	st.session_state.collocations = ''
 
 st.title("Create tables of collocations")
-st.markdown("""[Collocations](https://www.lancaster.ac.uk/fss/courses/ling/corpus/Corpus3/3COLL.HTM) are characteristic, co-occurence patterns of tokens (or words).
-			""")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/collocations.html)")
+
 if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
 	
 	df = st.session_state.collocations
+	
+	st.markdown('## Target corpus information:')
+	st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
+	st.write('Number of word tokens in corpus: ', str(st.session_state.words))
+	st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
+
 		
 	gb = GridOptionsBuilder.from_dataframe(df)
 	gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
