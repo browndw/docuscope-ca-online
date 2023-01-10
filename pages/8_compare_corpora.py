@@ -10,8 +10,6 @@ import base64
 from io import BytesIO
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode
 
-st.title("Create a keyness table")
-
 if 'corpus' not in st.session_state:
 	st.session_state.corpus = ''
 
@@ -70,6 +68,10 @@ if st.session_state.count_7 % 2 == 0:
     idx_7 = 0
 else:
     idx_7 = 1
+
+st.title("Create a keyness table")
+
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/compare_corpora.html)")
 
 if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 
@@ -172,6 +174,18 @@ if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
 			df = st.session_state.kt_pos
 		else:
 			df = st.session_state.kt_ds
+
+		col1, col2 = st.columns([1,1])
+		with col1:
+			st.markdown('### Target corpus:')
+			st.write('Number of tokens in target corpus: ', str(st.session_state.tokens))
+			st.write('Number of word tokens in target corpus: ', str(st.session_state.words))
+			st.write('Number of documents in target corpus: ', str(st.session_state.ndocs))
+		with col2:
+			st.markdown('### Reference corpus:')
+			st.write('Number of tokens in reference corpus: ', str(st.session_state.ref_tokens))
+			st.write('Number of word tokens in referencecorpus: ', str(st.session_state.ref_words))
+			st.write('Number of documents in creferenceorpus: ', str(st.session_state.ref_ndocs))
 	
 		gb = GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
