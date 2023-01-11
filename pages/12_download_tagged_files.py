@@ -13,6 +13,8 @@ if 'corpus' not in st.session_state:
 	
 st.title("Download tagged files")
 
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/download_tagged_files.html)")
+
 st.markdown("Once a corpus has been processed, you can use this page to generate a zipped folder of tagged text files. The tags are embbedd into the text after a vertical bar:")
 st.markdown(">At|II root|NN1 , every|AT1 hypothesis|NN1 is|VBZ a|AT1 claim|NN1 about|II the|AT relevance|NN1")
 st.markdown("Because the tags identify mutliword units, spaces that occur within a token are replaced with underscores:")
