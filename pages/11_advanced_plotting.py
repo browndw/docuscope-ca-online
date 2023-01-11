@@ -124,6 +124,8 @@ def update_pca(coord_data, contrib_data):
 
 st.title("Create plots of frequencies or categories")
 
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/advanced_plotting.html)")
+
 if bool(isinstance(st.session_state.dtm_pos, pd.DataFrame)) == True:
 	tag_radio_tokens = st.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), horizontal=True)
 
