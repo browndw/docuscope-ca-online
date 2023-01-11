@@ -70,6 +70,8 @@ def update_ref():
 
 st.title("Create a keyness tables using pairwise comparisions of corpus parts")
 
+st.markdown("[![User Guide](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/user_guide.svg)](https://browndw.github.io/docuscope-docs/compare_corpus_parts.html)")
+
 if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 
 	table_radio = st.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), index=idx_8, on_change=increment_counter_8, horizontal=True)
@@ -128,7 +130,7 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 						a hypothesis test measuring observed vs. expected frequencies.
 						Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
 						The 'AF' column refers to the absolute token frequency.
-						The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
+						The 'RF'column refers to the relative token frequency (normalized per million tokens).
 						Note that for part-of-speech tags, tokens are normalized against word tokens,
 						while DocuScope tags are normalized against counts of all tokens including punctuation.
 						The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
@@ -136,7 +138,7 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 	
 		with st.expander("Filtering and saving"):
 			st.markdown("""
-						Filters can be accessed by clicking on the three that appear while hovering over a column header.
+						Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
 						For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
 						Rows can be selected before or after filtering using the checkboxes.
 						(The checkbox in the header will select/deselect all rows.)\n
@@ -182,6 +184,19 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 			df = st.session_state.kt_pos_cp
 		else:
 			df = st.session_state.kt_ds_cp
+
+		col1, col2 = st.columns([1,1])
+		
+		with col1:
+			st.markdown("#### Target corpus:")
+			st.write("Document categories: ", ', '.join(st.session_state.tar_cats))
+			st.write("Number of tokens: ", str(st.session_state.tar_tokens))
+			st.write("Number of word tokens: ", str(st.session_state.tar_words))
+		with col2:
+			st.markdown("#### Reference corpus:")
+			st.write("Document categories: ", ', '.join(st.session_state.ref_cats))
+			st.write("Number of tokens: ", str(st.session_state.ref_tokens))
+			st.write("Number of word tokens: ", str(st.session_state.ref_words))
 	
 		gb = GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -200,6 +215,7 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 		grid_response = AgGrid(
 			df,
 			gridOptions=go,
+			enable_enterprise_modules = False,
 			data_return_mode='FILTERED_AND_SORTED', 
 			update_mode='MODEL_CHANGED', 
 			columns_auto_size_mode='FIT_CONTENTS',
@@ -208,6 +224,29 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 			width='100%',
 			reload_data=False
 			)
+
+		with st.expander("Column explanation"):
+			st.markdown("""
+						The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
+						a hypothesis test measuring observed vs. expected frequencies.
+						Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
+						The 'AF' column refers to the absolute token frequency.
+						The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
+						Note that for part-of-speech tags, tokens are normalized against word tokens,
+						while DocuScope tags are normalized against counts of all tokens including punctuation.
+						The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
+						""")
+	
+		with st.expander("Filtering and saving"):
+			st.markdown("""
+						Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
+						For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
+						Rows can be selected before or after filtering using the checkboxes.
+						(The checkbox in the header will select/deselect all rows.)\n
+						If rows are selected and appear in new table below the main one,
+						those selected rows will be available for download in an Excel file.
+						If no rows are selected, the full table will be processed for downloading after clicking the Download button.
+						""")
 		
 		selected = grid_response['selected_rows'] 
 		if selected:
@@ -234,7 +273,7 @@ if bool(isinstance(st.session_state.kw_pos_cp, pd.DataFrame)) == True:
 							row=alt.Row('Tag', title=None, header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Mean', order='descending')),
 							tooltip=[
 							alt.Tooltip('RF:Q', title="Per 100 Tokens", format='.2')
-							]).configure_facet(spacing=0.5).configure_legend(orient='bottom')
+							]).configure_facet(spacing=0.5).configure_legend(orient='top')
 
 				st.altair_chart(base, use_container_width=True)
 
