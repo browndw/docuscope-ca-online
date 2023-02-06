@@ -1,0 +1,25 @@
+section[data-testid="stSidebar"] div.stButton button {
+    background-color: #DE350B;
+    color: white;
+}
+section[data-testid="stSidebar"] div.stButton button:hover {
+    background-color: #FFF0B3;
+    color: black;
+}
+section[data-testid="stSidebar"] div.stButton button:focus {
+    background-color: #FFF0B3;
+    color: black;
+}
+[data-testid="stHorizontalBlock"] div.stButton button:first-child { 
+    color: black;
+    background-color: #FFF0B3;
+}
+.element-container:nth-of-type(5) button { 
+    color: black;
+    background-color: #ABF5D1;
+}
+.image-txt-container {
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+}
