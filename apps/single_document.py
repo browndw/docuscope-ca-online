@@ -157,9 +157,7 @@ def main():
 				)
 
 				st.altair_chart(lex_density, use_container_width=True)
-				
-				st.dataframe(df_plot)
-						
+										
 		st.markdown(f"""
 					##### Tags:  {tag_html}
 					""", unsafe_allow_html=True)
