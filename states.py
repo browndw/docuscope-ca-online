@@ -14,11 +14,11 @@ STATES = {
     'count_9': 0,
     'dc_ds': '',
     'dc_pos': '',
-    'dc_simple': ''
+    'dc_simple': '',
     'doc_ds': '',
     'doc_key': '',
     'doc_pos': '',
-    'doc_simple': ''
+    'doc_simple': '',
     'doccats': '',
     'docids': '',
     'dtm_ds': '',
@@ -30,7 +30,7 @@ STATES = {
     'grpb': '',
     'html_ds': '',
     'html_pos': '',
-    'html_simple': ''
+    'html_simple': '',
     'html_str': '',
     'kw_ds_cp': '',
     'kw_ds': '',

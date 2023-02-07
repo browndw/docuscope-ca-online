@@ -92,7 +92,6 @@ def simplify_span(pos_span):
         df['Tag'].replace('^C\S*$', 'Conjunction', regex=True, inplace=True)
         return(df)
 
-
 def update_tags(html_state):
 	tags = st.session_state.tags
 	if len(tags)>5:
