@@ -9,6 +9,7 @@ from docx.oxml.ns import qn
 from docx.opc.part import Part
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 
+import re
 from collections import Counter
 import base64
 from io import BytesIO
@@ -35,6 +36,16 @@ def html_build(tok, key, count_by="tag"):
     doc = ''.join(df['Text'].tolist())
     return(doc)
 
+def html_simplify(html_str):
+    html_str = re.sub(r'span class="NN\S*">', 'span class="Noun">', html_str)
+    html_str = re.sub(r'span class="VV\S*">', 'span class="Verb">', html_str)
+    html_str = re.sub(r'span class="J\S*">', 'span class="Adjective">', html_str)
+    html_str = re.sub(r'span class="R\S*">', 'span class="Adverb">', html_str)
+    html_str = re.sub(r'span class="P\S*">', 'span class="Pronoun">', html_str)
+    html_str = re.sub(r'span class="I\S*">', 'span class="Preposition">', html_str)
+    html_str = re.sub(r'span class="C\S*">', 'span class="Conjunction">', html_str)
+    return(html_str)
+
 def doc_counts(doc_span, n_tokens, count_by='pos'):
     if count_by=='pos':
         df = Counter(doc_span[doc_span.Tag != 'Y'].Tag)
@@ -52,6 +63,35 @@ def doc_counts(doc_span, n_tokens, count_by='pos'):
         df.sort_values(by=['AF', 'Tag'], ascending=[False, True], inplace=True)
         df.reset_index(drop=True, inplace=True)
     return(df)
+
+def simplify_counts(pos_counts, n_tokens):
+        df = pos_counts.drop('RF', axis=1)
+        df['Tag'].replace('^NN\S*$', '#Noun', regex=True, inplace=True)
+        df['Tag'].replace('^VV\S*$', '#Verb', regex=True, inplace=True)
+        df['Tag'].replace('^J\S*$', '#Adjective', regex=True, inplace=True)
+        df['Tag'].replace('^R\S*$', '#Adverb', regex=True, inplace=True)
+        df['Tag'].replace('^P\S*$', '#Pronoun', regex=True, inplace=True)
+        df['Tag'].replace('^I\S*$', '#Preposition', regex=True, inplace=True)
+        df['Tag'].replace('^C\S*$', '#Conjunction', regex=True, inplace=True)
+        df = df.loc[df["Tag"].str.startswith('#', na=False)]
+        df['Tag'].replace('^#', '', regex=True, inplace=True)
+        df = df.groupby(['Tag'], as_index=False)['AF'].sum()
+        df.sort_values(by='AF', inplace=True, ignore_index=True, ascending=False)
+        df.reset_index(inplace=True)
+        df['RF'] = df.AF/n_tokens*100
+        return(df)
+        
+def simplify_span(pos_span):
+        df = pos_span.copy()
+        df['Tag'].replace('^NN\S*$', 'Noun', regex=True, inplace=True)
+        df['Tag'].replace('^VV\S*$', 'Verb', regex=True, inplace=True)
+        df['Tag'].replace('^J\S*$', 'Adjective', regex=True, inplace=True)
+        df['Tag'].replace('^R\S*$', 'Adverb', regex=True, inplace=True)
+        df['Tag'].replace('^P\S*$', 'Pronoun', regex=True, inplace=True)
+        df['Tag'].replace('^I\S*$', 'Preposition', regex=True, inplace=True)
+        df['Tag'].replace('^C\S*$', 'Conjunction', regex=True, inplace=True)
+        return(df)
+
 
 def update_tags(html_state):
 	tags = st.session_state.tags
@@ -96,14 +136,25 @@ def main():
 		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
 	
 		if tag_radio == 'Parts-of-Speech':
-			tag_list = st.sidebar.multiselect('Select tags to highlight', st.session_state.tags_pos, on_change = update_tags(st.session_state.html_pos), key='tags')
-			tag_colors = hex_highlights[:len(tag_list)]
-			tag_html = zip(tag_colors, tag_list)
-			tag_html = list(map('">'.join, tag_html))
-			tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
-			tag_html = '; '.join(tag_html)
-			tag_loc = st.session_state.doc_pos
-			df = st.session_state.dc_pos
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)
+			if tag_type == 'General':
+				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Noun', 'Verb', 'Adjective', 'Adverb', 'Pronoun', 'Preposition', 'Conjunction'], on_change = update_tags(st.session_state.html_simple), key='tags')
+				tag_colors = hex_highlights[:len(tag_list)]
+				tag_html = zip(tag_colors, tag_list)
+				tag_html = list(map('">'.join, tag_html))
+				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
+				tag_html = '; '.join(tag_html)
+				tag_loc = st.session_state.doc_simple
+				df = st.session_state.dc_simple
+			else:
+				tag_list = st.sidebar.multiselect('Select tags to highlight', st.session_state.tags_pos, on_change = update_tags(st.session_state.html_pos), key='tags')
+				tag_colors = hex_highlights[:len(tag_list)]
+				tag_html = zip(tag_colors, tag_list)
+				tag_html = list(map('">'.join, tag_html))
+				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
+				tag_html = '; '.join(tag_html)
+				tag_loc = st.session_state.doc_pos
+				df = st.session_state.dc_pos
 		else:
 			tag_list = st.sidebar.multiselect('Select tags to highlight', st.session_state.tags_ds, on_change = update_tags(st.session_state.html_ds), key='tags')
 			tag_colors = hex_highlights[:len(tag_list)]
@@ -161,7 +212,7 @@ def main():
 		st.markdown(f"""
 					##### Tags:  {tag_html}
 					""", unsafe_allow_html=True)
-		
+						
 		components.html(st.session_state.html_str, height=500, scrolling=True)
 		
 		st.dataframe(df)
@@ -230,18 +281,24 @@ def main():
 				st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 			else:
 				doc_pos = ds.tag_ruler(st.session_state.corpus, doc_key, count_by='pos')
+				doc_simple = simplify_span(doc_pos)
 				doc_ds = ds.tag_ruler(st.session_state.corpus, doc_key, count_by='ds')
 				doc_tokens = len(doc_pos.index)
 				doc_words = len(doc_pos[doc_pos.Tag != 'Y'])
 				dc_pos = doc_counts(doc_pos, doc_words, count_by='pos')
+				dc_simple = simplify_counts(dc_pos, doc_words)
 				dc_ds = doc_counts(doc_ds, doc_tokens, count_by='ds')
 				html_pos = html_build(st.session_state.corpus, doc_key, count_by='pos')
+				html_simple = html_simplify(html_pos)
 				html_ds = html_build(st.session_state.corpus, doc_key, count_by='ds')
 				st.session_state.doc_pos = doc_pos
+				st.session_state.doc_simple = doc_simple
 				st.session_state.doc_ds = doc_ds
 				st.session_state.dc_pos = dc_pos
+				st.session_state.dc_simple = dc_simple
 				st.session_state.dc_ds = dc_ds
 				st.session_state.html_pos = html_pos
+				st.session_state.html_simple = html_simple
 				st.session_state.html_ds = html_ds
 				st.session_state.doc_key = doc_key
 				st.experimental_rerun()
