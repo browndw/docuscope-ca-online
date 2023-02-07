@@ -69,17 +69,18 @@ def main():
 				df = st.session_state.kw_ds_cp
 	
 			col1, col2 = st.columns([1,1])
-			
 			with col1:
-				st.markdown("#### Target corpus:")
-				st.write("Document categories: ", ', '.join(st.session_state.tar_cats))
-				st.write("Number of tokens: ", str(st.session_state.tar_tokens))
-				st.write("Number of word tokens: ", str(st.session_state.tar_words))
+				t_cats = ', '.join(st.session_state.tar_cats)
+				st.markdown(f"""##### Target corpus information:
+				
+				Document categories: {t_cats}\n    Number of tokens: {st.session_state.tar_tokens}\n    Number of word tokens: {st.session_state.tar_words}
+				""")
 			with col2:
-				st.markdown("#### Reference corpus:")
-				st.write("Document categories: ", ', '.join(st.session_state.ref_cats))
-				st.write("Number of tokens: ", str(st.session_state.ref_tokens))
-				st.write("Number of word tokens: ", str(st.session_state.ref_words))
+				r_cats = ', '.join(st.session_state.ref_cats)
+				st.markdown(f"""##### Reference corpus information:
+				
+				Document categories: {r_cats}\n    Number of tokens: {st.session_state.ref_tokens}\n    Number of word tokens: {st.session_state.ref_words}
+				""")
 	
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -184,17 +185,18 @@ def main():
 				df = st.session_state.kt_ds_cp
 	
 			col1, col2 = st.columns([1,1])
-			
 			with col1:
-				st.markdown("#### Target corpus:")
-				st.write("Document categories: ", ', '.join(st.session_state.tar_cats))
-				st.write("Number of tokens: ", str(st.session_state.tar_tokens))
-				st.write("Number of word tokens: ", str(st.session_state.tar_words))
+				t_cats = ', '.join(st.session_state.tar_cats)
+				st.markdown(f"""##### Target corpus information:
+				
+				Document categories: {t_cats}\n    Number of tokens: {st.session_state.tar_tokens}\n    Number of word tokens: {st.session_state.tar_words}
+				""")
 			with col2:
-				st.markdown("#### Reference corpus:")
-				st.write("Document categories: ", ', '.join(st.session_state.ref_cats))
-				st.write("Number of tokens: ", str(st.session_state.ref_tokens))
-				st.write("Number of word tokens: ", str(st.session_state.ref_words))
+				r_cats = ', '.join(st.session_state.ref_cats)
+				st.markdown(f"""##### Reference corpus information:
+				
+				Document categories: {r_cats}\n    Number of tokens: {st.session_state.ref_tokens}\n    Number of word tokens: {st.session_state.ref_words}
+				""")
 		
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination

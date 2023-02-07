@@ -26,15 +26,17 @@ def main():
 		
 		col1, col2 = st.columns([1,1])
 		with col1:
-			st.markdown('#### Target corpus information:')
-			st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
-			st.write('Number of word tokens in corpus: ', str(st.session_state.words))
-			st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
+			st.markdown(f"""##### Target corpus information:
+			
+			Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
+			""")
 		with col2:
-			st.markdown('#### Collocate information:')
-			st.write('Association measure: ', str(st.session_state.stat).upper())
-			st.write('Span: ', str(st.session_state.span_l) + 'L - ' + str(st.session_state.span_r) + 'R')
-			st.write('Node word: ', str(st.session_state.node))
+			am = str(st.session_state.stat).upper()
+			span = str(st.session_state.span_l) + 'L - ' + str(st.session_state.span_r) + 'R'
+			st.markdown(f"""##### Collocate information:
+			
+			Association measure: {am}\n    Span: {span}\n    Node word: {st.session_state.node}
+			""")
 			
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination

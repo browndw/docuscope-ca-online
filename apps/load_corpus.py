@@ -67,19 +67,19 @@ def main():
 			setattr(st.session_state, key, value)
 
 	if st.session_state.ndocs > 0:
-		st.markdown('## Target corpus information:')
-		st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
-		st.write('Number of word tokens in corpus: ', str(st.session_state.words))
-		st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
+		st.markdown(f"""##### Target corpus information:
+		
+		Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
+		""")
 		with st.expander("Documents:"):
 			st.write(sorted(st.session_state.docids))
 		
 		if st.session_state.doccats != '':
-			st.markdown('### Target corpus metadata:')
+			st.markdown('##### Target corpus metadata:')
 			with st.expander("Counts of document categories:"):
 				st.write(Counter(st.session_state.doccats))
 		else:
-			st.sidebar.markdown('### Target corpus metadata:')
+			st.sidebar.markdown('##### Target corpus metadata:')
 			load_cats = st.sidebar.radio("Do you have categories in your file names to process?", ("No", "Yes"), horizontal=True)
 			if load_cats == 'Yes':
 				if st.sidebar.button("Process Document Metadata"):
@@ -100,10 +100,10 @@ def main():
 			st.sidebar.markdown("""---""")
 		
 		if st.session_state.reference != '':
-			st.markdown('## Reference corpus information:')
-			st.write('Number of tokens in reference corpus: ', str(st.session_state.ref_tokens))
-			st.write('Number of word tokens in reference corpus: ', str(st.session_state.ref_words))
-			st.write('Number of documents in reference corpus: ', str(st.session_state.ref_ndocs))
+			st.markdown(f"""##### Reference corpus information:
+			
+			Number of tokens in corpus: {st.session_state.ref_tokens}\n    Number of word tokens in corpus: {st.session_state.ref_words}\n    Number of documents in corpus: {st.session_state.ref_ndocs}
+			""")
 			with st.expander("Documents in reference corpus:"):
 				st.write(sorted(st.session_state.ref_docids))
 				
@@ -113,7 +113,6 @@ def main():
 			if load_ref == 'Yes':
 				ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
 				if len(ref_files) > 0:
-					st.sidebar.markdown("---")
 					st.sidebar.markdown("### Process Reference")
 					st.sidebar.markdown("Click the button to process your reference corpus files.")
 					if st.sidebar.button("Process Reference Corpus"):
@@ -154,6 +153,7 @@ def main():
 								st.session_state.ref_docids = list(ref_corp.keys())
 								st.session_state.ref_ndocs = len(list(ref_corp.keys()))
 								st.experimental_rerun()
+					st.sidebar.markdown("---")
 		
 		st.sidebar.markdown('### Reset all tools and files:')
 		st.sidebar.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")

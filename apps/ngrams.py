@@ -38,10 +38,10 @@ def main():
 		else:
 			df = st.session_state.ng_ds
 	
-		st.markdown('## Target corpus information:')
-		st.write('Number of tokens in corpus: ', str(st.session_state.tokens))
-		st.write('Number of word tokens in corpus: ', str(st.session_state.words))
-		st.write('Number of documents in corpus: ', str(st.session_state.ndocs))
+		st.markdown(f"""##### Target corpus information:
+		
+		Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
+		""")
 			
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
