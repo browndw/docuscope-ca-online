@@ -33,7 +33,7 @@ def get_img_with_header(local_img_path):
     bin_str = get_base64_of_bin_file(local_img_path)
     html_code = f'''
 	<div class="image-txt-container" style="background-color: #FFE380; border-radius: 5px">
-	  <img src="data:image/{img_format};base64,{bin_str}">
+	  <img src="data:image/{img_format};base64,{bin_str}" height="125">
 	  <h2 style="color: #DE350B; text-align:center">
 	    DocuScope
 	  </h2>
