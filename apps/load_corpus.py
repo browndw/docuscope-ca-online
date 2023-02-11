@@ -19,7 +19,7 @@ CATEGORY = categories.CORPUS_LOAD
 TITLE = "Mangage Corpus Data"
 KEY_SORT = 1
 
-@st.cache(show_spinner=False, allow_output_mutation=True, suppress_st_warning=True)
+@st.cache_data(show_spinner=False)
 def load_models():
     large_model = spacy.load(MODEL_LARGE)
     small_model = spacy.load(MODEL_SMALL)
