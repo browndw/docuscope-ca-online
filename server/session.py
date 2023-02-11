@@ -46,13 +46,12 @@ def get_session(session_id: str = None):
     if session_id is None:
         session_id = get_session_id()
 
-    ctx = st.runtime.scriptrunner.get_script_run_ctx()
-    session_info = st.runtime.get_instance().get_client(ctx.session_id)
+    session_info = st.runtime.get_instance()._session_mgr.get_active_session_info(session_id)
 
     if session_info is None:
         raise ValueError("No session info found")
 
-    report_session = session_info.request.headers
+    report_session = session_info.session
 
     return report_session
 
