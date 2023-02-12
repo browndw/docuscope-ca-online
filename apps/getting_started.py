@@ -72,12 +72,10 @@ def main():
 		You will also find a drop-down that will allow you to **select the model** you'd like to use.
 		The model you select **will not affect part-of-speech** tags.
 		It does change the **DocuScope** tagset. Each model was trained on data tagged with a different DocuScope dictionary.
-		There are 4 to choose from:
+		There are currently 2 to choose from:
 		
-		* The current full dictionary. This has the most categories.
-		* The current dictionary with the highest level categories collapsed. This has some categories.
+		* The full dictionary. This has the most categories.
 		* A "common dictionary". This has fewer categories with names less strictly rhetorical and more interdisciplinary.
-		* A "legacy dictionary". This is trained on an older but popular tagset.
 		
 		Your choice of model will depend on your goals and which tagset you find most explanatory.
 		Are you trying to just build a predictive model? Or analyze patterns you need to explain to an audience?

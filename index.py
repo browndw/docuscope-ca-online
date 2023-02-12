@@ -8,6 +8,8 @@ import time
 import streamlit as st
 import os
 import base64
+import sys
+import warnings
 
 import apps as _stable_apps
 import utilities
@@ -85,6 +87,8 @@ def _get_apps_from_module(module):
     return apps
 
 def index(application_options):
+    if not sys.warnoptions:
+        warnings.simplefilter("ignore")
     # set all states from dictionary
     for key, value in _states.STATES.items():
         if key not in st.session_state:
@@ -93,7 +97,7 @@ def index(application_options):
     with open(PL_LOGO) as f:
         pl_logo_text = f.read()
     b64 = base64.b64encode(pl_logo_text.encode('utf-8')).decode("utf-8")
-    pl_html = r'<a href="https://github.com/browndw/corpus-tagger/"><img src="data:image/svg+xml;base64,%s"/></a>' % b64
+    pl_html = r'<a href="https://github.com/browndw/corpus-tagger/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2023 David Brown, Suguru Ishizaki, David Kaufer' % b64
     
     st.markdown(pl_html, unsafe_allow_html=True)
 
@@ -164,6 +168,8 @@ def index(application_options):
                     swap_app(app_key)
     
 def main():
+    if not sys.warnoptions:
+        warnings.simplefilter("ignore")
     session_state = utilities.session_state(app=get_url_app())
 
     stable_apps = _get_apps_from_module(_stable_apps)
