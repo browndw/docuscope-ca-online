@@ -201,10 +201,8 @@ def main():
 	
 		with st.sidebar.expander("Which model do I choose?"):
 			st.markdown("""
-					(:construction_worker: Under construction.) DocuScope has been in development since the late 1990s. Not surprisingly, the tagsets have changed.
-					Additionally, specialized versions of the dictionary have been developed.
-					As new spaCy models are trained on various tagsets, those will become available to use here.
-					In the initial version of this tool, only one model is available.
+					For detailed descriptions, see the tags tables available from the Help menu.
+					But in short, the full dictionary has more categories and coverage than the common dictionary.
 					""")		
 		st.sidebar.markdown("---")
 				
