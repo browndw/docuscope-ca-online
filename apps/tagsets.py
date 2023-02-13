@@ -10,7 +10,7 @@ def main():
 	
 	st.markdown("##### Parts-of-Speech (CLAWS7)")
 	st.markdown("""
-	Note that lexical categories all begin with the same letter (e.g., V- for verb).
+	Note that lexical categories all begin with the same letter (e.g., *V* for verb).
 	This is useful for filtering.
 	""")
 	st.markdown("""
@@ -193,7 +193,6 @@ def main():
 			| Reasoning                   | Language that has a reasoning focus, supporting inferences about cause, consequence, generalization, concession, and linear inference either from premise to conclusion or conclusion to premise                                                                           | *because*, *therefore*, *analysis*, *even if*, *as a result*, *indicating that*             |
 			| Responsibility              | Referencing the language of responsibility.                                                                                                                                                                                                                                | *supposed to*, *requirements*, *obligations*                                                |
 			| Strategic                   | This dimension is active when the text structures strategies activism, advantage seeking, game playing cognition, plans, and goal seeking.                                                                                                                                 | *plan*, *trying to*, *strategy*, *decision*, *coordinate*, *look at the*                    |
-			| Syntactic Complexity        | The features in this category are often what are called “function words,” like determiners and prepositions.                                                                                                                                                               | *the*, *to*, *for*, *in*, *a lot of*                                                        |
 			| Uncertainty                 | References uncertainty, when confidence levels are unknown.                                                                                                                                                                                                                | *kind of*, *I have no idea*, *for some reason*                                              |
 			| Updates                     | References updates that anticipate someone searching for information and receiving it                                                                                                                                                                                      | *already*, *a new*, *now that*, *here are some*                                             |
 			""")
