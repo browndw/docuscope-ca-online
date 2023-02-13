@@ -1,44 +1,23 @@
 {
   "lang":"en",
-  "name":"docusco_spacy_fc",
-  "version":"1.1",
-  "description":"English pipeline for part-of-speech and rhetorical tagging.",
+  "name":"docusco_spacy_cd",
+  "version":"1.2",
+  "description":"English pipeline for part-of-speech and rhetorical tagging using a smaller 'common dictionary'.",
   "author":"David Brown",
   "email":"dwb2@andrew.cmu.edu",
-  "url":"https://browndw.github.io/docuscope-docs/",
+  "url":"https://docuscope.github.io",
   "license":"MIT",
-  "spacy_version":">=3.4.3,<3.5.0",
   "spacy_git_version":"Unknown",
   "vectors":{
     "width":0,
     "vectors":0,
     "keys":0,
-    "name":null
+    "name":null,
+    "mode":"default"
   },
   "labels":{
     "tok2vec":[
 
-    ],
-    "ner":[
-      "ActorsAbstractions",
-      "ActorsFirstPerson",
-      "ActorsPeople",
-      "ActorsPublicEntities",
-      "CitationAuthority",
-      "CitationControversy",
-      "CitationNeutral",
-      "ConfidenceHedged",
-      "ConfidenceHigh",
-      "OrganizationNarrative",
-      "OrganizationReasoning",
-      "PlanningFuture",
-      "PlanningStrategy",
-      "SentimentNegative",
-      "SentimentPositive",
-      "SignpostingAcademicWritingMoves",
-      "SignpostingMetadiscourse",
-      "StanceEmphatic",
-      "StanceModerated"
     ],
     "tagger":[
       "APPGE",
@@ -291,128 +270,147 @@
       "ZZ2",
       "ZZ221",
       "ZZ222"
+    ],
+    "ner":[
+      "ActorsAbstractions",
+      "ActorsFirstPerson",
+      "ActorsPeople",
+      "ActorsPublicEntities",
+      "CitationAuthority",
+      "CitationControversy",
+      "CitationHedged",
+      "CitationNeutral",
+      "ConfidenceHedged",
+      "ConfidenceHigh",
+      "OrganizationNarrative",
+      "OrganizationReasoning",
+      "PlanningFuture",
+      "PlanningStrategy",
+      "SentimentNegative",
+      "SentimentPositive",
+      "SignpostingAcademicWritingMoves",
+      "SignpostingMetadiscourse",
+      "StanceEmphatic",
+      "StanceModerated"
     ]
   },
   "pipeline":[
     "tok2vec",
-    "ner",
-    "tagger"
+    "tagger",
+    "ner"
   ],
   "components":[
     "tok2vec",
-    "ner",
-    "tagger"
+    "tagger",
+    "ner"
   ],
   "disabled":[
 
   ],
   "performance":{
-    "ents_f":0.7961390551,
-    "ents_p":0.7968274908,
-    "ents_r":0.795451808,
+    "tag_acc":0.9734866573,
+    "ents_f":0.7826346995,
+    "ents_p":0.7896141572,
+    "ents_r":0.7757775447,
     "ents_per_type":{
       "ActorsFirstPerson":{
-        "p":0.835104181,
-        "r":0.8486888234,
-        "f":0.8418417026
-      },
-      "ActorsAbstractions":{
-        "p":0.7946439745,
-        "r":0.8252469243,
-        "f":0.8096563742
-      },
-      "SentimentPositive":{
-        "p":0.7316779698,
-        "r":0.6715863454,
-        "f":0.7003455136
+        "p":0.8180863993,
+        "r":0.8443950279,
+        "f":0.8310325477
       },
       "ActorsPeople":{
-        "p":0.8565001082,
-        "r":0.8951890034,
-        "f":0.8754173023
-      },
-      "SignpostingMetadiscourse":{
-        "p":0.8922299735,
-        "r":0.8867901973,
-        "f":0.8895017687
-      },
-      "OrganizationReasoning":{
-        "p":0.8403589316,
-        "r":0.8036320096,
-        "f":0.821585229
-      },
-      "SentimentNegative":{
-        "p":0.7051918105,
-        "r":0.6762715272,
-        "f":0.6904289526
-      },
-      "OrganizationNarrative":{
-        "p":0.7673939893,
-        "r":0.7567238405,
-        "f":0.7620215647
-      },
-      "ActorsPublicEntities":{
-        "p":0.804964539,
-        "r":0.8102320048,
-        "f":0.8075896828
-      },
-      "ConfidenceHedged":{
-        "p":0.841507177,
-        "r":0.8053806525,
-        "f":0.8230476748
-      },
-      "StanceEmphatic":{
-        "p":0.7796646604,
-        "r":0.8231956423,
-        "f":0.8008390373
-      },
-      "ConfidenceHigh":{
-        "p":0.7807228916,
-        "r":0.7592902578,
-        "f":0.7698574338
-      },
-      "PlanningStrategy":{
-        "p":0.7334916865,
-        "r":0.6742358079,
-        "f":0.7026166098
-      },
-      "PlanningFuture":{
-        "p":0.7495941558,
-        "r":0.7705465165,
-        "f":0.7599259412
-      },
-      "SignpostingAcademicWritingMoves":{
-        "p":0.6739130435,
-        "r":0.5403669725,
-        "f":0.599796334
-      },
-      "CitationAuthority":{
-        "p":0.7826086957,
-        "r":0.6186579378,
-        "f":0.6910420475
+        "p":0.855646716,
+        "r":0.8830180997,
+        "f":0.8691169573
       },
       "CitationNeutral":{
-        "p":0.6728971963,
-        "r":0.7731543624,
-        "f":0.7195502811
+        "p":0.7527158376,
+        "r":0.7425267908,
+        "f":0.7475865985
       },
-      "StanceModerated":{
-        "p":0.781121751,
-        "r":0.727388535,
-        "f":0.753298153
+      "SentimentNegative":{
+        "p":0.7090227054,
+        "r":0.6414706491,
+        "f":0.6735571909
+      },
+      "ActorsAbstractions":{
+        "p":0.7691966267,
+        "r":0.8180602299,
+        "f":0.7928762968
+      },
+      "PlanningStrategy":{
+        "p":0.721360087,
+        "r":0.6471005497,
+        "f":0.6822154709
+      },
+      "SignpostingAcademicWritingMoves":{
+        "p":0.6508373967,
+        "r":0.5615511249,
+        "f":0.60290652
+      },
+      "OrganizationNarrative":{
+        "p":0.7794650481,
+        "r":0.7044971007,
+        "f":0.74008743
+      },
+      "PlanningFuture":{
+        "p":0.7692376361,
+        "r":0.7372518823,
+        "f":0.7529051988
+      },
+      "ConfidenceHedged":{
+        "p":0.8042735043,
+        "r":0.7942268737,
+        "f":0.7992186173
+      },
+      "SentimentPositive":{
+        "p":0.7252046892,
+        "r":0.6383048418,
+        "f":0.678985594
+      },
+      "StanceEmphatic":{
+        "p":0.7869956077,
+        "r":0.8246021505,
+        "f":0.8053601059
+      },
+      "SignpostingMetadiscourse":{
+        "p":0.9005463375,
+        "r":0.8505900903,
+        "f":0.8748556405
       },
       "CitationControversy":{
-        "p":0.8165137615,
-        "r":0.7355371901,
-        "f":0.7739130435
+        "p":0.7772643253,
+        "r":0.7109044801,
+        "f":0.7426048565
+      },
+      "ActorsPublicEntities":{
+        "p":0.8000974738,
+        "r":0.7844855049,
+        "f":0.7922145816
+      },
+      "OrganizationReasoning":{
+        "p":0.8085699285,
+        "r":0.8050261359,
+        "f":0.8067941408
+      },
+      "ConfidenceHigh":{
+        "p":0.7475272184,
+        "r":0.7257841647,
+        "f":0.7364952501
+      },
+      "CitationAuthority":{
+        "p":0.7098366882,
+        "r":0.6263404826,
+        "f":0.6654797935
+      },
+      "StanceModerated":{
+        "p":0.7352631579,
+        "r":0.7569764292,
+        "f":0.7459618209
       }
     },
-    "tag_acc":0.974676919,
-    "tok2vec_loss":85069.4065452221,
-    "ner_loss":36953.4789167639,
-    "tagger_loss":11203.3119354248
-  },
-  "requirements":[
-
-  ]
+    "tok2vec_loss":59374.2493771126,
+    "tagger_loss":11360.4048709869,
+    "ner_loss":39417.2632061559
+  }
 }
