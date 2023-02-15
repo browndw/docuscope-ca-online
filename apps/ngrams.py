@@ -147,7 +147,7 @@ def main():
 				st.markdown(":neutral_face: It doesn't look like you've loaded a corpus yet.")
 			else:
 				tp = st.session_state.corpus
-				with st.spinner('Processing ngrams...'):
+				with st.spinner('Processing n-grams...'):
 					ng_pos = ds.ngrams_table(tp, span, st.session_state.words)
 					ng_ds = ds.ngrams_table(tp, span, st.session_state.tokens, count_by='ds')
 					#cap size of dataframe
