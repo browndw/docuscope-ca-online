@@ -37,6 +37,7 @@ STATES = {
     'kw_pos_cp': '',
     'kw_pos': '',
     'kwic': '',
+    'min_freq': 0,
     'ndocs': 0,
     'ng_ds': '',
     'ng_pos': '',
