@@ -145,7 +145,7 @@ def main():
 				with st.spinner('Processing ngrams...'):
 					ng_pos = ds.ngrams_table(tp, span, st.session_state.words)
 					ng_ds = ds.ngrams_table(tp, span, st.session_state.tokens, count_by='ds')
-					
+					#cap size of dataframe
 					if len(ng_pos.index > 100000):
 						ng_pos = ng_pos.iloc[:100000]
 						min_freq = ng_pos['AF'].min()
