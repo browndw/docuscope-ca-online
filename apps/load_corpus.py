@@ -160,7 +160,6 @@ def main():
 		if st.sidebar.button("Reset Corpus"):
 			for key in st.session_state.keys():
 				del st.session_state[key]
-			st.experimental_singleton.clear()
 			for key, value in _states.STATES.items():
 				if key not in st.session_state:
 					setattr(st.session_state, key, value)
