@@ -145,6 +145,13 @@ def main():
 				with st.spinner('Processing ngrams...'):
 					ng_pos = ds.ngrams_table(tp, span, st.session_state.words)
 					ng_ds = ds.ngrams_table(tp, span, st.session_state.tokens, count_by='ds')
+					
+					if len(ng_pos.index > 100000):
+						ng_pos = ng_pos.iloc[:100000]
+						min_freq = ng_pos['AF'].min()
+						ng_pos = ng_pos[(ng_pos['AF'] > min_freq)]
+						ng_ds = ng_ds[(ng_ds['AF'] > min_freq)]
+
 				st.session_state.ng_pos = ng_pos
 				st.session_state.ng_ds = ng_ds
 				st.experimental_rerun()
