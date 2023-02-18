@@ -24,6 +24,8 @@ STATES = {
     'dtm_ds': '',
     'dtm_pos': '',
     'dtm_simple': '',
+    'dup_ids': '',
+    'exceptions': '',
     'ft_ds': '',
     'ft_pos': '',
     'grpa': '',
@@ -45,6 +47,7 @@ STATES = {
     'pca_idx': 1,
     'pca': '',
     'ref_docids': '',
+    'ref_exceptions': '',
     'ref_ndocs': 0,
     'ref_tokens': 0,
     'ref_words': 0,
@@ -62,5 +65,6 @@ STATES = {
     'tt_pos': '',
     'units': '',
     'variance': '',
+    'warning': 0,
     'words': 0,
 }
