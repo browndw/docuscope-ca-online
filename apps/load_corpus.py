@@ -425,7 +425,7 @@ def main():
 					Once you have loaded a target corpus, you can add a reference corpus for comparison.
 					Also note that you can encode metadata into your filenames, which can used for further analysis.
 					(See naming tips.)\n
-					The tool is designed to work with smallish corpora (~2 million words or less).
+					The tool is designed to work with smallish corpora **(~3 million words or less)**.
 					Processing times may vary, but you can expect the initial corpus processing to take roughly 1 minute for every 1 million words.
 					""")
 		
