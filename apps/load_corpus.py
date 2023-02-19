@@ -22,6 +22,7 @@ MODEL_DETECT = str(HERE.joinpath("models/lid.176.ftz"))
 CATEGORY = categories.CORPUS_LOAD
 TITLE = "Mangage Corpus Data"
 KEY_SORT = 1
+MAX_BYTES = 20000000
 
 warning_1 = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
@@ -36,9 +37,29 @@ def warning_2(duplicates):
     html_code = f'''
 	<div style="background-color: #fddfd7; padding-left: 5px;">
 	<p>&#128555; The files you selected could not be processed.
-	Your corpus contains these <b>duplicate file names</b>:</p>
+	Files with these <b>names</b> were submitted more than once:</p>
 	<p><b>{dups}</b></p>
 	Plese remove duplicates before processing.
+	</div>
+    '''
+    return html_code
+
+warning_3 = """
+	<div style="background-color: #fddfd7; padding-left: 5px;">
+	&#128555; Your corpus is too large for online processing.
+	The online version of DocuScope Corpus Analysis & Concordancer accepts data up to roughly 3 million words.
+	If you'd like to process more data, try <a href="https://github.com/browndw/docuscope-cac">the desktop version of the tool</a>, which available for free.
+	</div>
+	"""
+
+def warning_4(duplicates):
+    dups = ', '.join(duplicates)
+    html_code = f'''
+	<div style="background-color: #fddfd7; padding-left: 5px;">
+	<p>&#128555; The files you selected could not be processed.
+	Files with these <b>names</b> were also submitted as part of your target corpus:</p>
+	<p><b>{dups}</b></p>
+	Plese remove files from your reference corpus before processing.
 	</div>
     '''
     return html_code
@@ -107,79 +128,73 @@ def determine_if_file_is_english(text_str, detect_model):
 def process_corpus(corp, detect_model, nlp_model):
 	doc_ids = [doc.name for doc in corp]
 	doc_ids = [doc.replace(" ", "") for doc in doc_ids]
-	if len(doc_ids) > len(set(doc_ids)):
-		dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
-		tp = {}
-		exceptions = []
-		return tp, exceptions, dup_ids
-	else:
-		is_punct = re.compile("[{}]+\s*$".format(re.escape(string.punctuation)))
-		is_digit = re.compile("\d[\d{}]*\s*$".format(re.escape(string.punctuation)))
-		tp = {}
-		exceptions = []
-		dup_ids = []
-		conf_eng = []
-		for doc in corp:
-			try:
-				doc_txt = doc.getvalue().decode('utf-8')
-			except:
+	is_punct = re.compile("[{}]+\s*$".format(re.escape(string.punctuation)))
+	is_digit = re.compile("\d[\d{}]*\s*$".format(re.escape(string.punctuation)))
+	tp = {}
+	exceptions = []
+	dup_ids = []
+	conf_eng = []
+	for doc in corp:
+		try:
+			doc_txt = doc.getvalue().decode('utf-8')
+		except:
+			exceptions.append(doc.name)
+		else:
+			doc_txt = unidecode.unidecode(doc_txt)
+			is_english = determine_if_file_is_english(doc_txt, detect_model)
+			if is_english == False:
 				exceptions.append(doc.name)
 			else:
-				doc_txt = unidecode.unidecode(doc_txt)
-				is_english = determine_if_file_is_english(doc_txt, detect_model)
-				if is_english == False:
-					exceptions.append(doc.name)
-				else:
-					doc_id = doc.name.replace(" ", "")
-					doc_txt = pre_process(doc_txt)
-					doc_len = len(doc_txt)
-					if doc_len > 1000000:
-						n_chunks = math.ceil(doc_len/750000)
-						chunk_idx = [math.ceil(i/n_chunks*doc_len) for i in range(1, n_chunks)]
+				doc_id = doc.name.replace(" ", "")
+				doc_txt = pre_process(doc_txt)
+				doc_len = len(doc_txt)
+				if doc_len > 1000000:
+					n_chunks = math.ceil(doc_len/750000)
+					chunk_idx = [math.ceil(i/n_chunks*doc_len) for i in range(1, n_chunks)]
+					try:
+						split_idx = [re.search('[\.\?!] [A-Z]', doc_txt[idx:]).span()[1] + (idx-1) for idx in chunk_idx]
+					except:
 						try:
-							split_idx = [re.search('[\.\?!] [A-Z]', doc_txt[idx:]).span()[1] + (idx-1) for idx in chunk_idx]
-						except:
-							try:
-								split_idx = [re.search(' ', doc_txt[idx:]).span()[0] + idx for idx in chunk_idx]
-							except :
-								exceptions.append(doc.name)
-						else:
-							split_idx.insert(0, 0)
-							doc_chunks = [doc_txt[i:j] for i, j in zip(split_idx, split_idx[1:]+[None])]
-							token_list = []
-							tag_list = []
-							iob_ent = []
-							for chunk in doc_chunks:
-								chunk_taged = nlp_model(chunk)
-								token_chunk = [token.text for token in chunk_taged]
-								ws_chunk = [token.whitespace_ for token in chunk_taged]
-								token_chunk = list(map(''.join, zip(token_chunk, ws_chunk)))
-								iob_chunk = [token.ent_iob_ for token in chunk_taged]
-								ent_chunk = [token.ent_type_ for token in chunk_taged]
-								iob_ent_chunk = list(map('-'.join, zip(iob_chunk, ent_chunk)))
-								tag_chunk = [token.tag_ for token in chunk_taged]
-								tag_chunk = ['Y' if bool(is_punct.match(token_chunk[i])) else v for i, v in enumerate(tag_chunk)]
-								tag_chunk = ['MC' if bool(is_digit.match(token_chunk[i])) and tag_chunk[i] != 'Y' else v for i, v in enumerate(tag_chunk)]
-								token_list.append(token_chunk)
-								tag_list.append(tag_chunk)
-								iob_ent.append(iob_ent_chunk)
-							token_list = [item for sublist in token_list for item in sublist]
-							tag_list = [item for sublist in tag_list for item in sublist]
-							iob_ent = [item for sublist in iob_ent for item in sublist]
-							tp.update({doc_id: (list(zip(token_list, tag_list, iob_ent)))})
+							split_idx = [re.search(' ', doc_txt[idx:]).span()[0] + idx for idx in chunk_idx]
+						except :
+							exceptions.append(doc.name)
 					else:
-						doc_taged = nlp_model(doc_txt)
-						token_list = [token.text for token in doc_taged]
-						ws_list = [token.whitespace_ for token in doc_taged]
-						token_list = list(map(''.join, zip(token_list, ws_list)))
-						iob_list = [token.ent_iob_ for token in doc_taged]
-						ent_list = [token.ent_type_ for token in doc_taged]
-						iob_ent = list(map('-'.join, zip(iob_list, ent_list)))
-						tag_list = [token.tag_ for token in doc_taged]
-						tag_list = ['Y' if bool(is_punct.match(token_list[i])) else v for i, v in enumerate(tag_list)]
-						tag_list = ['MC' if bool(is_digit.match(token_list[i])) and tag_list[i] != 'Y' else v for i, v in enumerate(tag_list)]
+						split_idx.insert(0, 0)
+						doc_chunks = [doc_txt[i:j] for i, j in zip(split_idx, split_idx[1:]+[None])]
+						token_list = []
+						tag_list = []
+						iob_ent = []
+						for chunk in doc_chunks:
+							chunk_taged = nlp_model(chunk)
+							token_chunk = [token.text for token in chunk_taged]
+							ws_chunk = [token.whitespace_ for token in chunk_taged]
+							token_chunk = list(map(''.join, zip(token_chunk, ws_chunk)))
+							iob_chunk = [token.ent_iob_ for token in chunk_taged]
+							ent_chunk = [token.ent_type_ for token in chunk_taged]
+							iob_ent_chunk = list(map('-'.join, zip(iob_chunk, ent_chunk)))
+							tag_chunk = [token.tag_ for token in chunk_taged]
+							tag_chunk = ['Y' if bool(is_punct.match(token_chunk[i])) else v for i, v in enumerate(tag_chunk)]
+							tag_chunk = ['MC' if bool(is_digit.match(token_chunk[i])) and tag_chunk[i] != 'Y' else v for i, v in enumerate(tag_chunk)]
+							token_list.append(token_chunk)
+							tag_list.append(tag_chunk)
+							iob_ent.append(iob_ent_chunk)
+						token_list = [item for sublist in token_list for item in sublist]
+						tag_list = [item for sublist in tag_list for item in sublist]
+						iob_ent = [item for sublist in iob_ent for item in sublist]
 						tp.update({doc_id: (list(zip(token_list, tag_list, iob_ent)))})
-		return tp, exceptions, dup_ids
+				else:
+					doc_taged = nlp_model(doc_txt)
+					token_list = [token.text for token in doc_taged]
+					ws_list = [token.whitespace_ for token in doc_taged]
+					token_list = list(map(''.join, zip(token_list, ws_list)))
+					iob_list = [token.ent_iob_ for token in doc_taged]
+					ent_list = [token.ent_type_ for token in doc_taged]
+					iob_ent = list(map('-'.join, zip(iob_list, ent_list)))
+					tag_list = [token.tag_ for token in doc_taged]
+					tag_list = ['Y' if bool(is_punct.match(token_list[i])) else v for i, v in enumerate(tag_list)]
+					tag_list = ['MC' if bool(is_digit.match(token_list[i])) and tag_list[i] != 'Y' else v for i, v in enumerate(tag_list)]
+					tp.update({doc_id: (list(zip(token_list, tag_list, iob_ent)))})
+	return tp, exceptions
 		
 def main():
 	# check states to prevent unlikely error
@@ -251,11 +266,43 @@ def main():
 				if st.session_state.warning == 1:
 					st.markdown(warning_1, unsafe_allow_html=True)
 		
-				if st.session_state.warning == 2:
-					st.markdown(warning_2(st.session_state.dup_ids), unsafe_allow_html=True)
+				with st.form("ref-form", clear_on_submit=True):
+					ref_files = st.file_uploader("Upload your reference corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
+					submitted = st.form_submit_button("UPLOAD REFERENCE")
+			
+					if len(ref_files) > 0:
+						all_files = []
+						for file in ref_files:
+							bytes_data = file.getvalue()
+							file_size = len(bytes_data)
+							all_files.append(file_size)
+						corpus_size = sum(all_files)
+						#check for duplicates
+						doc_ids = [doc.name for doc in ref_files]
+						doc_ids = [doc.replace(" ", "") for doc in doc_ids]
+						if len(doc_ids) > len(set(doc_ids)):
+							dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
+							dup_ids = list(set(dup_ids))
+						else:
+							dup_ids = []
+						dup_ref = list(set(st.session_state.docids).intersection(doc_ids))
+				
+					else:
+						corpus_size = 0
+						dup_ids = []
+						dup_ref = []
+		
+				if corpus_size > MAX_BYTES:
+					st.markdown(warning_3, unsafe_allow_html=True)
+					st.write(corpus_size)
+					st.markdown("---")
+		
+				if len(dup_ids) > 0:
+					st.markdown(warning_2(dup_ids), unsafe_allow_html=True)
+				
+				if len(dup_ref) > 0:
+					st.markdown(warning_4(dup_ref), unsafe_allow_html=True)
 
-
-				ref_files = st.file_uploader("Upload your corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
 				if len(ref_files) > 0:
 					st.sidebar.markdown("### Process Reference")
 					st.sidebar.markdown("Click the button to process your reference corpus files.")
@@ -265,14 +312,9 @@ def main():
 								models = load_models()
 								nlp = models[st.session_state.model]
 								detector = load_detector()
-								ref_corp, exceptions, dup_ids = process_corpus(ref_files, detector, nlp)
+								ref_corp, exceptions = process_corpus(ref_files, detector, nlp)
 							if len(exceptions) > 0 and bool(ref_corp) == False:
 								st.session_state.warning = 1
-								st.error('There was a problem proccessing your reference corpus.', icon="🚨")
-								st.experimental_rerun()
-							elif len(dup_ids) > 0 and bool(ref_corp) == False:
-								st.session_state.warning = 2
-								st.session_state.dup_ids = set(dup_ids)
 								st.error('There was a problem proccessing your reference corpus.', icon="🚨")
 								st.experimental_rerun()
 							elif len(exceptions) > 0 and bool(ref_corp) == True:
@@ -346,10 +388,36 @@ def main():
 		if st.session_state.warning == 1:
 			st.markdown(warning_1, unsafe_allow_html=True)
 		
-		if st.session_state.warning == 2:
-			st.markdown(warning_2(st.session_state.dup_ids), unsafe_allow_html=True)
+		with st.form("corpus-form", clear_on_submit=True):
+			corp_files = st.file_uploader("Upload your target corpus", type=["txt"], accept_multiple_files=True)
+			submitted = st.form_submit_button("UPLOAD TARGET")
 			
-		corp_files = st.file_uploader("Upload your target corpus", type=["txt"], accept_multiple_files=True)
+			if len(corp_files) > 0:
+				all_files = []
+				for file in corp_files:
+					bytes_data = file.getvalue()
+					file_size = len(bytes_data)
+					all_files.append(file_size)
+				corpus_size = sum(all_files)
+				#check for duplicates
+				doc_ids = [doc.name for doc in corp_files]
+				doc_ids = [doc.replace(" ", "") for doc in doc_ids]
+				if len(doc_ids) > len(set(doc_ids)):
+					dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
+					dup_ids = list(set(dup_ids))
+				else:
+					dup_ids = []
+				
+			else:
+				corpus_size = 0
+				dup_ids = []
+		
+		if corpus_size > MAX_BYTES:
+			st.markdown(warning_3, unsafe_allow_html=True)
+			st.markdown("---")
+		
+		if len(dup_ids) > 0:
+					st.markdown(warning_2(dup_ids), unsafe_allow_html=True)
 
 		st.markdown("""
 					From this page you can load a corpus from a selection of text (**.txt**)
@@ -385,21 +453,16 @@ def main():
 					""")		
 		st.sidebar.markdown("---")
 				
-		if len(corp_files) > 0:
+		if len(corp_files) > 0 and corpus_size <= MAX_BYTES:
 			st.sidebar.markdown("### Process Target")
 			st.sidebar.markdown("Once you have selected your files, use the button to process your corpus.")
 			if st.sidebar.button("Process Corpus"):
 				with st.sidebar:
 					with st.spinner('Processing corpus data...'):
 						detector = load_detector()
-						corp, exceptions, dup_ids = process_corpus(corp_files, detector, nlp)
+						corp, exceptions = process_corpus(corp_files, detector, nlp)
 					if len(exceptions) > 0 and bool(corp) == False:
 						st.session_state.warning = 1
-						st.error('There was a problem proccessing your corpus.', icon="🚨")
-						st.experimental_rerun()
-					elif len(dup_ids) > 0 and bool(corp) == False:
-						st.session_state.warning = 2
-						st.session_state.dup_ids = set(dup_ids)
 						st.error('There was a problem proccessing your corpus.', icon="🚨")
 						st.experimental_rerun()
 					elif len(exceptions) > 0 and bool(corp) == True:
