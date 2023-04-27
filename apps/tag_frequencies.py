@@ -1,48 +1,68 @@
-import streamlit as st
-import docuscospacy.corpus_analysis as ds
-import pandas as pd
-import altair as alt
-import st_aggrid
+# Copyright (C) 2023 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import base64
 from io import BytesIO
+import pathlib
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
+# set paths
+HERE = pathlib.Path(__file__).parents[1].resolve()
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-# a method for preserving button selection on page interactions
-# with quick clicking it can lag
-def increment_counter():
-	st.session_state.count_2 += 1
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-CATEGORY = categories.FREQUENCY
+modules = ['categories', 'handlers', 'messages', 'states', 'warnings', 'altair', 'streamlit', 'docuscospacy', 'pandas', 'st_aggrid']
+import_params = _imports.import_parameters(_options, modules)
+
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
+
+CATEGORY = _categories.FREQUENCY
 TITLE = "Tag Frequencies"
 KEY_SORT = 3
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
 
-	if st.session_state.count_2 % 2 == 0:
-		idx = 0
-	else:
-		idx = 1
+	session = _handlers.load_session()
 
-	if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == True:
+	if session.get('tags_table') == True:
+	
+		_handlers.load_widget_state(pathlib.Path(__file__).stem)
+		metadata_target = _handlers.load_metadata('target')
+
 		st.sidebar.markdown("### Tagset")
-		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
+		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("tt_radio", pathlib.Path(__file__).stem), horizontal=True)
 	
 		if tag_radio == 'Parts-of-Speech':
-			df = st.session_state.tt_pos
+			df = _handlers.load_table('tt_pos')
 		else:
-			df = st.session_state.tt_ds
+			df = _handlers.load_table('tt_ds')
 		
-		st.markdown(f"""##### Target corpus information:
-		
-		Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
-		""")
+		st.markdown(_messages.message_target_info(metadata_target))
 		
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -67,13 +87,7 @@ def main():
 			)
 		
 		with st.expander("Column explanation"):
-			st.markdown("""
-					The 'AF' column refers to the absolute token frequency.
-					The 'RF'column refers to the relative token frequency (normalized per 100 tokens).
-					Note that for part-of-speech tags, tokens are normalized against word tokens,
-					while DocuScope tags are normalized against counts of all tokens including punctuation.
-					The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-					""")
+			st.markdown(_messages.message_columns_tags)
 		
 		selected = grid_response['selected_rows'] 
 		if selected:
@@ -82,12 +96,8 @@ def main():
 			st.dataframe(df)
 	
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Plot data")
-		st.sidebar.markdown("""
-							Click the button to genenerate a frequency plot.
-							You can use the checkboxes to plot selected rows.
-							With no rows selected, all variables will be plotted.
-							""")
+		st.sidebar.markdown(_messages.message_generate_plot)
+		
 		if st.sidebar.button("Plot Frequencies"):			
 			base = alt.Chart(df, height={"step": 12}).mark_bar(size=10).encode(
 					x=alt.X('RF', title='Frequency (per 100 tokens)'), 
@@ -100,21 +110,10 @@ def main():
 	
 		st.sidebar.markdown("---")
 		with st.sidebar.expander("Filtering and saving"):
-			st.markdown("""
-					Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
-					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-					Rows can be selected before or after filtering using the checkboxes.
-					(The checkbox in the header will select/deselect all rows.)\n
-					If rows are selected and appear in new table below the main one,
-					those selected rows will be available for download in an Excel file.
-					If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-					""")
-		st.sidebar.markdown("### Download data")
-		st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							You can use the checkboxes to download selected rows.
-							With no rows selected, the entire table will be prepared for download.
-							""")
+			st.markdown(_messages.message_filters)
+			
+		st.sidebar.markdown(_messages.message_download)
+		
 		if st.sidebar.button("Download"):
 			with st.sidebar:
 				with st.spinner('Creating download link...'):
@@ -126,28 +125,26 @@ def main():
 					linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
 					st.markdown(linko, unsafe_allow_html=True)
 		st.sidebar.markdown("---")
-	else:
-		st.markdown("""
-					Once a corpus has been loaded, you can use this tool to create and download tables of tag frequencies.
-					""")
-		
-		st.sidebar.markdown("### Generate counts")
-		st.sidebar.markdown("""
-					Use the button to generate a table of tag frequencies that can be sorted and filtered.
-					This will generate a table similar to a word list, but show **only** the frequencies of tags
-					(either part-of-speech or DocuScope).
-					""")
 	
+	else:
+		
+		st.markdown(_messages.message_tables)
+		
+		st.sidebar.markdown(_messages.message_generate_table)
+
 		if st.sidebar.button("Tags Table"):
-			if st.session_state.corpus == '':
-				st.markdown(":neutral_face: It doesn't look like you've loaded a corpus yet.")
+			if session.get('target_path') == None:
+				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
+			
 			else:
 				with st.spinner('Processing frequencies...'):
-					tp = st.session_state.corpus
-					tc_pos = ds.tags_table(tp, st.session_state.words)
-					tc_ds = ds.tags_table(tp, st.session_state.tokens, count_by='ds')
-				st.session_state.tt_pos = tc_pos
-				st.session_state.tt_ds = tc_ds
+					tp = _handlers.load_corpus_session('target', session)
+					metadata_target = _handlers.load_metadata('target')
+					tc_pos = ds.corpus_analysis.tags_table(tp, metadata_target.get('words'))
+					tc_ds = ds.corpus_analysis.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
+				_handlers.save_table(tc_pos, 'tt_pos')
+				_handlers.save_table(tc_ds, 'tt_ds')
+				_handlers.update_session('tags_table', True)
 				st.experimental_rerun()
 
 if __name__ == "__main__":
