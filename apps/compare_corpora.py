@@ -1,74 +1,77 @@
-import streamlit as st
-import docuscospacy.corpus_analysis as ds
-import pandas as pd
-import altair as alt
-import st_aggrid
+# Copyright (C) 2023 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import base64
 from io import BytesIO
+import pathlib
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
+# set paths
+HERE = pathlib.Path(__file__).parents[1].resolve()
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-# a method for preserving button selection on page interactions
-# with quick clicking it can lag
-def increment_counter_5():
-	st.session_state.count_5 += 1
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-def increment_counter_6():
-	st.session_state.count_6 += 1
+modules = ['categories', 'handlers', 'messages', 'states', 'warnings', 'altair', 'streamlit', 'docuscospacy', 'pandas', 'st_aggrid']
+import_params = _imports.import_parameters(_options, modules)
 
-def increment_counter_7():
-	st.session_state.count_7 += 1
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
 
-CATEGORY = categories.KEYNESS
+CATEGORY = _categories.KEYNESS
 TITLE = "Compare Corpora"
 KEY_SORT = 5
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
-
-	if st.session_state.count_5 % 2 == 0:
-	    idx_5 = 0
-	else:
-	    idx_5 = 1
-	if st.session_state.count_6 % 2 == 0:
-	    idx_6 = 0
-	else:
-	    idx_6 = 1
 	
-	if st.session_state.count_7 % 2 == 0:
-	    idx_7 = 0
-	else:
-	    idx_7 = 1
+	session = _handlers.load_session()	
 
-	if bool(isinstance(st.session_state.kw_pos, pd.DataFrame)) == True:
+	if session.get('keyness_table') == True:
+	
+		_handlers.load_widget_state(pathlib.Path(__file__).stem)
+		metadata_target = _handlers.load_metadata('target')
+		metadata_reference = _handlers.load_metadata('reference')
+
 		st.sidebar.markdown("### Comparison")	
-		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), index=idx_5, on_change=increment_counter_5, horizontal=True)
+		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), key = _handlers.persist("kt_radio1", pathlib.Path(__file__).stem), horizontal=True)
 		if table_radio == 'Tokens':
 			st.sidebar.markdown("---")
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx_6, on_change=increment_counter_6, horizontal=True)
+			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio2", pathlib.Path(__file__).stem), horizontal=True)
 	
 			if tag_radio_tokens == 'Parts-of-Speech':
-				df = st.session_state.kw_pos
+				df = _handlers.load_table('kw_pos')
 			else:
-				df = st.session_state.kw_ds
+				df = _handlers.load_table('kw_ds')
 			
 			col1, col2 = st.columns([1,1])
 			with col1:
-				st.markdown(f"""##### Target corpus information:
-		
-				Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
-				""")
+				st.markdown(_messages.message_target_info(metadata_target))
 			with col2:
-				st.markdown(f"""##### Reference corpus information:
-				
-				Number of tokens in corpus: {st.session_state.ref_tokens}\n    Number of word tokens in corpus: {st.session_state.ref_words}\n    Number of documents in corpus: {st.session_state.ref_ndocs}
-				""")		
+				st.markdown(_messages.message_reference_info(metadata_reference))	
 		
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -99,18 +102,7 @@ def main():
 				)
 		
 			with st.expander("Column explanation"):
-				st.markdown("""
-						The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
-						a hypothesis test measuring observed vs. expected frequencies.
-						Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
-						'LR' refers to [Log-Ratio](http://cass.lancs.ac.uk/log-ratio-an-informal-introduction/), which is an [effect size](https://www.scribbr.com/statistics/effect-size/).
-						And 'PV' refers to the [p-value](https://scottbot.net/friends-dont-let-friends-calculate-p-values-without-fully-understanding-them/).\n
-						The 'AF' columns refer to the absolute token frequencies in the target and reference.
-						The 'RF' columns refer to the relative token frequencies (normalized per million tokens).
-						Note that for part-of-speech tags, tokens are normalized against word tokens,
-						while DocuScope tags are normalized against counts of all tokens including punctuation.
-						The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-						""")
+				st.markdown(_messages.message_columns_keyness)
 				
 			selected = grid_response['selected_rows'] 
 			if selected:
@@ -120,21 +112,9 @@ def main():
 			
 			st.sidebar.markdown("---")
 			with st.sidebar.expander("Filtering and saving"):
-				st.markdown("""
-					    Filters can be accessed by clicking on the three that appear while hovering over a column header.
-					    For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-					    Rows can be selected before or after filtering using the checkboxes.
-					    (The checkbox in the header will select/deselect all rows.)\n
-					    If rows are selected and appear in new table below the main one,
-					    those selected rows will be available for download in an Excel file.
-					    If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-						""")
-			st.sidebar.markdown("### Download data")
-			st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							You can use the checkboxes to download selected rows.
-							With no rows selected, the entire table will be prepared for download.
-							""")
+				st.markdown(_messages.message_filters)
+				
+			st.sidebar.markdown(_messages.message_download)
 			if st.sidebar.button("Download"):
 				with st.sidebar:
 					with st.spinner('Creating download link...'):
@@ -149,24 +129,18 @@ def main():
 	
 		else:
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx_7, on_change=increment_counter_7, horizontal=True)
+			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio3", pathlib.Path(__file__).stem), horizontal=True)
 	
 			if tag_radio_tags == 'Parts-of-Speech':
-				df = st.session_state.kt_pos
+				df = _handlers.load_table('kt_pos')
 			else:
-				df = st.session_state.kt_ds
+				df = _handlers.load_table('kt_ds')
 	
 			col1, col2 = st.columns([1,1])
 			with col1:
-				st.markdown(f"""##### Target corpus information:
-		
-				Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
-				""")
+				st.markdown(_messages.message_target_info(metadata_target))
 			with col2:
-				st.markdown(f"""##### Reference corpus information:
-				
-				Number of tokens in corpus: {st.session_state.ref_tokens}\n    Number of word tokens in corpus: {st.session_state.ref_words}\n    Number of documents in corpus: {st.session_state.ref_ndocs}
-				""")		
+				st.markdown(_messages.message_reference_info(metadata_reference))			
 		
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -196,18 +170,7 @@ def main():
 				)
 			
 			with st.expander("Column explanation"):
-				st.markdown("""
-						The 'LL' column refers to [log-likelihood](https://ucrel.lancs.ac.uk/llwizard.html),
-						a hypothesis test measuring observed vs. expected frequencies.
-						Note that a negative value means that the token is more frequent in the reference corpus than the target.\n
-						'LR' refers to [Log-Ratio](http://cass.lancs.ac.uk/log-ratio-an-informal-introduction/), which is an [effect size](https://www.scribbr.com/statistics/effect-size/).
-						And 'PV' refers to the [p-value](https://scottbot.net/friends-dont-let-friends-calculate-p-values-without-fully-understanding-them/).\n
-						The 'AF' columns refer to the absolute token frequencies in the target and reference.
-						The 'RF' columns refer to the relative token frequencies (normalized per 100 tokens).
-						Note that for part-of-speech tags, tokens are normalized against word tokens,
-						while DocuScope tags are normalized against counts of all tokens including punctuation.
-						The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-						""")
+				st.markdown(_messages.message_columns_keyness)
 		
 			selected = grid_response['selected_rows'] 
 			if selected:
@@ -216,12 +179,8 @@ def main():
 				st.dataframe(df)
 				
 			st.sidebar.markdown("---")
-			st.sidebar.markdown("### Plot comparisons")
-			st.sidebar.markdown("""
-								Click the button to genenerate a plot of comparative frequencies.
-								You can use the checkboxes to plot selected rows.
-								With no rows selected, all variables will be plotted.
-								""")
+			st.sidebar.markdown(_messages.message_generate_plot)
+			
 			if st.sidebar.button('Plot resutls'):
 				df_plot = df[['Tag', 'RF', 'RF Ref']]
 				df_plot['Mean'] = df_plot.mean(numeric_only=True, axis=1)
@@ -242,21 +201,9 @@ def main():
 			
 			st.sidebar.markdown("---")
 			with st.sidebar.expander("Filtering and saving"):
-				st.markdown("""
-					    Filters can be accessed by clicking on the three that appear while hovering over a column header.
-					    For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-					    Rows can be selected before or after filtering using the checkboxes.
-					    (The checkbox in the header will select/deselect all rows.)\n
-					    If rows are selected and appear in new table below the main one,
-					    those selected rows will be available for download in an Excel file.
-					    If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-						""")
-			st.sidebar.markdown("### Download data")
-			st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							You can use the checkboxes to download selected rows.
-							With no rows selected, the entire table will be prepared for download.
-							""")
+				st.markdown(_messages.message_filters)
+			
+			st.sidebar.markdown(_messages.message_download)
 			if st.sidebar.button("Download"):
 				with st.sidebar:
 					with st.spinner('Creating download link...'):
@@ -270,48 +217,55 @@ def main():
 			st.sidebar.markdown("---")
 	
 	else:
-		st.sidebar.markdown("###  Generate keywords")
-		st.sidebar.markdown("Use the button to generate a keywords table from your corpus.")
+		
+		st.markdown(_messages.message_keyness)
+		
+		st.sidebar.markdown(_messages.message_generate_table)
+		
 		if st.sidebar.button("Keyness Table"):
-			if st.session_state.corpus == '':
-				st.markdown(":neutral_face: It doesn't look like you've loaded a target corpus yet.")
-			elif st.session_state.reference == '':
-				st.markdown(":neutral_face: It doesn't look like you've loaded a reference corpus yet.")
+			if session.get('target_path') == None:
+				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
+			elif session.get('reference_path') == None:
+				st.markdown(_warnings.warning_17, unsafe_allow_html=True)
 			else:
 				with st.spinner('Generating keywords...'):
-					tp_ref = st.session_state.reference
-					wc_ref_pos = ds.frequency_table(tp_ref, st.session_state.ref_words)
-					wc_ref_ds = ds.frequency_table(tp_ref, st.session_state.ref_tokens, count_by='ds')
-					tc_ref_pos = ds.tags_table(tp_ref, st.session_state.ref_words)
-					tc_ref_ds = ds.tags_table(tp_ref, st.session_state.ref_tokens, count_by='ds')
-					if bool(isinstance(st.session_state.tt_pos, pd.DataFrame)) == False:
-						tp = st.session_state.corpus
-						tc_pos = ds.tags_table(tp, st.session_state.words)
-						tc_ds = ds.tags_table(tp, st.session_state.tokens, count_by='ds')
-						st.session_state.tt_pos = tc_pos
-						st.session_state.tt_ds = tc_ds
-					if bool(isinstance(st.session_state.ft_pos, pd.DataFrame)) == False:
-						tp = st.session_state.corpus
-						wc_pos = ds.frequency_table(tp, st.session_state.words)
-						wc_ds = ds.frequency_table(tp, st.session_state.tokens, count_by='ds')
-						st.session_state.ft_pos = wc_pos
-						st.session_state.ft_ds = wc_ds
+					tp_ref = _handlers.load_corpus_session('reference', session)
+					metadata_reference = _handlers.load_metadata('reference')
+					wc_ref_pos = ds.corpus_analysis.frequency_table(tp_ref, metadata_reference.get('words'))
+					wc_ref_ds  = ds.corpus_analysis.frequency_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
+					tc_ref_pos = ds.corpus_analysis.tags_table(tp_ref, metadata_reference.get('words'))
+					tc_ref_ds  = ds.corpus_analysis.tags_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
+					
+					if session.get('tags_table') == False:
+						tp = _handlers.load_corpus_session('target', session)
+						metadata_target = _handlers.load_metadata('target')
+						tc_pos = ds.corpus_analysis.tags_table(tp, metadata_target.get('words'))
+						tc_ds  = ds.corpus_analysis.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
+						_handlers.save_table(tc_pos, 'tt_pos')
+						_handlers.save_table(tc_ds, 'tt_ds')
+						_handlers.update_session('tags_table', True)
+					
+					if session.get('freq_table') == False:
+						tp = _handlers.load_corpus_session('target', session)
+						metadata_target = _handlers.load_metadata('target')
+						wc_pos = ds.corpus_analysis.frequency_table(tp, metadata_target.get('words'))
+						wc_ds  = ds.corpus_analysis.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
+						_handlers.save_table(wc_pos, 'ft_pos')
+						_handlers.save_table(wc_ds, 'ft_ds')
+						_handlers.update_session('freq_table', True)
 				
-					kw_pos = ds.keyness_table(st.session_state.ft_pos, wc_ref_pos)
-					kw_ds = ds.keyness_table(st.session_state.ft_ds, wc_ref_ds)
-					kt_pos = ds.keyness_table(st.session_state.tt_pos, tc_ref_pos, tags_only=True)
-					kt_ds = ds.keyness_table(st.session_state.tt_ds, tc_ref_ds, tags_only=True)
-					st.session_state.kw_pos = kw_pos
-					st.session_state.kw_ds = kw_ds
-					st.session_state.kt_pos = kt_pos
-					st.session_state.kt_ds = kt_ds
+					kw_pos = ds.corpus_analysis.keyness_table(_handlers.load_table('ft_pos'), wc_ref_pos)
+					kw_ds  = ds.corpus_analysis.keyness_table(_handlers.load_table('ft_ds'), wc_ref_ds)
+					kt_pos = ds.corpus_analysis.keyness_table(_handlers.load_table('tt_pos'), tc_ref_pos, tags_only=True)
+					kt_ds  = ds.corpus_analysis.keyness_table(_handlers.load_table('tt_ds'), tc_ref_ds, tags_only=True)
+					_handlers.save_table(kw_pos, 'kw_pos')
+					_handlers.save_table(kw_ds, 'kw_ds')
+					_handlers.save_table(kt_pos, 'kt_pos')
+					_handlers.save_table(kt_ds, 'kt_ds')
+					_handlers.update_session('keyness_table', True)
 					st.success('Keywords generated!')
 					st.experimental_rerun()
 		
-		st.markdown("""
-		To use this tool, be sure that you have loaded a reference corpus. 
-		Loading a reference can be done from **Manage Corpora**.
-		""")
 
 if __name__ == "__main__":
     main()
