@@ -1,42 +1,64 @@
-import streamlit as st
-import docuscospacy.corpus_analysis as ds
-import pandas as pd
-import st_aggrid
-from tmtoolkit.tokenseq import pmi, pmi2, pmi3
+# Copyright (C) 2023 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import base64
 from io import BytesIO
+import pathlib
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
+# set paths
+HERE = pathlib.Path(__file__).parents[1].resolve()
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-CATEGORY = categories.COLLOCATION
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
+
+modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'docuscospacy', 'pandas', 'st_aggrid']
+import_params = _imports.import_parameters(_options, modules)
+
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
+
+CATEGORY = _categories.COLLOCATION
 TITLE = "Collocates"
 KEY_SORT = 7
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
 
-	if bool(isinstance(st.session_state.collocations, pd.DataFrame)) == True:
+	session = _handlers.load_session()	
+
+	if bool(session['collocations']) == True:
 		
-		df = st.session_state.collocations
+		metadata_target = _handlers.load_metadata('target')
+		df = _handlers.load_table('collocations')
 		
 		col1, col2 = st.columns([1,1])
 		with col1:
-			st.markdown(f"""##### Target corpus information:
-			
-			Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
-			""")
+			st.markdown(_messages.message_target_info(metadata_target))
 		with col2:
-			am = str(st.session_state.stat).upper()
-			span = str(st.session_state.span_l) + 'L - ' + str(st.session_state.span_r) + 'R'
-			st.markdown(f"""##### Collocate information:
-			
-			Association measure: {am}\n    Span: {span}\n    Node word: {st.session_state.node}
-			""")
+			st.markdown(_messages.message_collocation_info(session['collocations']))
 			
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -61,13 +83,7 @@ def main():
 			)
 		
 		with st.expander("Column explanation"):
-			st.markdown("""
-						The 'Freq Span' columns refers to the collocate's frequency within the given window,
-						while 'Freq Total' refers to its overall frequency in the corpus. 
-						Note that is possible for a collocate to have a *higher* frequency within a window, than a total frequency.\n
-						The 'MI' column refers to the association measure selected when the table was generated
-						(one of NPMI, PMI2, PMI3, or PMI).
-						""")
+			st.markdown(_messages.message_columns_collocations)
 	
 		selected = grid_response['selected_rows'] 
 		if selected:
@@ -76,22 +92,9 @@ def main():
 			st.dataframe(df)
 		
 		with st.sidebar.expander("Filtering and saving"):
-			st.markdown("""
-						Filters can be accessed by clicking on the three that appear while hovering over a column header.
-						For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-						Rows can be selected before or after filtering using the checkboxes.
-						(The checkbox in the header will select/deselect all rows.)\n
-						If rows are selected and appear in new table below the main one,
-						those selected rows will be available for download in an Excel file.
-						If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-						""")
-		st.sidebar.markdown("### Download data")
-		st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							You can use the checkboxes to download selected rows.
-							With no rows selected, the entire table will be prepared for download.
-							""")
-				
+			st.markdown(_messages.message_filters)
+
+		st.sidebar.markdown(_messages.message_download)				
 		if st.sidebar.button("Download"):
 			with st.sidebar:
 				with st.spinner('Creating download link...'):
@@ -104,72 +107,53 @@ def main():
 					st.markdown(linko, unsafe_allow_html=True)
 		
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Generate new table")
-		st.sidebar.markdown("""
-							Click the button to reset the collocations table.
-							""")
+		st.sidebar.markdown(_messages.message_reset_table)
+		
 		if st.sidebar.button("Create New Collocations Table"):
-			st.session_state.collocations = ''
+			_handlers.clear_table('collocations')
+			_handlers.update_session('collocations', dict())
 			st.experimental_rerun()
 		st.sidebar.markdown("---")
 				
 	else:
+	
+		metadata_target = _handlers.load_metadata('target')
+		
+		st.markdown(_messages.message_collocations)
+
 		st.sidebar.markdown("### Node word")
-		st.sidebar.markdown("""Use the text field to enter a node word and other desired options.
-					Once a node word has been entered and options selected, click the button below to generate a table of collocates.
+		st.sidebar.markdown("""Enter a node word without spaces.
 					""")				
 		node_word = st.sidebar.text_input("Node word:")
 							
 		st.sidebar.markdown("---")
 		with st.sidebar.expander("Span explanation"):
-			st.markdown("""
-						Associations are calculated by counting the observed frequency within a
-						span around a node word and comparing that to the frequency that we would expect
-						given its overall frequency in a corpus.
-						
-						You could adjust the span if, for example, you wanted look at
-						the subjects of a verb. For that, you would want to search only the left of
-						the node word, setting the right span to 0. For verb object, you would want to
-						do the opposite. There could be cases when you want a narrower window or a
-						wider one.
-						""")
+			st.markdown(_messages.message_span)
+		
 		st.sidebar.markdown("### Span")
 		to_left = st.sidebar.slider("Choose a span to the left of the node word:", 0, 9, (4))
 		to_right = st.sidebar.slider("Choose a span to the right of the node word:", 0, 9, (4))
 		
 		st.sidebar.markdown("---")
 		with st.sidebar.expander("Statistics explanation"):
-			st.markdown("""
-						The most common statistic for measuring token associations is Pointwise Mutual Information (PMI),
-						first developed by [Church and Hanks](https://aclanthology.org/J90-1003/). One potentially problematic
-						characteristic of PMI is that it rewards (or generates high scores) for low frequency tokens.
-						
-						This can be handled by filtering for minimum frequencies and MI scores. Alternatively,
-						[other measures have been proposed, which you can select from here.](https://en.wikipedia.org/wiki/Pointwise_mutual_information)
-						""")
+			st.markdown(_messages.message_association_measures)
 
 		st.sidebar.markdown("### Association measure")			
-		stat_mode = st.sidebar.radio("Select a statistic:", ("NPMI", "PMI 2", "PMI 3", "PMI"), horizontal=True)
+		stat_mode = st.sidebar.radio("Select a statistic:", ("PMI", "NPMI", "PMI 2", "PMI 3"), horizontal=True)
 		
-		if stat_mode == "NPMI":
-			stat_mode = "npmi"
+		if stat_mode == "PMI":
+			stat_mode = "pmi"
 		elif stat_mode == "PMI 2":
 			stat_mode = "pmi2"
 		elif stat_mode == "PMI 3":
 			stat_mode = "pmi3"
-		elif stat_mode == "PMI":
-			stat_mode = "pmi"
+		elif stat_mode == "NPMI":
+			stat_mode = "npmi"
 		
 		st.sidebar.markdown("---")
-		with st.sidebar.expander("Anchor tag explanation"):
-			st.markdown("""
-						You can choose to 'anchor' at token to a specific tag.
-						For example, if you wanted to disambiguate 'can' as a noun (e.g., 'can of soda')
-						from 'can' as a modal verb, you could 'anchor' the node word to a part-of-speech
-						tag (like 'Noun', 'Verb' or more specifically 'VM').
-						
-						For most cases, choosing an 'anchor' tag isn't necessary.
-						""")
+		with st.sidebar.expander("Anchor tag for node word explanation"):
+			st.markdown(_messages.message_anchor_tags)
+		
 		st.sidebar.markdown("### Anchor tag")
 		tag_radio = st.sidebar.radio("Select tagset for node word:", ("No Tag", "Parts-of-Speech", "DocuScope"), horizontal=True)
 		if tag_radio == 'Parts-of-Speech':
@@ -185,59 +169,48 @@ def main():
 				elif node_tag == "Adverb":
 					node_tag = "R"
 			else:
-				node_tag = st.sidebar.selectbox("Select tag:", (st.session_state.tags_pos))
+				if session.get('target_path') == None:
+					node_tag = st.sidebar.selectbox('Choose a tag:', ['No tags currently loaded'])
+				else:
+					node_tag = st.sidebar.selectbox('Choose a tag:', metadata_target.get('tags_pos'))
 			ignore_tags = False
 			count_by = 'pos'
 		elif tag_radio == 'DocuScope':
-			node_tag = st.sidebar.selectbox("Select tag:", (st.session_state.tags_ds))
-			ignore_tags = False
-			count_by = 'ds'
+			if session.get('target_path') == None:
+				node_tag = st.sidebar.selectbox('Choose a tag:', ['No tags currently loaded'])
+			else:
+				node_tag = st.sidebar.selectbox('Choose a tag:', metadata_target.get('tags_ds'))
+				ignore_tags = False
+				count_by = 'ds'
 		else:
 			node_tag = None
-			ignore_tags = True
+			ignore_tags = False
 			count_by = 'pos'
 		
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Generate collocates")
-		st.sidebar.markdown("""
-			Use the button to generate a table of collocates from your corpus.
-			Note that n-grams take a little longer to process than other kinds of tables.
-			""")
+		st.sidebar.markdown(_messages.message_generate_table)
 		if st.sidebar.button("Collocations"):
-			if st.session_state.corpus == "":
-				st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
+			if session.get('target_path') == None:
+				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			elif node_word == "":
-				st.write(":warning: It doesn't look like you've entered a node word. Be sure to hit return after typing a word into the field.")
+				st.markdown(_warnings.warning_14, unsafe_allow_html=True)
 			elif node_word.count(" ") > 0:
-				st.write(":warning: Your node word shouldn't contain any spaces.")
+				st.markdown(_warnings.warning_15, unsafe_allow_html=True)
 			elif len(node_word) > 15:
-				st.write(":warning: Your node word contains too many characters. Try something shorter.")
+				st.markdown(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tp = st.session_state.corpus
+				tp = _handlers.load_corpus_session('target', session)
+				metadata_target = _handlers.load_metadata('target')
 				with st.spinner('Processing collocates...'):
-					df = ds.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)
-				if len(df.index) > 0:
-					st.session_state.collocations = df
-					st.session_state.node = node_word
-					st.session_state.stat = stat_mode
-					st.session_state.span_l = to_left
-					st.session_state.span_r = to_right
+					coll_df = ds.corpus_analysis.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)
+				if len(coll_df.index) > 0:
+					_handlers.save_table(coll_df, 'collocations')
+					_handlers.update_collocations(node_word, stat_mode, to_left, to_right)
 					st.experimental_rerun()
 				else:
-					st.markdown(":warning: Your search didn't return any matches.")
+					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
 	
 		st.sidebar.markdown("---")
-		
-		st.markdown("""
-		Once a corpus has been loaded, use the tool to:
-		
-		1. Select the node word
-		2. Select the span or window
-		3. Select the association measure
-		4. Select a tag to "anchor" the node word (which is usually 'None')
-		5. Generate a table of collocates
-		""")
-	
 		
 if __name__ == "__main__":
     main()
