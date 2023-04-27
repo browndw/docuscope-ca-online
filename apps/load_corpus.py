@@ -12,195 +12,275 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import streamlit as st
-import spacy
-import fasttext
-
-import re
 import pathlib
 from collections import Counter
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
-from utilities import warnings
-from utilities import process_functions
-
+# set paths
 HERE = pathlib.Path(__file__).parents[1].resolve()
 MODEL_LARGE = str(HERE.joinpath("models/en_docusco_spacy"))
 MODEL_SMALL = str(HERE.joinpath("models/en_docusco_spacy_fc"))
 MODEL_DETECT = str(HERE.joinpath("models/lid.176.ftz"))
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-CATEGORY = categories.CORPUS_LOAD
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
+
+# some modules have different import path requirements for electron
+modules = ['categories', 'handlers', 'messages', 'process', 'states', 'warnings', 'streamlit', 'spacy']
+import_params = _imports.import_parameters(_options, modules)
+
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
+
+# set options
+ENABLE_DETECT = _options['global']['check_language']
+ENABLE_SAVE = _options['global']['enable_save']
+DESKTOP = _options['global']['desktop_mode']
+CHECK_SIZE = _options['global']['check_size']
+
+# fasttext is not available for Windows
+if ENABLE_DETECT == True:
+	try:
+		import fasttext
+	except:
+		ENABLE_DETECT = False
+
+if CHECK_SIZE == True:
+	MAX_BYTES = _options['global']['max_bytes']
+
+CATEGORY = _categories.CORPUS_LOAD
 TITLE = "Mangage Corpus Data"
 KEY_SORT = 1
-MAX_BYTES = 20000000
 
-@st.cache_data(show_spinner=False)
-def load_models():
-    large_model = spacy.load(MODEL_LARGE)
-    small_model = spacy.load(MODEL_SMALL)
-    models = {"Large Dictionary": large_model, "Common Dictionary": small_model}
-    return models
+# desktop uses and older streamlit version with different caching function
+if DESKTOP == True:
+	@st.cache(show_spinner=False, allow_output_mutation=True, suppress_st_warning=True)
+	def load_models():
+		large_model = spacy.load(MODEL_LARGE)
+		small_model = spacy.load(MODEL_SMALL)
+		models = {"Large Dictionary": large_model, "Common Dictionary": small_model}
+		return models
 
-def load_detector():
-    fasttext.FastText.eprint = lambda x: None
-    detector = fasttext.load_model(MODEL_DETECT)
-    return(detector)
+if DESKTOP == False:
+	@st.cache_data(show_spinner=False)
+	def load_models():
+		large_model = spacy.load(MODEL_LARGE)
+		small_model = spacy.load(MODEL_SMALL)
+		models = {"Large Dictionary": large_model, "Common Dictionary": small_model}
+		return models
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
 
-	if st.session_state.ndocs > 0:
-		st.markdown(f"""##### Target corpus information:
-		
-		Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
-		""")
-				
-		if st.session_state.warning == 3:
-			st.markdown(f"""###### The following documents were excluded from the corpus either because they are improperly encoded or have substantial segments not recognized as English (and, therefore, cannot be tagged properly):
+	session = _handlers.load_session()
 			
-			{', '.join(st.session_state.exceptions)}
-			""")
+	if session.get('target_path') is not None:
+		metadata_target = _handlers.load_metadata('target')
+		if session.get('has_reference') == True:
+			metadata_reference = _handlers.load_metadata('reference')
+			st.write(metadata_reference)
+		st.write(metadata_target)
+		st.write(session)
+		
+		st.markdown(_messages.message_target_info(metadata_target))
+				
+		if st.session_state.warning == 4:
+			st.markdown(_warnings.warning_4(st.session_state.exceptions))
 		
 		with st.expander("Documents:"):
-			st.write(sorted(st.session_state.docids))
+			st.write(sorted(metadata_target.get('docids')))
 		
-		if st.session_state.doccats != '':
+		if session.get('has_meta') == True:
 			st.markdown('##### Target corpus metadata:')
 			with st.expander("Counts of document categories:"):
-				st.write(Counter(st.session_state.doccats))
+				st.write(Counter(metadata_target.get('doccats')))
+		
 		else:
-			st.sidebar.markdown('##### Target corpus metadata:')
+			st.sidebar.markdown('### Target corpus metadata:')
 			load_cats = st.sidebar.radio("Do you have categories in your file names to process?", ("No", "Yes"), horizontal=True)
 			if load_cats == 'Yes':
 				if st.sidebar.button("Process Document Metadata"):
 					with st.spinner('Processing metadata...'):
-						if all(['_' in item for item in st.session_state.docids]):
-							doc_cats = [re.sub(r"_\S+$", "", item, flags=re.UNICODE) for item in st.session_state.docids]
-							if min([len(item) for item in doc_cats]) == 0:
-								st.markdown(":no_entry_sign: Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.")
-							elif len(set(doc_cats)) > 1 and len(set(doc_cats)) < 21:
-								st.session_state.doccats = doc_cats
-								st.success('Processing complete!')
-								st.experimental_rerun()
-							else:
-								st.markdown(warnings.warning_5, unsafe_allow_html=True)
+						doc_cats = _process.get_doc_cats(metadata_target.get('docids'))
+						if len(set(doc_cats)) > 1 and len(set(doc_cats)) < 21:
+							_handlers.update_metadata('target', 'doccats', doc_cats)
+							_handlers.update_session('has_meta', True)
+							st.success('Processing complete!')
+							st.experimental_rerun()
+						elif len(doc_cats) != 0:
+							st.sidebar.markdown(_warnings.warning_8, unsafe_allow_html=True)
 						else:
-							st.markdown(warnings.warning_6, unsafe_allow_html=True)
+							st.sidebar.markdown(_warnings.warning_9, unsafe_allow_html=True)
 			
 			st.sidebar.markdown("""---""")
+				
+		if ENABLE_SAVE == True:
+			if session.get('from_saved') == 'No' and session.get('is_saved') == 'No':
+				st.markdown("---")
+				save_target = st.radio("Would you like to save your target corpus for future analysis?", ("No", "Yes"), horizontal=True)
+				if save_target == 'Yes':
+					target_name = st.text_input("Name your target corpus (using only letters or the underscore):")
+					if st.button("Save Corpus"):
+						if len(target_name) > 2 & len(target_name) < 15 and _handlers.check_name(target_name) == True:
+							corp = _handlers.load_temp('target')
+							tags_pos, tags_ds = _process.get_corpus_features(corp)
+							model = _process.check_model(tags_ds)
+							_handlers.save_corpus(corp, model, target_name)
+							_handlers.update_session('is_saved', 'Yes')
+							st.experimental_rerun()
+						else:
+							st.markdown(_warnings.warning_10, unsafe_allow_html=True)
 		
-		if st.session_state.reference != '':
-			st.markdown(f"""##### Reference corpus information:
+		if session.get('has_reference') == True:
+			metadata_reference = _handlers.load_metadata('reference')
 			
-			Number of tokens in corpus: {st.session_state.ref_tokens}\n    Number of word tokens in corpus: {st.session_state.ref_words}\n    Number of documents in corpus: {st.session_state.ref_ndocs}
-			""")
+			st.markdown(_messages.message_reference_info(metadata_reference))
 			
-			if st.session_state.warning == 4:
-				st.markdown(f"""###### The following documents were excluded from the corpus either because they are improperly encoded or have substantial segments not recognized as English (and, therefore, cannot be tagged properly):
-			
-				{', '.join(st.session_state.ref_exceptions)}
-				""")
+			if st.session_state.warning == 5:
+				st.markdown(_warnings.warning_5(st.session_state.ref_exceptions))
 
-			
+			if st.session_state.warning == 4:
+				st.markdown(_warnings.warning_4(st.session_state.ref_exceptions))
+	
 			with st.expander("Documents in reference corpus:"):
-				st.write(sorted(st.session_state.ref_docids))
+				st.write(sorted(metadata_reference.get('docids')))
 				
 		else:
+			st.markdown("---")
 			st.markdown('### Reference corpus:')
 			load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)
+			
+			if st.session_state.warning == 1:
+				st.markdown(_warnings.warning_1, unsafe_allow_html=True)
+
+			if st.session_state.warning == 6:
+				st.markdown(_warnings.warning_6, unsafe_allow_html=True)
+			
+			st.markdown("---")
 			if load_ref == 'Yes':
-			
-				if st.session_state.warning == 1:
-					st.markdown(warnings.warning_1, unsafe_allow_html=True)
-		
-				with st.form("ref-form", clear_on_submit=True):
-					ref_files = st.file_uploader("Upload your reference corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
-					submitted = st.form_submit_button("UPLOAD REFERENCE")
-			
-					if len(ref_files) > 0:
-						all_files = []
-						for file in ref_files:
-							bytes_data = file.getvalue()
-							file_size = len(bytes_data)
-							all_files.append(file_size)
-						corpus_size = sum(all_files)
-						#check for duplicates
-						doc_ids = [doc.name for doc in ref_files]
-						doc_ids = [doc.replace(" ", "") for doc in doc_ids]
-						if len(doc_ids) > len(set(doc_ids)):
-							dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
-							dup_ids = list(set(dup_ids))
-						else:
-							dup_ids = []
+									
+				ref_from_saved = st.radio("Would you like to load your reference from a saved corpus?", ("No", "Yes"), horizontal=True)
+				st.markdown("---")
+				
+				if ref_from_saved == 'Yes':
+					st.markdown(_messages.message_select_reference)
+					st.sidebar.markdown("Use the button to load a previously processed corpus.")
+					saved_corpora, saved_ref = _handlers.find_saved_reference(metadata_target.get('model'), session.get('target_path'))
+					to_load = st.sidebar.selectbox('Select a saved corpus to load:', (saved_ref))			
+					if st.sidebar.button("Load Saved Corpus"):
+						corp_path = saved_corpora.get(to_load)
+						ref_corp = _handlers.load_corpus_path(corp_path)
+						ref_corp, exceptions = _process.check_reference(ref_corp, metadata_target.get('docids'))
+
+						if len(exceptions) > 0 and bool(ref_corp) == False:
+							st.session_state.warning = 6
+							st.experimental_rerun()
 						
-						dup_ref = list(set(st.session_state.docids).intersection(doc_ids))
-				
-					else:
-						corpus_size = 0
-						dup_ids = []
-						dup_ref = []
-		
-				if corpus_size > MAX_BYTES:
-					st.markdown(warnings.warning_3, unsafe_allow_html=True)
-					st.write(corpus_size)
-					st.markdown("---")
-		
-				if len(dup_ids) > 0:
-					st.markdown(warnings.warning_2(sorted(dup_ids)), unsafe_allow_html=True)
-				
-				if len(dup_ref) > 0:
-					st.markdown(warnings.warning_4(sorted(dup_ref)), unsafe_allow_html=True)
-
-				if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 and corpus_size <= MAX_BYTES:
-					st.markdown(f"""```
-					{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
-					""")
-
-				if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 and corpus_size <= MAX_BYTES:
-					st.sidebar.markdown("### Process Reference")
-					st.sidebar.markdown("Click the button to process your reference corpus files.")
-					if st.sidebar.button("Process Reference Corpus"):
-						with st.sidebar:
-							with st.spinner('Processing corpus data...'):
-								models = load_models()
-								nlp = models[st.session_state.model]
-								detector = load_detector()
-								ref_corp, exceptions = process_functions.process_corpus(ref_files, detector, nlp)
-							if len(exceptions) > 0 and bool(ref_corp) == False:
-								st.session_state.warning = 1
-								st.error('There was a problem proccessing your reference corpus.')
-								st.experimental_rerun()
-							elif len(exceptions) > 0 and bool(ref_corp) == True:
-								st.warning('There was a problem proccessing your reference corpus.')
-								st.session_state.warning = 4
-								st.session_state.ref_exceptions = exceptions
-								#get features
-								tags_pos, tags_ds = process_functions.get_corpus_features(ref_corp)
-								#assign session states
-								st.session_state.ref_tokens = len(tags_pos)
-								st.session_state.ref_words = len([x for x in tags_pos if not x.startswith('Y')])
-								st.session_state.reference = ref_corp
-								st.session_state.ref_docids = list(ref_corp.keys())
-								st.session_state.ref_ndocs = len(list(ref_corp.keys()))
-								st.experimental_rerun()
-							else:
-								st.success('Processing complete!')
-								st.session_state.warning = 0
-								#get features
-								tags_pos, tags_ds = process_functions.get_corpus_features(ref_corp)
-								#assign session states
-								st.session_state.ref_tokens = len(tags_pos)
-								st.session_state.ref_words = len([x for x in tags_pos if not x.startswith('Y')])
-								st.session_state.reference = ref_corp
-								st.session_state.ref_docids = list(ref_corp.keys())
-								st.session_state.ref_ndocs = len(list(ref_corp.keys()))
-								st.experimental_rerun()
-								
+						elif len(exceptions) > 0 and bool(ref_corp) == True:
+							st.session_state.warning = 7
+							st.session_state.ref_exceptions = exceptions
+							#get features
+							tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
+							model = _process.check_model(tags_ds)
+							#assign session states
+							_handlers.init_metadata_reference(ref_corp, model, tags_pos, tags_ds)
+							_handlers.update_session('reference_path', corp_path)
+							_handlers.update_session('has_reference', True)
+							st.experimental_rerun()
+						
+						else:
+							st.success('Processing complete!')
+							st.session_state.warning = 0
+							#get features
+							tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
+							model = _process.check_model(tags_ds)
+							#assign session states
+							_handlers.init_metadata_reference(ref_corp, model, tags_pos, tags_ds)
+							_handlers.update_session('reference_path', corp_path)
+							_handlers.update_session('has_reference', True)
+							st.experimental_rerun()
 					st.sidebar.markdown("---")
+
+				else:
+					st.markdown(_messages.message_load_reference)
+					with st.form("ref-form", clear_on_submit=True):
+						ref_files = st.file_uploader("Upload your reference corpus", type=["txt"], accept_multiple_files=True, key='reffiles')
+						submitted = st.form_submit_button("UPLOAD REFERENCE")
+				
+						if CHECK_SIZE == True:
+							dup_ids, dup_ref, corpus_size = _process.check_corpus(ref_files, check_size=True, check_ref=True, target_docs=metadata_target.get('docids'))
+					
+						if CHECK_SIZE == False:
+							dup_ids, dup_ref = _process.check_corpus(ref_files, check_ref=True, target_docs=metadata_target.get('docids'))
+							corpus_size = 0
+												
+					if CHECK_SIZE == True and corpus_size > MAX_BYTES:
+						st.sidebar.markdown(_warnings.warning_3, unsafe_allow_html=True)
+
+					if len(dup_ids) > 0:
+						st.markdown(_warnings.warning_2(sorted(dup_ids)), unsafe_allow_html=True)
+					
+					if len(dup_ref) > 0:
+						st.markdown(_warnings.warning_5(sorted(dup_ref)), unsafe_allow_html=True)
+					
+					if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0:
+						st.markdown(f"""```
+						{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
+						""")
+	
+					if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 and (corpus_size <= MAX_BYTES or CHECK_SIZE == False):
+						st.sidebar.markdown("### Process Reference")
+						st.sidebar.markdown("Click the button to process your reference corpus files.")
+						if st.sidebar.button("Process Reference Corpus"):
+							with st.sidebar:
+								with st.spinner('Processing corpus data...'):
+									models = load_models()
+									selected_dict = metadata_target.get('model')
+									nlp = models[selected_dict]
+									if ENABLE_DETECT == True:
+										detector = _process.load_detector(MODEL_DETECT)
+										ref_corp, exceptions = _process.process_corpus(ref_files, nlp, detector)
+									if ENABLE_DETECT == False:
+										ref_corp, exceptions = _process.process_corpus(ref_files, nlp)
+								
+								if len(exceptions) > 0 and bool(ref_corp) == False:
+									st.session_state.warning = 1
+									st.experimental_rerun()
+								
+								elif len(exceptions) > 0 and bool(ref_corp) == True:
+									st.session_state.warning = 4
+									st.session_state.ref_exceptions = exceptions
+									#get features
+									tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
+									#assign session states
+									_handlers.save_corpus_temp(ref_corp, 'reference')
+									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds)
+									_handlers.update_session('has_reference', True)
+									st.experimental_rerun()
+								
+								else:
+									st.success('Processing complete!')
+									st.session_state.warning = 0
+									#get features
+									tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
+									#assign session states
+									_handlers.save_corpus_temp(ref_corp, 'reference')
+									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds)
+									_handlers.update_session('has_reference', True)
+									st.experimental_rerun()
+								
+						st.sidebar.markdown("---")
 		
 		st.sidebar.markdown('### Reset all tools and files:')
 		st.sidebar.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
@@ -208,141 +288,148 @@ def main():
 			for key in st.session_state.keys():
 				del st.session_state[key]
 			for key, value in _states.STATES.items():
-				if key not in st.session_state:
-					setattr(st.session_state, key, value)
+				setattr(st.session_state, key, value)
+			if ENABLE_SAVE == True:
+				_handlers.clear_temp()
+			_handlers.reset_session()
 			st.experimental_rerun()
 		st.sidebar.markdown("""---""")
-	
+		
 	else:
 	
-		st.markdown("### Processing a target corpus :dart:")
-		st.markdown(":warning: Be sure that all file names are unique.")
+		st.markdown("###  :dart: Load or process a target corpus")
+
+		st.markdown(_messages.message_load)
 		
-		if st.session_state.warning == 1:
-			st.markdown(warnings.warning_1, unsafe_allow_html=True)
+		st.markdown("---")
+		st.markdown("### Load a saved corpus:")
 		
-		with st.form("corpus-form", clear_on_submit=True):
-			corp_files = st.file_uploader("Upload your target corpus", type=["txt"], accept_multiple_files=True)
-			submitted = st.form_submit_button("UPLOAD TARGET")
-			
-			if len(corp_files) > 0:
-				all_files = []
-				for file in corp_files:
-					bytes_data = file.getvalue()
-					file_size = len(bytes_data)
-					all_files.append(file_size)
-				corpus_size = sum(all_files)
-				#check for duplicates
-				doc_ids = [doc.name for doc in corp_files]
-				doc_ids = [doc.replace(" ", "") for doc in doc_ids]
-				if len(doc_ids) > len(set(doc_ids)):
-					dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
-					dup_ids = list(set(dup_ids))
-				else:
-					dup_ids = []
-				
-			else:
-				corpus_size = 0
-				dup_ids = []
+		from_saved = st.radio("Would you like to load a saved corpus?", ("No", "Yes"), horizontal=True)
 		
-		if corpus_size > MAX_BYTES:
-			st.markdown(warnings.warning_3, unsafe_allow_html=True)
+		if from_saved == 'Yes':
 			st.markdown("---")
-		
-		if len(dup_ids) > 0:
-					st.markdown(warnings.warning_2(sorted(dup_ids)), unsafe_allow_html=True)
-
-		if len(corp_files) > 0 and len(dup_ids) == 0 and corpus_size <= MAX_BYTES:
-			st.markdown(f"""```
-			{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
-			""")
-
-		st.markdown("""
-					From this page you can load a corpus from a selection of text (**.txt**)
-					files or reset a corpus once one has been processed.\n
-					Once you have loaded a target corpus, you can add a reference corpus for comparison.
-					Also note that you can encode metadata into your filenames, which can used for further analysis.
-					(See naming tips.)\n
-					The tool is designed to work with smallish corpora **(~3 million words or less)**.
-					Processing times may vary, but you can expect the initial corpus processing to take roughly 1 minute for every 1 million words.
-					""")
-		
-		with st.expander("File preparation and file naming tips"):
-			st.markdown("""
-					Files must be in a \*.txt format. If you are preparing files for the first time,
-					it is recommended that you use a plain text editor (rather than an application like Word).
-					Avoid using spaces in file names.
-					Also, you needn't worry about preserving paragraph breaks, as those will be stripped out during processing.\n
-					Metadata can be encoded at the beginning of a file name, before an underscore. For example: acad_01.txt, acad_02.txt, 
-					blog_01.txt, blog_02.txt. These would allow you to compare **acad** vs. **blog** as categories.
-					You can designate up to 20 categories.
-					""")
-				
-		st.sidebar.markdown("### Models")
-		models = load_models()
-		selected_dict = st.sidebar.selectbox("Select a DocuScope Model", options=["Large Dictionary", "Common Dictionary"])
-		nlp = models[selected_dict]
-		st.session_state.model = selected_dict
-	
-		with st.sidebar.expander("Which model do I choose?"):
-			st.markdown("""
-					For detailed descriptions, see the tags tables available from the Help menu.
-					But in short, the full dictionary has more categories and coverage than the common dictionary.
-					""")		
-		st.sidebar.markdown("---")
-				
-		if len(corp_files) > 0 and len(dup_ids) == 0 and corpus_size <= MAX_BYTES:
-			st.sidebar.markdown("### Process Target")
-			st.sidebar.markdown("Once you have selected your files, use the button to process your corpus.")
-			if st.sidebar.button("Process Corpus"):
-				with st.sidebar:
-					with st.spinner('Processing corpus data...'):
-						detector = load_detector()
-						corp, exceptions = process_functions.process_corpus(corp_files, detector, nlp)
-					if len(exceptions) > 0 and bool(corp) == False:
-						st.session_state.warning = 1
-						st.error('There was a problem proccessing your corpus.')
-						st.experimental_rerun()
-					elif len(exceptions) > 0 and bool(corp) == True:
-						st.warning('There was a problem proccessing your corpus.')
-						st.session_state.warning = 3
-						st.session_state.exceptions = exceptions
-						#get features
-						tags_pos, tags_ds = process_functions.get_corpus_features(corp)
-						#assign session states
-						st.session_state.tokens = len(tags_pos)
-						st.session_state.words = len([x for x in tags_pos if not x.startswith('Y')])
-						st.session_state.corpus = corp
-						st.session_state.docids = list(corp.keys())
-						st.session_state.ndocs = len(list(corp.keys()))
-						#tagsets
-						tags_ds = set(tags_ds)
-						tags_ds = sorted(set([re.sub(r'B-', '', i) for i in tags_ds]))
-						tags_pos = set(tags_pos)
-						tags_pos = sorted(set([re.sub(r'\d\d$', '', i) for i in tags_pos]))
-						st.session_state.tags_ds = tags_ds
-						st.session_state.tags_pos = tags_pos
-						st.experimental_rerun()
-					else:
-						st.success('Processing complete!')
-						st.session_state.warning = 0
-						#get features
-						tags_pos, tags_ds = process_functions.get_corpus_features(corp)
-						#assign session states
-						st.session_state.tokens = len(tags_pos)
-						st.session_state.words = len([x for x in tags_pos if not x.startswith('Y')])
-						st.session_state.corpus = corp
-						st.session_state.docids = list(corp.keys())
-						st.session_state.ndocs = len(list(corp.keys()))
-						#tagsets
-						tags_ds = set(tags_ds)
-						tags_ds = sorted(set([re.sub(r'B-', '', i) for i in tags_ds]))
-						tags_pos = set(tags_pos)
-						tags_pos = sorted(set([re.sub(r'\d\d$', '', i) for i in tags_pos]))
-						st.session_state.tags_ds = tags_ds
-						st.session_state.tags_pos = tags_pos
-						st.experimental_rerun()
+			st.markdown(_messages.message_select_target)
+			st.sidebar.markdown("Use the button to load a previously processed corpus.")
+			from_model = st.sidebar.radio("Select data tagged with:", ("Large Dictionary", "Common Dictionary"), key='corpora_to_load')
+			if from_model == 'Large Dictionary':
+				saved_corpora = _handlers.find_saved('ld')
+				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (saved_corpora))
+			if from_model == 'Common Dictionary':
+				saved_corpora = _handlers.find_saved('cd')		
+				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (saved_corpora))	
+			if st.sidebar.button("Load Saved Corpus"):
+				corp_path = saved_corpora.get(to_load)
+				corp = _handlers.load_corpus_path(corp_path)
+				tags_pos, tags_ds = _process.get_corpus_features(corp)
+				model = _process.check_model(tags_ds)
+				_handlers.init_metadata_target(corp, model, tags_pos, tags_ds)
+				_handlers.update_session('target_path', corp_path)
+				_handlers.update_session('from_saved', 'Yes')
+				_handlers.update_session('is_saved', 'Yes')
+				st.experimental_rerun()
 			st.sidebar.markdown("---")
+		
+		if from_saved == 'No':
+			st.markdown("---")
+			st.markdown("#### Process a new corpus:")
+			
+			st.markdown(_messages.message_load_target)
+			
+			with st.expander("File preparation and file naming tips"):
+				st.markdown(_messages.message_naming)
+				
+			if st.session_state.warning == 1:
+				st.markdown(_warnings.warning_1, unsafe_allow_html=True)
+			
+			with st.form("corpus-form", clear_on_submit=True):
+				corp_files = st.file_uploader("Upload your target corpus", type=["txt"], accept_multiple_files=True)
+				submitted = st.form_submit_button("UPLOAD TARGET")
+				
+				if CHECK_SIZE == True:
+					dup_ids, corpus_size = _process.check_corpus(corp_files, check_size=True)
+					
+				if CHECK_SIZE == False:
+					dup_ids = _process.check_corpus(corp_files)
+					corpus_size = 0
+
+			if CHECK_SIZE == True and corpus_size > MAX_BYTES:
+				st.markdown(_warnings.warning_3, unsafe_allow_html=True)
+			
+			if len(dup_ids) > 0:
+				st.markdown(_warnings.warning_2(sorted(dup_ids)), unsafe_allow_html=True)
+				
+			if len(corp_files) > 0 and len(dup_ids) == 0 and (corpus_size <= MAX_BYTES or CHECK_SIZE == False):
+				st.markdown(f"""```
+				{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
+				""")		
+					
+			st.sidebar.markdown("### Models")
+			models = load_models()
+			selected_dict = st.sidebar.selectbox("Select a DocuScope model:", options=["Large Dictionary", "Common Dictionary"])
+			nlp = models[selected_dict]
+			st.session_state.model = selected_dict
+		
+			with st.sidebar.expander("Which model do I choose?"):
+				st.markdown("""
+						For detailed descriptions, see the tags tables available from the Help menu.
+						But in short, the full dictionary has more categories and coverage than the common dictionary.
+						""")		
+			st.sidebar.markdown("---")
+				
+			if len(corp_files) > 0 and len(dup_ids) == 0 and (corpus_size <= MAX_BYTES or CHECK_SIZE == False):
+				st.sidebar.markdown("### Process Target")
+				st.sidebar.markdown("Once you have selected your files, use the button to process your corpus.")
+				if st.sidebar.button("Process Corpus"):
+					with st.sidebar:
+						with st.spinner('Processing corpus data...'):
+							if ENABLE_DETECT == True:
+								detector = _process.load_detector(MODEL_DETECT)
+								corp, exceptions = _process.process_corpus(corp_files, nlp, detector)
+							if ENABLE_DETECT == False:
+								corp, exceptions = _process.process_corpus(corp_files, nlp)
+						
+						if len(exceptions) > 0 and bool(corp) == False:
+							st.session_state.warning = 1
+							st.experimental_rerun()
+						
+						elif len(exceptions) > 0 and bool(corp) == True:
+							st.session_state.warning = 4
+							st.session_state.exceptions = exceptions
+							#get features
+							tags_pos, tags_ds = _process.get_corpus_features(corp)
+							#assign session states
+							_handlers.save_corpus_temp(corp, 'target')
+							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds)
+							st.experimental_rerun()
+						
+						else:
+							st.success('Processing complete!')
+							st.session_state.warning = 0
+							#get features
+							tags_pos, tags_ds = _process.get_corpus_features(corp)
+							#assign session states
+							_handlers.save_corpus_temp(corp, 'target')
+							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds)
+							st.experimental_rerun()
+				st.sidebar.markdown("---")
+				
+		if ENABLE_SAVE == True:
+			st.sidebar.markdown('### Delete saved corpus:')
+			st.sidebar.markdown(":ghost: Using the **delete** button will permanently remove the corpus and canot be undone.")
+			affirm = st.sidebar.radio("Are you sure you want to delete a corpus:", ("No", "Yes"), horizontal=True)
+			if affirm == 'Yes':
+				del_from_model = st.sidebar.radio("Select data tagged with:", ("Large Dictionary", "Common Dictionary"), key='corpora_to_delete')
+				if del_from_model == 'Large Dictionary':
+					saved_corpora = _handlers.find_saved('ld')
+					to_delete = st.sidebar.selectbox('Select a saved corpus to delete:', (saved_corpora))
+				if del_from_model == 'Common Dictionary':
+					saved_corpora = _handlers.find_saved('cd')		
+					to_delete = st.sidebar.selectbox('Select a saved corpus to delete:', (saved_corpora))	
+				if st.sidebar.button("Delete Corpus"):
+					path = pathlib.Path(saved_corpora.get(to_delete))
+					path.unlink()
+					st.experimental_rerun()
+			st.sidebar.markdown("""---""")
 
 if __name__ == "__main__":
     main()
