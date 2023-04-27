@@ -1,73 +1,58 @@
-import streamlit as st
-import docuscospacy.corpus_analysis as ds
-import pandas as pd
-import numpy as np
-import st_aggrid
-from tmtoolkit.tokenseq import index_windows_around_matches
+# Copyright (C) 2023 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import base64
 from io import BytesIO
+import pathlib
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
+# set paths
+HERE = pathlib.Path(__file__).parents[1].resolve()
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-def kwic_st(tok, node_word, search_type, ignore_case=True):
-	kwic = []
-	for i in range(0,len(tok)):
-		tpf = list(tok.values())[i]
-		doc_id = list(tok.keys())[i]
-		# create a boolean vector for node word
-		if bool(ignore_case) == True and search_type == "fixed":
-			v = [t[0].strip().lower() == node_word.lower() for t in tpf]
-		elif bool(ignore_case) == False and search_type == "fixed":
-			v = [t[0].strip() == node_word for t in tpf]
-		elif bool(ignore_case) == True and search_type == "starts_with":
-			v = [t[0].strip().lower().startswith(node_word.lower()) for t in tpf]
-		elif bool(ignore_case) == False and search_type == "starts_with":
-			v = [t[0].strip().startswith(node_word) for t in tpf]
-		elif bool(ignore_case) == True and search_type == "ends_with":
-			v = [t[0].strip().lower().endswith(node_word.lower()) for t in tpf]
-		elif bool(ignore_case) == False and search_type == "ends_with":
-			v = [t[0].strip().endswith(node_word) for t in tpf]
-		elif bool(ignore_case) == True and search_type == "contains":
-			v = [node_word.lower() in t[0].strip().lower() for t in tpf]
-		elif bool(ignore_case) == False and search_type == "contains":
-			v = [node_word in t[0].strip() for t in tpf]
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-		if sum(v) > 0:
-			# get indices within window around the node
-			idx = list(index_windows_around_matches(np.array(v), left=7, right=7, flatten=False))
-			node_idx = [i for i, x in enumerate(v) if x == True]
-			start_idx = [min(x) for x in idx]
-			end_idx = [max(x) for x in idx]
-			in_span = []
-			for i in range(len(node_idx)):
-				pre_node = "".join([t[0] for t in tpf[start_idx[i]:node_idx[i]]]).strip()
-				post_node = "".join([t[0] for t in tpf[node_idx[i]+1:end_idx[i]]]).strip()
-				node = tpf[node_idx[i]][0]
-				in_span.append((doc_id, pre_node, node, post_node))
-			kwic.append(in_span)
-	kwic = [x for xs in kwic for x in xs]
-	if len(kwic) > 0:
-		df = pd.DataFrame(kwic)
-		df.columns =['Doc ID', 'Pre-Node', 'Node', 'Post-Node']
+modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'pandas', 'st_aggrid']
+import_params = _imports.import_parameters(_options, modules)
+
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
 	else:
-		df = ''
-	return(df)
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
 
-CATEGORY = categories.OTHER
+
+CATEGORY = _categories.OTHER
 TITLE = "KWIC Tables"
 KEY_SORT = 8
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
 
-	if bool(isinstance(st.session_state.kwic, pd.DataFrame)) == True:
+	session = _handlers.load_session()
+	
+	if session.get('kwic') == True:
 		
-		df = st.session_state.kwic	
+		df = _handlers.load_table('kwic')	
 		
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -98,22 +83,9 @@ def main():
 			st.dataframe(df)
 		
 		with st.sidebar.expander("Filtering and saving"):
-			st.markdown("""
-					Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
-					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-					Rows can be selected before or after filtering using the checkboxes.
-					(The checkbox in the header will select/deselect all rows.)\n
-					If rows are selected and appear in new table below the main one,
-					those selected rows will be available for download in an Excel file.
-					If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-					""")
+			st.markdown(_messages.message_filters)
 		
-		st.sidebar.markdown("### Download data")
-		st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							You can use the checkboxes to download selected rows.
-							With no rows selected, the entire table will be prepared for download.
-							""")
+		st.sidebar.markdown(_messages.message_download)
 		
 		if st.sidebar.button("Download"):
 			with st.sidebar:
@@ -127,17 +99,20 @@ def main():
 					st.markdown(linko, unsafe_allow_html=True)
 		
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Generate new table")
-		st.sidebar.markdown("""
-							Click the button to reset the KWIC table.
-							""")
+		st.sidebar.markdown(_messages.message_reset_table)
 													
 		if st.sidebar.button("Create New KWIC Table"):
-				st.session_state.kwic = ''
+				_handlers.clear_table('kwic')
+				_handlers.update_session('kwic', False)
 				st.experimental_rerun()
 		st.sidebar.markdown("---")
 			
 	else:
+		
+		metadata_target = _handlers.load_metadata('target')
+		
+		st.markdown(_messages.message_kwic)
+		
 		st.sidebar.markdown("### Node word")
 		st.sidebar.markdown("""Use the text field to enter a node word and other desired options.
 					Once a node word has been entered and options selected, click the button below to generate a KWIC table.
@@ -167,34 +142,27 @@ def main():
 			ignore_case = True
 		
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Generate KWIC")
-		st.sidebar.markdown("""
-			Use the button to generate a KWIC table from your corpus.
-			""")
+		st.sidebar.markdown(_messages.message_generate_table)
 		if st.sidebar.button("KWIC"):
-			if st.session_state.corpus == "":
-				st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
+			if session.get('target_path') == None:
+				st.write(_warnings.warning_11, unsafe_allow_html=True)
 			elif node_word == "":
-				st.write(":warning: It doesn't look like you've entered a node word. Be sure to hit return after typing a word into the field.")
+				st.write(_warnings.warning_14, unsafe_allow_html=True)
 			elif node_word.count(" ") > 0:
-				st.write("Your node word shouldn't contain any spaces.")
+				st.write(_warnings.warning_15, unsafe_allow_html=True)
 			elif len(node_word) > 15:
-				st.write("Your node word contains too many characters. Try something shorter.")
+				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tp = st.session_state.corpus
+				tp = _handlers.load_corpus_session('target', session)
 				with st.spinner('Processing KWIC...'):
-					df = kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
-				if bool(isinstance(df, pd.DataFrame)) == True:
-					st.session_state.kwic = df
+					kwic_df = _analysis.kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
+				if bool(isinstance(kwic_df, pd.DataFrame)) == True:
+					_handlers.save_table(kwic_df, 'kwic')
+					_handlers.update_session('kwic', True)
 					st.experimental_rerun()
 				else:
 					st.markdown(":warning: Your search didn't return any matches.")
 		st.sidebar.markdown("---")
 		
-		st.markdown("""
-		Use this tool to generate Key Words in Context for a word or part of a word (like the ending *tion*).
-		Note that wildcard characters are **not needed**.
-		""")
-
 if __name__ == "__main__":
     main()
