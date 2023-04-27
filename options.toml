@@ -1,0 +1,6 @@
+[global]
+check_size = true
+check_language = true
+enable_save = false
+desktop_mode = false
+max_bytes = 20000000
