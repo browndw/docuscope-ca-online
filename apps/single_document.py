@@ -1,168 +1,95 @@
-import streamlit as st
-import docuscospacy.corpus_analysis as ds
-import pandas as pd
-import altair as alt
-import streamlit.components.v1 as components
-from docx import Document
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-from docx.opc.part import Part
-from docx.opc.constants import RELATIONSHIP_TYPE as RT
+# Copyright (C) 2023 David West Brown
 
-import re
-from collections import Counter
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import base64
 from io import BytesIO
+import pathlib
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
+# set paths
+HERE = pathlib.Path(__file__).parents[1].resolve()
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-def increment_counter():
-	st.session_state.count_4 += 1
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
+
+modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'altair', 'docx', 'docuscospacy', 'pandas']
+import_params = _imports.import_parameters(_options, modules)
+
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
     
 hex_highlights = ['#5fb7ca', '#e35be5', '#ffc701', '#fe5b05', '#cb7d60']
-html_highlights = [' { background-color:#5fb7ca; }', ' { background-color:#e35be5; }', ' { background-color:#ffc701; }', ' { background-color:#fe5b05; }', ' { background-color:#cb7d60; }']
-
-def html_build(tok, key, count_by="tag"):
-    df = ds.tag_ruler(tok=tok, key=key, count_by=count_by)
-    df['ws'] = df['Token'].str.extract(r'(\s+)$')
-    df['Token'] = df['Token'].str.replace(r'(\s+)$', '')
-    df.Token[df['Tag'] != 'Untagged'] = df['Token'].str.replace(r'^(.*?)$', '\\1</span>')
-    df = df.iloc[:,[1,0,4]]
-    df.fillna('', inplace=True)
-    df.Tag[df['Tag'] != 'Untagged'] = df['Tag'].str.replace(r'^(.*?)$', '<span class="\\1">')
-    df.Tag[df['Tag'] == 'Untagged'] = df['Tag'].str.replace('Untagged', '')
-    df['Text'] = df['Tag'] + df['Token'] + df['ws']
-    doc = ''.join(df['Text'].tolist())
-    return(doc)
-
-def html_simplify(html_str):
-    html_str = re.sub(r'span class="NN\S*">', 'span class="Noun">', html_str)
-    html_str = re.sub(r'span class="VV\S*">', 'span class="Verb">', html_str)
-    html_str = re.sub(r'span class="J\S*">', 'span class="Adjective">', html_str)
-    html_str = re.sub(r'span class="R\S*">', 'span class="Adverb">', html_str)
-    html_str = re.sub(r'span class="P\S*">', 'span class="Pronoun">', html_str)
-    html_str = re.sub(r'span class="I\S*">', 'span class="Preposition">', html_str)
-    html_str = re.sub(r'span class="C\S*">', 'span class="Conjunction">', html_str)
-    return(html_str)
-
-def doc_counts(doc_span, n_tokens, count_by='pos'):
-    if count_by=='pos':
-        df = Counter(doc_span[doc_span.Tag != 'Y'].Tag)
-        df = pd.DataFrame.from_dict(df, orient='index').reset_index()
-        df = df.rename(columns={'index':'Tag', 0:'AF'})
-        df['RF'] = df.AF/n_tokens*100
-        df.sort_values(by=['AF', 'Tag'], ascending=[False, True], inplace=True)
-        df.reset_index(drop=True, inplace=True)
-    elif count_by=='ds':
-        df = Counter(doc_span.Tag)
-        df = pd.DataFrame.from_dict(df, orient='index').reset_index()
-        df = df.rename(columns={'index':'Tag', 0:'AF'})
-        df = df[df.Tag != 'Untagged']
-        df['RF'] = df.AF/n_tokens*100
-        df.sort_values(by=['AF', 'Tag'], ascending=[False, True], inplace=True)
-        df.reset_index(drop=True, inplace=True)
-    return(df)
-
-def simplify_counts(pos_counts, n_tokens):
-        df = pos_counts.drop('RF', axis=1)
-        df['Tag'].replace('^NN\S*$', '#Noun', regex=True, inplace=True)
-        df['Tag'].replace('^VV\S*$', '#Verb', regex=True, inplace=True)
-        df['Tag'].replace('^J\S*$', '#Adjective', regex=True, inplace=True)
-        df['Tag'].replace('^R\S*$', '#Adverb', regex=True, inplace=True)
-        df['Tag'].replace('^P\S*$', '#Pronoun', regex=True, inplace=True)
-        df['Tag'].replace('^I\S*$', '#Preposition', regex=True, inplace=True)
-        df['Tag'].replace('^C\S*$', '#Conjunction', regex=True, inplace=True)
-        df = df.loc[df["Tag"].str.startswith('#', na=False)]
-        df['Tag'].replace('^#', '', regex=True, inplace=True)
-        df = df.groupby(['Tag'], as_index=False)['AF'].sum()
-        df.sort_values(by='AF', inplace=True, ignore_index=True, ascending=False)
-        df.reset_index(inplace=True)
-        df['RF'] = df.AF/n_tokens*100
-        return(df)
-        
-def simplify_span(pos_span):
-        df = pos_span.copy()
-        df['Tag'].replace('^NN\S*$', 'Noun', regex=True, inplace=True)
-        df['Tag'].replace('^VV\S*$', 'Verb', regex=True, inplace=True)
-        df['Tag'].replace('^J\S*$', 'Adjective', regex=True, inplace=True)
-        df['Tag'].replace('^R\S*$', 'Adverb', regex=True, inplace=True)
-        df['Tag'].replace('^P\S*$', 'Pronoun', regex=True, inplace=True)
-        df['Tag'].replace('^I\S*$', 'Preposition', regex=True, inplace=True)
-        df['Tag'].replace('^C\S*$', 'Conjunction', regex=True, inplace=True)
-        return(df)
-
-def update_tags(html_state):
-	tags = st.session_state.tags
-	if len(tags)>5:
-		tags = tags[:5]
-		st.session_state.tags = tags
-	tags = ['.' + x for x in tags]
-	highlights = html_highlights[:len(tags)]
-	style_str = [''.join(x) for x in zip(tags, highlights)]
-	style_str = ''.join(style_str)
-	style_sheet_str = '<style>' + style_str + '</style>'
-	st.session_state.html_str = style_sheet_str + html_state
-
-def add_alt_chunk(doc: Document, html: str):
-    package = doc.part.package
-    partname = package.next_partname('/word/altChunk%d.html')
-    alt_part = Part(partname, 'text/html', html.encode(), package)
-    r_id = doc.part.relate_to(alt_part, RT.A_F_CHUNK)
-    alt_chunk = OxmlElement('w:altChunk')
-    alt_chunk.set(qn('r:id'), r_id)
-    doc.element.body.sectPr.addprevious(alt_chunk)
     
-CATEGORY = categories.OTHER
+CATEGORY = _categories.OTHER
 TITLE = "Single Documents"
 KEY_SORT = 10
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
 
-	if st.session_state.count_4 % 2 == 0:
-		idx = 0
-	else:
-		idx = 1
+	session = _handlers.load_session()	
 
-	if bool(isinstance(st.session_state.dc_pos, pd.DataFrame)) == True:
+	if bool(session['doc']) == True:
+	
+		_handlers.load_widget_state(pathlib.Path(__file__).stem)
+		metadata_target = _handlers.load_metadata('target')
+
 		st.sidebar.markdown("### Tagset")
 		st.sidebar.markdown("Use the menus to select up to **5 tags** you would like to highlight.")
 		
-		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
+		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("sd_radio", pathlib.Path(__file__).stem), horizontal=True)
 	
 		if tag_radio == 'Parts-of-Speech':
 			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)
 			if tag_type == 'General':
-				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Noun', 'Verb', 'Adjective', 'Adverb', 'Pronoun', 'Preposition', 'Conjunction'], on_change = update_tags(st.session_state.html_simple), key='tags')
+				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Noun', 'Verb', 'Adjective', 'Adverb', 'Pronoun', 'Preposition', 'Conjunction'], on_change = _handlers.update_tags(session['doc']['html_simple']), key='tags')
 				tag_colors = hex_highlights[:len(tag_list)]
 				tag_html = zip(tag_colors, tag_list)
 				tag_html = list(map('">'.join, tag_html))
 				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 				tag_html = '; '.join(tag_html)
-				tag_loc = st.session_state.doc_simple
-				df = st.session_state.dc_simple
+				tag_loc = _handlers.load_table('doc_simple')
+				df = session['doc']['dc_simple']
 			else:
-				tag_list = st.sidebar.multiselect('Select tags to highlight', st.session_state.tags_pos, on_change = update_tags(st.session_state.html_pos), key='tags')
+				tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_pos'], on_change = _handlers.update_tags(session['doc']['html_pos']), key='tags')
 				tag_colors = hex_highlights[:len(tag_list)]
 				tag_html = zip(tag_colors, tag_list)
 				tag_html = list(map('">'.join, tag_html))
 				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 				tag_html = '; '.join(tag_html)
-				tag_loc = st.session_state.doc_pos
-				df = st.session_state.dc_pos
+				tag_loc = _handlers.load_table('doc_pos')
+				df = session['doc']['dc_pos']
 		else:
-			tag_list = st.sidebar.multiselect('Select tags to highlight', st.session_state.tags_ds, on_change = update_tags(st.session_state.html_ds), key='tags')
+			tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_ds'], on_change = _handlers.update_tags(session['doc']['html_ds']), key='tags')
 			tag_colors = hex_highlights[:len(tag_list)]
 			tag_html = zip(tag_colors, tag_list)
 			tag_html = list(map('">'.join, tag_html))
 			tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 			tag_html = '; '.join(tag_html)
-			tag_loc = st.session_state.doc_ds
-			df = st.session_state.dc_ds
+			tag_loc = _handlers.load_table('doc_ds')
+			df = session['doc']['dc_ds']
 		
 		if len(tag_list) == 5:
 			st.sidebar.markdown(':warning: You can hightlight a maximum of 5 tags.')
@@ -177,7 +104,7 @@ def main():
 					""")
 		
 		st.markdown(f"""
-					###  {st.session_state.doc_key}
+					###  {session['doc']['doc_key']}
 					""")
 
 		if st.sidebar.button("Tag Density Plot"):
@@ -212,7 +139,10 @@ def main():
 					##### Tags:  {tag_html}
 					""", unsafe_allow_html=True)
 						
-		components.html(st.session_state.html_str, height=500, scrolling=True)
+		if 'html_str' not in st.session_state:
+			st.session_state['html_str'] = ''
+		
+		st.components.v1.html(st.session_state.html_str, height=500, scrolling=True)
 		
 		st.dataframe(df)
 		
@@ -222,14 +152,12 @@ def main():
 							Click the button to explore a new document.
 							""")
 		if st.sidebar.button("Select a new document"):
-			st.session_state.doc_pos = ''
-			st.session_state.doc_ds = ''
-			st.session_state.dc_pos = ''
-			st.session_state.dc_ds = ''
-			st.session_state.html_pos = ''
-			st.session_state.html_ds = ''
-			st.session_state.doc_key = ''
-			del st.session_state['tags']
+			_handlers.clear_table('doc_simple')
+			_handlers.clear_table('doc_pos')
+			_handlers.clear_table('doc_ds')
+			_handlers.update_session('doc', dict())
+			if 'tags' in st.session_state:
+				del st.session_state['tags']
 			st.experimental_rerun()
 
 		st.sidebar.markdown("---")
@@ -245,8 +173,8 @@ def main():
 					style_sheet_str = doc_html[0] + '</style>'
 					html_str = doc_html[1]
 					doc_html = '<!DOCTYPE html><html><head>' + style_sheet_str + '</head><body>' + tag_html + '<br><br>' + html_str + '</body></html>'
-					downloaded_file = Document()
-					downloaded_file.add_heading(st.session_state.doc_key)
+					downloaded_file = docx.Document()
+					downloaded_file.add_heading(session['doc']['doc_key'])
 					downloaded_file.add_heading('Table of tag frequencies:', 3)
 					#add counts table
 					df['RF'] = df.RF.round(2)
@@ -261,7 +189,7 @@ def main():
 					t.style = 'LightShading-Accent1'
 					downloaded_file.add_heading('Highlighted tags:', 3)
 					#add html
-					add_alt_chunk(downloaded_file, doc_html)
+					_analysis.add_alt_chunk(downloaded_file, doc_html)
 					towrite = BytesIO()
 					downloaded_file.save(towrite)
 					towrite.seek(0)  # reset pointer
@@ -272,34 +200,42 @@ def main():
 		st.sidebar.markdown("---")
 			
 	else:
+		
+		metadata_target = _handlers.load_metadata('target')
+		
 		st.sidebar.markdown("### Choose document")
 		st.sidebar.write("Use the menus to select the tags you would like to highlight.")		
-		doc_key = st.sidebar.selectbox("Select document to view:", (sorted(st.session_state.docids)))
+
+		if 'docids' in metadata_target.keys():
+			doc_key = st.sidebar.selectbox("Select document to view:", (sorted(metadata_target['docids'])))
+		else:
+			doc_key = st.sidebar.selectbox("Select document to view:", (['No documents to view']))
+
 		if st.sidebar.button("Process Document"):
-			if st.session_state.corpus == '':
-				st.write(":neutral_face: It doesn't look like you've loaded a corpus yet.")
+			if session.get('target_path') == None:
+				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			else:
-				doc_pos = ds.tag_ruler(st.session_state.corpus, doc_key, count_by='pos')
-				doc_simple = simplify_span(doc_pos)
-				doc_ds = ds.tag_ruler(st.session_state.corpus, doc_key, count_by='ds')
+				tp = _handlers.load_corpus_session('target', session)
+				doc_pos = ds.corpus_analysis.tag_ruler(tp, doc_key, count_by='pos')
+				doc_simple = _analysis.simplify_span(doc_pos)
+				doc_ds = ds.corpus_analysis.tag_ruler(tp, doc_key, count_by='ds')
+
 				doc_tokens = len(doc_pos.index)
 				doc_words = len(doc_pos[doc_pos.Tag != 'Y'])
-				dc_pos = doc_counts(doc_pos, doc_words, count_by='pos')
-				dc_simple = simplify_counts(dc_pos, doc_words)
-				dc_ds = doc_counts(doc_ds, doc_tokens, count_by='ds')
-				html_pos = html_build(st.session_state.corpus, doc_key, count_by='pos')
-				html_simple = html_simplify(html_pos)
-				html_ds = html_build(st.session_state.corpus, doc_key, count_by='ds')
-				st.session_state.doc_pos = doc_pos
-				st.session_state.doc_simple = doc_simple
-				st.session_state.doc_ds = doc_ds
-				st.session_state.dc_pos = dc_pos
-				st.session_state.dc_simple = dc_simple
-				st.session_state.dc_ds = dc_ds
-				st.session_state.html_pos = html_pos
-				st.session_state.html_simple = html_simple
-				st.session_state.html_ds = html_ds
-				st.session_state.doc_key = doc_key
+				dc_pos = _analysis.doc_counts(doc_pos, doc_words, count_by='pos')
+				dc_simple = _analysis.simplify_counts(dc_pos, doc_words)
+				dc_ds = _analysis.doc_counts(doc_ds, doc_tokens, count_by='ds')
+
+				html_pos = _analysis.html_build(tp, doc_key, count_by='pos')
+				html_simple = _analysis.html_simplify(html_pos)
+				html_ds = _analysis.html_build(tp, doc_key, count_by='ds')
+				
+				_handlers.save_table(doc_pos, 'doc_pos')
+				_handlers.save_table(doc_simple, 'doc_simple')
+				_handlers.save_table(doc_ds, 'doc_ds')
+
+				_handlers.update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key)
+				
 				st.experimental_rerun()
 
 if __name__ == "__main__":
