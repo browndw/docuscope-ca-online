@@ -1,52 +1,61 @@
-import streamlit as st
-import docuscospacy.corpus_analysis as ds
-import pandas as pd
-import st_aggrid
+# Copyright (C) 2023 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import base64
 from io import BytesIO
+import pathlib
+from importlib.machinery import SourceFileLoader
 
-import categories
-import states as _states
+# set paths
+HERE = pathlib.Path(__file__).parents[1].resolve()
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-# a method for preserving button selection on page interactions
-# with quick clicking it can lag
-def increment_counter():
-	st.session_state.count_3 += 1
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-CATEGORY = categories.FREQUENCY
+modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'docuscospacy', 'pandas', 'st_aggrid']
+import_params = _imports.import_parameters(_options, modules)
+
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
+
+
+CATEGORY = _categories.FREQUENCY
 TITLE = "N-gram Frequencies"
 KEY_SORT = 4
 
 def main():
-	# check states to prevent unlikely error
-	for key, value in _states.STATES.items():
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
 
-	if st.session_state.count_3 % 2 == 0:
-		idx = 0
-	else:
-		idx = 1
+	session = _handlers.load_session()
 
-	if bool(isinstance(st.session_state.ng_pos, pd.DataFrame)) == True:
-		st.sidebar.markdown("### Tagset")
-		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), index=idx, on_change=increment_counter, horizontal=True)
+	if session.get('ngrams') == True:
 		
-		if tag_radio == 'Parts-of-Speech':
-			df = st.session_state.ng_pos
-		else:
-			df = st.session_state.ng_ds
+		metadata_target = _handlers.load_metadata('target')
+		df = _handlers.load_table('ngrams')
 	
-		st.markdown(f"""##### Target corpus information:
-		
-		Number of tokens in corpus: {st.session_state.tokens}\n    Number of word tokens in corpus: {st.session_state.words}\n    Number of documents in corpus: {st.session_state.ndocs}
-		""")
-
-		st.markdown(f"""##### N-grams:
-		
-		Showing n-grams with frequency > {st.session_state.min_freq}
-		""")
+		st.markdown(_messages.message_target_info(metadata_target))
 			
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -72,14 +81,7 @@ def main():
 			)
 			
 		with st.expander("Column explanation"):
-			st.markdown("""
-					Columns will show the the n-gram tokens in sequence, followed by each of their tags.
-					The 'AF' column refers to the absolute token frequency.
-					The 'RF'column refers to the relative token frequency (normalized per million tokens).
-					Note that for part-of-speech tags, tokens are normalized against word tokens,
-					while DocuScope tags are normalized against counts of all tokens including punctuation.
-					The 'Range' column refers to the percentage of documents in which the token appears in your corpus.
-					""")
+			st.markdown(_messages.message_columns_tokens)
 			
 		selected = grid_response['selected_rows'] 
 		if selected:
@@ -87,25 +89,10 @@ def main():
 			df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
 			st.dataframe(df)
 		
-		st.sidebar.markdown("---")
 		with st.sidebar.expander("Filtering and saving"):
-			st.markdown("""
-					Filters can be accessed by clicking on the three lines that appear while hovering over a column header.
-					For text columns, you can filter by 'Equals', 'Starts with', 'Ends with', and 'Contains'.\n
-					Rows can be selected before or after filtering using the checkboxes.
-					(The checkbox in the header will select/deselect all rows.)\n
-					If rows are selected and appear in new table below the main one,
-					those selected rows will be available for download in an Excel file.
-					If no rows are selected, the full table will be processed for downloading after clicking the Download button.
-					""")
+			st.markdown(_messages.message_filters)
 		
-		st.sidebar.markdown("### Download data")
-		st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							You can use the checkboxes to download selected rows.
-							With no rows selected, the entire table will be prepared for download.
-							""")
-		
+		st.sidebar.markdown(_messages.message_download)
 		if st.sidebar.button("Download"):
 			with st.sidebar:
 				with st.spinner('Creating download link...'):
@@ -124,48 +111,112 @@ def main():
 							""")
 	
 		if st.sidebar.button("Create a New Ngrams Table"):
-			st.session_state.ng_pos = ''
-			st.session_state.ng_ds = ''
-			st.session_state.count_3 = 0
+			_handlers.clear_table('ngrams')
+			_handlers.update_session('ngrams', False)
 			st.experimental_rerun()
 		st.sidebar.markdown("---")			
 			
 	else:
-		st.sidebar.markdown("### Span")
-		span = st.sidebar.radio('Choose the span of your n-grams.', (2, 3, 4), horizontal=True)
+		
+		metadata_target = _handlers.load_metadata('target')
+		
+		st.markdown(_messages.message_ngrams)
+		
+		st.sidebar.markdown("### Search mode")
+		st.sidebar.markdown("Create n-grams from a token or from a tag.")
+		from_anchor = st.sidebar.radio("Enter token or a tag:", ("Token", "Tag"), horizontal=True)
+		
+		if from_anchor == 'Token':
+			node_word = st.sidebar.text_input("Node word:")	
+		
+			search_mode = st.sidebar.radio("Select search type:", ("Fixed", "Starts with", "Ends with", "Contains"), horizontal=True)		
+			if search_mode == "Fixed":
+				search = "fixed"
+			elif search_mode == "Starts with":
+				search = "starts_with"
+			elif search_mode == "Ends with":
+				search = "ends_with"
+			else:
+				search = "contains"
+			
+			tag_radio = st.sidebar.radio("Select a tagset:", ("Parts-of-Speech", "DocuScope"), horizontal=True)
+			
+			if tag_radio == 'Parts-of-Speech':
+				ts = 'pos'
+				if session.get('target_path') == None:
+					total = 0
+				else:
+					total = metadata_target.get('words')
+			if tag_radio == 'DocuScope':
+				ts = 'ds'
+				if session.get('target_path') == None:
+					total = 0
+				else:
+					total = metadata_target.get('tokens')
+			
+		if from_anchor == 'Tag':
+			tag_radio = st.sidebar.radio("Select a tagset:", ("Parts-of-Speech", "DocuScope"), horizontal=True)
+			
+			if tag_radio == 'Parts-of-Speech':
+				if session.get('target_path') == None:
+					tag = st.sidebar.selectbox('Choose a tag:', ['No tags currently loaded'])
+				else:
+					tag = st.sidebar.selectbox('Choose a tag:', metadata_target.get('tags_pos'))
+					ts = 'pos'
+					total = metadata_target.get('words')
+			if tag_radio == 'DocuScope':
+				if session.get('target_path') == None:
+					tag = st.sidebar.selectbox('Choose a tag:', ['No tags currently loaded'])
+				else:
+					tag = st.sidebar.selectbox('Choose a tag:', metadata_target.get('tags_ds'))
+					ts = 'ds'
+					total = metadata_target.get('tokens')
+		
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Generate counts")
-		st.sidebar.markdown("""
-			Use the button to generate an n-grams table from your corpus.
-			Note that n-grams take a little longer to process than other kinds of tables.
-			""")
+		
+		st.sidebar.markdown("### Span & position")
+		ngram_span = st.sidebar.radio('Span of your n-grams:', (2, 3, 4), horizontal=True)
+		position = st.sidebar.selectbox('Position of your node word or tag:', (list(range(1, 1+ngram_span))))
+
+		st.sidebar.markdown(_messages.message_generate_table)
 		
 		if st.sidebar.button("N-grams Table"):
-			#st.write(token_tuple)
-			#wc = load_data()
-			if st.session_state.corpus == "":
-				st.markdown(":neutral_face: It doesn't look like you've loaded a corpus yet.")
+			if session.get('target_path') == None:
+				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
+			elif node_word == "":
+				st.write(_warnings.warning_14, unsafe_allow_html=True)
+			elif node_word.count(" ") > 0:
+				st.write(_warnings.warning_15, unsafe_allow_html=True)
+			elif len(node_word) > 15:
+				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tp = st.session_state.corpus
 				with st.spinner('Processing n-grams...'):
-					ng_pos = ds.ngrams_table(tp, span, st.session_state.words)
-					ng_ds = ds.ngrams_table(tp, span, st.session_state.tokens, count_by='ds')
-					#cap size of dataframe
-					if len(ng_pos.index > 100000):
-						ng_pos = ng_pos.iloc[:100000]
-						min_freq = ng_pos['AF'].min()
-						ng_pos = ng_pos[(ng_pos['AF'] > min_freq)]
-						ng_ds = ng_ds[(ng_ds['AF'] > min_freq)]
-
-				st.session_state.ng_pos = ng_pos
-				st.session_state.ng_ds = ng_ds
-				st.session_state.min_freq = min_freq
-				st.experimental_rerun()
+					tp = _handlers.load_corpus_session('target', session)
+					metadata_target = _handlers.load_metadata('target')
+					if from_anchor == 'Token':
+						ngram_df = _analysis.ngrams_by_token(tp, node_word, position, ngram_span, total, search, ts)
+						#cap size of dataframe
+						if len(ngram_df.index) < 2:
+							st.markdown(_warnings.warning_12, unsafe_allow_html=True)
+						elif len(ngram_df.index) > 100000:
+							st.markdown(_warnings.warning_13, unsafe_allow_html=True)
+						else:
+							_handlers.save_table(ngram_df, 'ngrams')
+							_handlers.update_session('ngrams', True)
+							st.experimental_rerun()				
+					if from_anchor == 'Tag':
+						ngram_df = _analysis.ngrams_by_tag(tp, tag, position, ngram_span, total, ts)
+						#cap size of dataframe
+						if len(ngram_df.index) < 2:
+							st.markdown(_warnings.warning_12, unsafe_allow_html=True)
+						elif len(ngram_df.index) > 100000:
+							st.markdown(_warnings.warning_13, unsafe_allow_html=True)
+						else:
+							_handlers.save_table(ngram_df, 'ngrams')
+							_handlers.update_session('ngrams', True)
+							st.experimental_rerun()				
+				
 		st.sidebar.markdown("---")
-		st.markdown("""
-		:warning: Generating n-grams can be computationally intensive. 
-		4-grams, in particular, can take roughly 1 minute to compute per 1 million words.
-		Note that depending on the size of your corpus, less frequent n-grams may be filtered.
-		""")
+
 if __name__ == "__main__":
     main()
