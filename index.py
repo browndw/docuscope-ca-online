@@ -1,20 +1,28 @@
+# Copyright (C) 2023 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import base64
 import functools
+import os
 import pathlib
 import re
-import textwrap
-from PIL import Image
-
-import time
-import streamlit as st
-import os
-import base64
 import sys
+import textwrap
+import time
 import warnings
+from importlib.machinery import SourceFileLoader
 
-import apps as _stable_apps
-import utilities
-import categories as _categories
-import states as _states
 
 HERE = pathlib.Path(__file__).parent.resolve()
 FAVICON = str(HERE.joinpath("_static/docuscope-favicon.ico"))
@@ -22,77 +30,33 @@ TITLE_LOGO = str(HERE.joinpath("_static/docuscope-logo.png"))
 PL_LOGO = str(HERE.joinpath("_static/porpoise_badge.svg"))
 UG_LOGO = str(HERE.joinpath("_static/user_guide.svg"))
 STYLE = str(HERE.joinpath("css/style.css"))
+OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-@st.cache_data
-def get_base64_of_bin_file(bin_file):
-    with open(bin_file, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+# import options
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-@st.cache_data
-def get_img_with_header(local_img_path):
-    img_format = os.path.splitext(local_img_path)[-1].replace(".", "")
-    bin_str = get_base64_of_bin_file(local_img_path)
-    html_code = f'''
-	<div class="image-txt-container" style="background-color: #FFE380; border-radius: 5px">
-	  <img src="data:image/{img_format};base64,{bin_str}" height="125">
-	  <h2 style="color: #DE350B; text-align:center">
-	    DocuScope
-	  </h2>
-	  <h2 style="color: #42526E; text-align:center">
-	    Corpus Analysis & Concordancer Online
-	  </h2>
+modules = ['apps', 'categories', 'content', 'handlers', 'states', 'utilities', 'streamlit']
+import_params = _imports.import_parameters(_options, modules)
 
-	</div>
-      '''
-    return html_code
-    
-def local_css(file_name):
-    with open(file_name) as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
 
-nav_header = """
-    <div style="background-color: #FFE380; padding-top:12px; border-radius: 5px">
-    <h5 style="color: black; text-align:center;">Common Tools</h5>
-    </div>
-    """
-    
-def get_url_app():
-    try:
-        return st.experimental_get_query_params()["app"][0]
-    except KeyError:
-        return "index"
-
-def swap_app(app):
-    st.experimental_set_query_params(app=app)
-
-    session_state = utilities.session_state()
-    session_state.app = app
-
-    # Not sure why this is needed. The `set_query_params` doesn't
-    # appear to work if a rerun is undergone immediately afterwards.
-    time.sleep(0.01)
-    st.experimental_rerun()
-
-def _application_sorting_key(application):
-    return application[1].KEY_SORT
-
-def _get_apps_from_module(module):
-    apps = {
-        item.replace("_", "-"): getattr(module, item)
-        for item in dir(module)
-        if not item.startswith("_")
-    }
-
-    return apps
+_handlers.generate_temp(_states.STATES.items())
 
 def index(application_options):
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
-    # set all states from dictionary
-    for key, value in _states.STATES.items():
-        if key not in st.session_state:
-            setattr(st.session_state, key, value)
     
     with open(PL_LOGO) as f:
         pl_logo_text = f.read()
@@ -101,7 +65,7 @@ def index(application_options):
     
     st.markdown(pl_html, unsafe_allow_html=True)
 
-    st.markdown(get_img_with_header(TITLE_LOGO), unsafe_allow_html=True)
+    st.markdown(_content.get_img_with_header(TITLE_LOGO), unsafe_allow_html=True)
         
     st.markdown("---")
     with open(UG_LOGO) as f:
@@ -160,19 +124,19 @@ def index(application_options):
                 continue
 
             applications_in_this_category = sorted(
-                applications_in_this_category, key=_application_sorting_key
+                applications_in_this_category, key=_content._application_sorting_key
             )
 
             for app_key, application in applications_in_this_category:
                 if column.button(application.TITLE):
-                    swap_app(app_key)
+                    _content.swap_app(app_key)
     
 def main():
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
-    session_state = utilities.session_state(app=get_url_app())
+    session_state = utilities.session_state(app=_content.get_url_app())
 
-    stable_apps = _get_apps_from_module(_stable_apps)
+    stable_apps = _content._get_apps_from_module(_stable_apps)
     application_options = {**stable_apps}
 
     applications_all = [
@@ -186,10 +150,10 @@ def main():
         simple = False
 
     if simple:
-        st.set_page_config(page_title="DocuScope CA", page_icon=FAVICON, layout="centered")
+        st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="centered")
     else:
-        st.set_page_config(page_title="DocuScope CA", page_icon=FAVICON, layout="wide")
-        local_css(STYLE)
+        st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="wide")
+        _content.local_css(STYLE)
 
     application_options = {**stable_apps}
 
@@ -197,10 +161,10 @@ def main():
         session_state.app != "index"
         and not session_state.app in application_options.keys()
     ):
-        swap_app("index")
+        _content.swap_app("index")
 
     if session_state.app != "index":        
-        st.markdown(nav_header, unsafe_allow_html=True)
+        st.markdown(_content.nav_header, unsafe_allow_html=True)
         _, central_header_column, _ = st.columns((1, 2, 1))
     
         num_columns = len(_categories.APPLICATION_CATEGORIES_BY_COLUMN.keys())
@@ -220,16 +184,16 @@ def main():
                 ]
             
                 applications_in_this_category = sorted(
-                    (f for f in applications_in_this_category if 1 < _application_sorting_key(f) < 11),
-                    key=_application_sorting_key
+                    (f for f in applications_in_this_category if 1 < _content._application_sorting_key(f) < 11),
+                    key=_content._application_sorting_key
                 )
     
                 for app_key, application in applications_in_this_category:
                     if column.button(application.TITLE):
-                        swap_app(app_key)   
+                        _content.swap_app(app_key)   
         
         if st.button("Manage Corpora"):
-            swap_app("load-corpus")
+            _content.swap_app("load-corpus")
         st.markdown("""---""")
         st.title(application_options[session_state.app].TITLE)
         
@@ -240,7 +204,7 @@ def main():
 
         if not simple:
             if st.sidebar.button("Return to All Tools"):
-                swap_app("index")
+                _content.swap_app("index")
             st.sidebar.write("---")
             
     if session_state.app == "index":
