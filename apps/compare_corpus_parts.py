@@ -246,7 +246,10 @@ def main():
 		
 		st.markdown(_messages.message_corpus_parts)
 		
-		metadata_target = _handlers.load_metadata('target')
+		try:
+			metadata_target = _handlers.load_metadata('target')
+		except:
+			metadata_target = {}
 		
 		st.sidebar.markdown("### Select categories to compare")
 		st.sidebar.markdown("Using this tool requires processing metadata from corpus file names.")
