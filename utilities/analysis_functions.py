@@ -16,7 +16,6 @@ import pathlib
 import re
 from collections import Counter
 from functools import partial
-from itertools import compress
 from typing import Union, List
 from importlib.machinery import SourceFileLoader
 
@@ -104,8 +103,9 @@ def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_t
                 in_span.append(span_tokens)
                 merge_with_tags = []
                 for i in range(0,len(in_span)):
-                    merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
-                merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
+                    if len(in_span[i]) == span:
+                        merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
+                    merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
             ngram_list.append(merged_tokens)
     # calculate ranges
     ngram_range = []
@@ -121,9 +121,6 @@ def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_t
     # build table
     ngrams = [x[0] for x in ngram_count]
     ngrams = [x.split('_token_') for x in ngrams]
-    # filter short spans
-    span_bool = [len(x) == span for x in ngrams]
-    ngrams = list(compress(ngrams, span_bool))
     ngrams = [sum([x[i].split('_tag_') for i in range(span)], []) for x in ngrams]
     order = list(range(0, span*2, 2)) + list(range(1, span*2 + 1, 2))
     for l in reversed(range(len(ngrams))):
@@ -171,8 +168,9 @@ def ngrams_by_tag(tok, tag: str, tag_position, span, n_tokens, count_by='pos'):
                 in_span.append(span_tokens)
                 merge_with_tags = []
                 for i in range(0,len(in_span)):
-                    merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
-                merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
+                    if len(in_span[i]) == span:
+                        merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
+                    merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
             ngram_list.append(merged_tokens)
     # calculate ranges
     ngram_range = []
@@ -188,9 +186,6 @@ def ngrams_by_tag(tok, tag: str, tag_position, span, n_tokens, count_by='pos'):
     # build table
     ngrams = [x[0] for x in ngram_count]
     ngrams = [x.split('_token_') for x in ngrams]
-    # filter short spans
-    span_bool = [len(x) == span for x in ngrams]
-    ngrams = list(compress(ngrams, span_bool))
     ngrams = [sum([x[i].split('_tag_') for i in range(span)], []) for x in ngrams]
     order = list(range(0, span*2, 2)) + list(range(1, span*2 + 1, 2))
     for l in reversed(range(len(ngrams))):
