@@ -109,7 +109,10 @@ def main():
 			
 	else:
 		
-		metadata_target = _handlers.load_metadata('target')
+		try:
+			metadata_target = _handlers.load_metadata('target')
+		except:
+			metadata_target = {}
 		
 		st.markdown(_messages.message_kwic)
 		
