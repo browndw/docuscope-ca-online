@@ -186,7 +186,11 @@ def main():
 				grouping = []
 
 			pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
-			_handlers.update_pca(pca_df, contrib_df, ve, 1)
+			if bool(session['pca']) == False:
+				_handlers.update_pca(pca_df, contrib_df, ve, 1)
+				st.experimental_rerun()
+			else:
+				_handlers.update_pca(pca_df, contrib_df, ve, 1)
 			
 		if bool(session['pca']) == True:
 			session['pca']['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
