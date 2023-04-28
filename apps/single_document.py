@@ -201,7 +201,10 @@ def main():
 			
 	else:
 		
-		metadata_target = _handlers.load_metadata('target')
+		try:
+			metadata_target = _handlers.load_metadata('target')
+		except:
+			metadata_target = {}
 		
 		st.sidebar.markdown("### Choose document")
 		st.sidebar.write("Use the menus to select the tags you would like to highlight.")		
