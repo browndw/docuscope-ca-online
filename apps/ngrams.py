@@ -118,7 +118,10 @@ def main():
 			
 	else:
 		
-		metadata_target = _handlers.load_metadata('target')
+		try:
+			metadata_target = _handlers.load_metadata('target')
+		except:
+			metadata_target = {}
 		
 		st.markdown(_messages.message_ngrams)
 		
@@ -164,6 +167,7 @@ def main():
 					tag = st.sidebar.selectbox('Choose a tag:', metadata_target.get('tags_pos'))
 					ts = 'pos'
 					total = metadata_target.get('words')
+					node_word = 'by_tag'
 			if tag_radio == 'DocuScope':
 				if session.get('target_path') == None:
 					tag = st.sidebar.selectbox('Choose a tag:', ['No tags currently loaded'])
@@ -171,6 +175,7 @@ def main():
 					tag = st.sidebar.selectbox('Choose a tag:', metadata_target.get('tags_ds'))
 					ts = 'ds'
 					total = metadata_target.get('tokens')
+					node_word = 'by_tag'
 		
 		st.sidebar.markdown("---")
 		
