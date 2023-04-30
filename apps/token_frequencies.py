@@ -124,15 +124,18 @@ def main():
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			
 			else:
-				with st.spinner('Processing frequencies...'):
-					tp = _handlers.load_corpus_session('target', session)
-					metadata_target = _handlers.load_metadata('target')
-					wc_pos = ds.corpus_analysis.frequency_table(tp, metadata_target.get('words'))
-					wc_ds = ds.corpus_analysis.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
-				_handlers.save_table(wc_pos, 'ft_pos')
-				_handlers.save_table(wc_ds, 'ft_ds')
-				_handlers.update_session('freq_table', True)
-				st.experimental_rerun()
+				with st.sidebar:
+					with st.spinner('Processing frequencies...'):
+						tp = _handlers.load_corpus_session('target', session)
+						metadata_target = _handlers.load_metadata('target')
+						wc_pos = ds.frequency_table(tp, metadata_target.get('words'))
+						wc_ds = ds.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
+					_handlers.save_table(wc_pos, 'ft_pos')
+					_handlers.save_table(wc_ds, 'ft_ds')
+					_handlers.update_session('freq_table', True)
+					st.experimental_rerun()
+		
+		st.sidebar.markdown("---")
 
 if __name__ == "__main__":
     main()
