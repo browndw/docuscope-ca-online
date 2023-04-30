@@ -90,7 +90,7 @@ def main():
 		if session.get('has_reference') == True:
 			metadata_reference = _handlers.load_metadata('reference')
 			st.write(metadata_reference)
-		st.write(metadata_target)
+		st.write(_options)
 		st.write(session)
 		
 		st.markdown(_messages.message_target_info(metadata_target))
@@ -177,7 +177,7 @@ def main():
 					st.markdown(_messages.message_select_reference)
 					st.sidebar.markdown("Use the button to load a previously processed corpus.")
 					saved_corpora, saved_ref = _handlers.find_saved_reference(metadata_target.get('model'), session.get('target_path'))
-					to_load = st.sidebar.selectbox('Select a saved corpus to load:', (saved_ref))			
+					to_load = st.sidebar.selectbox('Select a saved corpus to load:', (sorted(saved_ref)))			
 					if st.sidebar.button("Load Saved Corpus"):
 						corp_path = saved_corpora.get(to_load)
 						ref_corp = _handlers.load_corpus_path(corp_path)
@@ -313,10 +313,10 @@ def main():
 			from_model = st.sidebar.radio("Select data tagged with:", ("Large Dictionary", "Common Dictionary"), key='corpora_to_load')
 			if from_model == 'Large Dictionary':
 				saved_corpora = _handlers.find_saved('ld')
-				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (saved_corpora))
+				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (sorted(saved_corpora)))
 			if from_model == 'Common Dictionary':
 				saved_corpora = _handlers.find_saved('cd')		
-				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (saved_corpora))	
+				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (sorted(saved_corpora)))	
 			if st.sidebar.button("Load Saved Corpus"):
 				corp_path = saved_corpora.get(to_load)
 				corp = _handlers.load_corpus_path(corp_path)
