@@ -30,7 +30,7 @@ def import_options_load(options_path):
 		options['global']['desktop_mode'] = False
 		options['global']['max_bytes'] = 0
 
-	# language can't be check on Windows so toggle off.
+	# language can't be checked on Windows so toggle off.
 	if options['global']['check_language'] == True and (sys.platform == "win" or sys.platform == "cygwin"):
 		options['global']['check_language'] = False
 	# toggle off for desktop
@@ -65,7 +65,7 @@ def import_parameters(options: dict, packages_to_import):
 	DESKTOP = options['global']['desktop_mode']
 	ENABLE_DETECT = options['global']['check_language']
 	
-	short_names = {'altair': 'alt', 'docuscospacy': 'ds', 'numpy': 'np', 'pandas': 'pd', 'streamlit': 'st'}
+	short_names = {'altair': 'alt', 'numpy': 'np', 'pandas': 'pd', 'streamlit': 'st'}
 	
 	import_param = {}
 	if DESKTOP == False:
@@ -90,6 +90,10 @@ def import_parameters(options: dict, packages_to_import):
 				import_param['process_corpus_detect'] = ['_process', 'utilities']
 			elif ENABLE_DETECT == False and package == 'process':
 				import_param['process_corpus_nodetect'] = ['_process', 'utilities']
+			elif package == 'docuscospacy':
+				import_param['corpus_analysis'] = ['ds', 'docuscospacy']
+			elif package == 'corpus_utils':
+				import_param['corpus_utils'] = ['corpus_utils', 'docuscospacy']
 			elif package == 'decomposition':
 				import_param['decomposition'] = ['decomposition', 'sklearn']
 			elif package in short_names.keys():
@@ -101,7 +105,7 @@ def import_parameters(options: dict, packages_to_import):
 		for package in packages_to_import:
 			if package == 'categories' or package == 'states':
 				short_name = '_' + package
-				import_param[package] = [short_name, '.']
+				import_param[package] = [short_name, 'docuscope._streamlit']
 			elif package == 'warnings' or package == 'messages':
 				short_name = '_' + package
 				import_param[package] = [short_name, 'docuscope._streamlit.utilities']
@@ -112,7 +116,9 @@ def import_parameters(options: dict, packages_to_import):
 			elif package == 'content':
 				import_param['content_desktop'] = ['_content', 'docuscope._streamlit.utilities']
 			elif package == 'analysis':
-				import_param['analysis_functions'] = ['_analysis', 'utilities']
+				import_param['analysis_functions'] = ['_analysis', 'docuscope._streamlit.utilities']
+			elif package == 'docuscospacy':
+				import_param['ds'] = [None, 'docuscope._imports']
 			elif ENABLE_SAVE == True and package == 'handlers':
 				import_param['handlers_local'] = ['_handlers', 'docuscope._streamlit.utilities']
 			elif ENABLE_SAVE == False and package == 'handlers':
