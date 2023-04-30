@@ -113,28 +113,30 @@ def main():
 			elif len(tag_list) == 0:
 				st.write('There are no tags to plot.')
 			else:
-				plot_colors = hex_highlights[:len(tag_list)]
-				plot_colors = list(zip(tag_list, plot_colors))
+				plot_colors = tag_html.replace('<span style="background-color: ', '')
+				plot_colors = plot_colors.replace('</span>', '')
+				plot_colors = plot_colors.replace('">', '; ')
+				plot_colors = plot_colors.split("; ")
+				plot_colors = list(zip(plot_colors[1::2], plot_colors[::2]))			
 				plot_colors = pd.DataFrame(plot_colors, columns=['Tag', 'Color'])
-				df_plot = tag_loc.copy()
-				#keep colors consistent
-				plot_colors = pd.merge(df_plot, plot_colors, on='Tag', how='inner')
+				plot_colors = plot_colors.sort_values(by=['Tag'])
 				plot_colors = plot_colors['Color'].unique()
-				#format for plotting
+				
+				df_plot = tag_loc.copy()
 				df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
 				df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
 				
 				base = alt.Chart(df_plot, height={"step": 45}).mark_tick(size=35).encode(
 					x=alt.X('X:Q', axis=alt.Axis(values=[0, .25, .5, .75, 1], format='%'), title=None),
-					y=alt.Y('Tag:N', title = None, sort=tag_list)
+					y=alt.Y('Tag:O', title = None, sort=tag_list)
 					)
 				
 				lex_density = base.encode(
-					color=alt.Color('Tag:N', scale=alt.Scale(range=plot_colors), legend=None),
+					color=alt.Color('Tag', scale=alt.Scale(range=plot_colors), legend=None),
 				)
 
 				st.altair_chart(lex_density, use_container_width=True)
-										
+		
 		st.markdown(f"""
 					##### Tags:  {tag_html}
 					""", unsafe_allow_html=True)
@@ -146,25 +148,8 @@ def main():
 		
 		st.dataframe(df)
 		
-		st.sidebar.markdown("""---""") 
-		st.sidebar.markdown("### Reset document")
-		st.sidebar.markdown("""
-							Click the button to explore a new document.
-							""")
-		if st.sidebar.button("Select a new document"):
-			_handlers.clear_table('doc_simple')
-			_handlers.clear_table('doc_pos')
-			_handlers.clear_table('doc_ds')
-			_handlers.update_session('doc', dict())
-			if 'tags' in st.session_state:
-				del st.session_state['tags']
-			st.experimental_rerun()
-
 		st.sidebar.markdown("---")
-		st.sidebar.markdown("### Download document")
-		st.sidebar.markdown("""
-							Click the button to genenerate a download link.
-							""")
+		st.sidebar.markdown(_messages.message_download_dtm)
 		
 		if st.sidebar.button("Download"):
 			with st.sidebar:
@@ -197,9 +182,27 @@ def main():
 					st.success('Link generated!')
 					linko= f'<a href="data:vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{b64}" download="document_tags.docx">Download Word file</a>'
 					st.markdown(linko, unsafe_allow_html=True)
+		
+		st.sidebar.markdown("---")
+		
+		st.sidebar.markdown("### Reset document")
+		st.sidebar.markdown("""
+							Click the button to explore a new document.
+							""")
+		if st.sidebar.button("Select a new document"):
+			_handlers.clear_table('doc_simple')
+			_handlers.clear_table('doc_pos')
+			_handlers.clear_table('doc_ds')
+			_handlers.update_session('doc', dict())
+			if 'tags' in st.session_state:
+				del st.session_state['tags']
+			st.experimental_rerun()
+
 		st.sidebar.markdown("---")
 			
 	else:
+		
+		st.markdown(_messages.message_single_document)
 		
 		try:
 			metadata_target = _handlers.load_metadata('target')
@@ -219,9 +222,9 @@ def main():
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			else:
 				tp = _handlers.load_corpus_session('target', session)
-				doc_pos = ds.corpus_analysis.tag_ruler(tp, doc_key, count_by='pos')
+				doc_pos = ds.tag_ruler(tp, doc_key, count_by='pos')
 				doc_simple = _analysis.simplify_span(doc_pos)
-				doc_ds = ds.corpus_analysis.tag_ruler(tp, doc_key, count_by='ds')
+				doc_ds = ds.tag_ruler(tp, doc_key, count_by='ds')
 
 				doc_tokens = len(doc_pos.index)
 				doc_words = len(doc_pos[doc_pos.Tag != 'Y'])
