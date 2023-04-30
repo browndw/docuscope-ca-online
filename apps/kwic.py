@@ -117,8 +117,7 @@ def main():
 		st.markdown(_messages.message_kwic)
 		
 		st.sidebar.markdown("### Node word")
-		st.sidebar.markdown("""Use the text field to enter a node word and other desired options.
-					Once a node word has been entered and options selected, click the button below to generate a KWIC table.
+		st.sidebar.markdown("""Enter a node word without spaces.
 					""")				
 		node_word = st.sidebar.text_input("Node word")
 		
@@ -157,14 +156,15 @@ def main():
 				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
 				tp = _handlers.load_corpus_session('target', session)
-				with st.spinner('Processing KWIC...'):
-					kwic_df = _analysis.kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
+				with st.sidebar:
+					with st.spinner('Processing KWIC...'):
+						kwic_df = _analysis.kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
 				if bool(isinstance(kwic_df, pd.DataFrame)) == True:
 					_handlers.save_table(kwic_df, 'kwic')
 					_handlers.update_session('kwic', True)
 					st.experimental_rerun()
 				else:
-					st.markdown(":warning: Your search didn't return any matches.")
+					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
 		st.sidebar.markdown("---")
 		
 if __name__ == "__main__":
