@@ -204,8 +204,9 @@ def main():
 			else:
 				tp = _handlers.load_corpus_session('target', session)
 				metadata_target = _handlers.load_metadata('target')
-				with st.spinner('Processing collocates...'):
-					coll_df = ds.corpus_analysis.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)
+				with st.sidebar:
+					with st.spinner('Processing collocates...'):
+						coll_df = ds.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)
 				if len(coll_df.index) > 0:
 					_handlers.save_table(coll_df, 'collocations')
 					_handlers.update_collocations(node_word, stat_mode, to_left, to_right)
