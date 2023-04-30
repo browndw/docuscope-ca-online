@@ -138,6 +138,7 @@ warning_17 = """
 	&#128528; It doesn't look like you've loaded a reference corpus yet.
 	</div>
 	"""
+
 warning_18 = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
 	&#128200; Choose a variable to plot.
@@ -149,8 +150,21 @@ warning_19 = """
 	&#128200; From the <b>Boxplots</b> menu, choose a variable to plot.
 	</div>
 	"""
+
 warning_20 = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
 	&#128200; Choose at least one grouping variable from <b>Group A</b> and <b>Group B</b> to plot.
+	</div>
+	"""
+
+warning_21 = """
+	<div style="background-color: #fddfd7; padding-left: 5px;">
+	&#128202; It doesn't look like you've processed any metadata yet.
+	</div>
+	"""
+
+warning_22 = """
+	<div style="background-color: #fddfd7; padding-left: 5px;">
+	&#8597; You must select at least one category as your target and one as your reference.
 	</div>
 	"""
