@@ -58,7 +58,7 @@ def index(application_options):
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
     
-    with open(PL_LOGO) as f:
+    with open(PL_LOGO, encoding='utf-8', errors='ignore') as f:
         pl_logo_text = f.read()
     b64 = base64.b64encode(pl_logo_text.encode('utf-8')).decode("utf-8")
     pl_html = r'<a href="https://github.com/browndw/corpus-tagger/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2023 David Brown, Suguru Ishizaki, David Kaufer' % b64
@@ -75,23 +75,8 @@ def index(application_options):
     
     st.markdown(ug_html, unsafe_allow_html=True)
     
-    st.markdown("""
-        
-        Welcome to **DocuScope Corpus Analaysis & Concordancer Online**.
-        This suite of tools is designed to help those new to corpus analysis and NLP explore data, data visualization, and the computational analysis of text. 
-        It is also designed to allow users to easily toggle between **rhetorical tags** and more conventional **part-of-speech tags**.
-        Note that the online version is intended to process **small corpora** (< 2 million words). For larger datasets, a desktop version is available. (Check the link to the **User Guide**.)
-        Or users with more experience can download (from the GitHub repository linked at the top of this page) and run the **streamlit** app locally using Python.
-        To get started:
-        
-        :point_right: Prepare a corpus of **plain text files**. (The tool does not accept Word files, PDFs, etc.)
-        
-        :point_right: Use **Manage Corpus Data** to select and process your files.
-        
-        :point_right: Refer to the **Help** documents for FAQs. For more detailed instructions, refer to the **User Guide** documentation linked above.
-    """)
-
-           
+    st.markdown(_content.message_landing)
+    
     _, central_header_column, _ = st.columns((1, 2, 1))
     
     #title_filter = central_header_column.text_input("Filter")
