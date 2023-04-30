@@ -99,11 +99,12 @@ def main():
 		st.sidebar.markdown(_messages.message_generate_plot)
 		
 		if st.sidebar.button("Plot Frequencies"):			
-			base = alt.Chart(df, height={"step": 12}).mark_bar(size=10).encode(
+			base = alt.Chart(df, height={"step": 24}).mark_bar(size=12).encode(
 					x=alt.X('RF', title='Frequency (per 100 tokens)'), 
-					y=alt.Y('Tag', sort='-x', title=None),
+					y=alt.Y('Tag', sort='-x', title=None, axis=alt.Axis(labelLimit=200)),
 					tooltip=[
-					alt.Tooltip('RF', title="Relative Frequency:", format='.2')
+					alt.Tooltip('Tag'),
+					alt.Tooltip('RF', title="RF:", format='.2')
 					])
 						
 			st.altair_chart(base, use_container_width=True)
@@ -137,15 +138,18 @@ def main():
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			
 			else:
-				with st.spinner('Processing frequencies...'):
-					tp = _handlers.load_corpus_session('target', session)
-					metadata_target = _handlers.load_metadata('target')
-					tc_pos = ds.corpus_analysis.tags_table(tp, metadata_target.get('words'))
-					tc_ds = ds.corpus_analysis.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
-				_handlers.save_table(tc_pos, 'tt_pos')
-				_handlers.save_table(tc_ds, 'tt_ds')
-				_handlers.update_session('tags_table', True)
-				st.experimental_rerun()
+				with st.sidebar:
+					with st.spinner('Processing frequencies...'):
+						tp = _handlers.load_corpus_session('target', session)
+						metadata_target = _handlers.load_metadata('target')
+						tc_pos = ds.tags_table(tp, metadata_target.get('words'))
+						tc_ds = ds.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
+					_handlers.save_table(tc_pos, 'tt_pos')
+					_handlers.save_table(tc_ds, 'tt_ds')
+					_handlers.update_session('tags_table', True)
+					st.experimental_rerun()
+
+		st.sidebar.markdown("---")
 
 if __name__ == "__main__":
     main()
