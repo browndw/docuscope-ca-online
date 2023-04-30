@@ -313,7 +313,6 @@ def main():
 		st.markdown("###  :dart: Load or process a target corpus")
 
 		st.markdown(_messages.message_load)
-		st.write(_options)
 		
 		st.markdown("---")
 		st.markdown("### Load a saved corpus:")
