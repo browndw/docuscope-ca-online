@@ -1,20 +1,20 @@
 import pathlib
-import tomli
+from importlib.machinery import SourceFileLoader
 
+# set paths
 HERE = pathlib.Path(__file__).parents[1].resolve()
 OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
 # import options
-with open(OPTIONS, mode="rb") as fp:
-	_options = tomli.load(fp)
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-DESKTOP = _options['global']['desktop_mode']
-
-if DESKTOP == False:
+if _options['global']['desktop_mode'] == False:
 	from server.downloads import download
 	from server.session import session_state
 
-if DESKTOP == True:
+if _options['global']['desktop_mode'] == True:
 	from ..server.downloads import download
 	from ..server.session import session_state
 
