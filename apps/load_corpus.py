@@ -89,9 +89,6 @@ def main():
 		metadata_target = _handlers.load_metadata('target')
 		if session.get('has_reference') == True:
 			metadata_reference = _handlers.load_metadata('reference')
-			st.write(metadata_reference)
-		st.write(_options)
-		st.write(session)
 		
 		st.markdown(_messages.message_target_info(metadata_target))
 				
