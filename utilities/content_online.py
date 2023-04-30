@@ -13,27 +13,50 @@
 # limitations under the License.
 
 import base64
+import pathlib
 import os
 import time
-import tomli
-import pathlib
+from importlib.machinery import SourceFileLoader
 
+# set paths
 HERE = pathlib.Path(__file__).parents[1].resolve()
 OPTIONS = str(HERE.joinpath("options.toml"))
+IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
 # import options
-with open(OPTIONS, mode="rb") as fp:
-	_options = tomli.load(fp)
+_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
+_options = _imports.import_options_general(OPTIONS)
 
-DESKTOP = _options['global']['desktop_mode']
+modules = ['streamlit', 'utilities']
+import_params = _imports.import_parameters(_options, modules)
 
-if DESKTOP == True:
-	from docuscope._streamlit import utilities
-	from docuscope._imports import streamlit as st
-         
-if DESKTOP == False:
-	import utilities
-	import streamlit as st
+for module in import_params.keys():
+	object_name = module
+	short_name = import_params[module][0]
+	context_module_name = import_params[module][1]
+	if not short_name:
+		short_name = object_name
+	if not context_module_name:
+		globals()[short_name] = __import__(object_name)
+	else:
+		context_module = __import__(context_module_name, fromlist=[object_name])
+		globals()[short_name] = getattr(context_module, object_name)
+
+message_landing = """
+	Welcome to **DocuScope Corpus Analaysis & Concordancer Online**.
+	This suite of tools is designed to help those new to corpus analysis and NLP explore data, data visualization, and the computational analysis of text. 
+	It is also designed to allow users to easily toggle between **rhetorical tags** and more conventional **part-of-speech tags**.
+	Note that the online version is intended to process **small corpora** (< 2 million words). For larger datasets, a desktop version is available.
+	Users with more experience can also download and run the **streamlit** app locally using Python.
+	(Both the desktop and streamlit app can be accessed from the GitHub repository linked at the top of this page; all code is open source.) 
+	To get started:
+	
+	:point_right: Prepare a corpus of **plain text files**. (The tool does not accept Word files, PDFs, etc.)
+	
+	:point_right: Use **Manage Corpus Data** to select and process your files.
+	
+	:point_right: Refer to the **Help** documents for FAQs. For more detailed instructions, refer to the **User Guide** documentation linked above.
+	"""
 
 @st.cache_data
 def get_base64_of_bin_file(bin_file):
