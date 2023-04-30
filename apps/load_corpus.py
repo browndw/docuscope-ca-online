@@ -217,13 +217,20 @@ def main():
 				
 						if CHECK_SIZE == True:
 							dup_ids, dup_ref, corpus_size = _process.check_corpus(ref_files, check_size=True, check_ref=True, target_docs=metadata_target.get('docids'))
+							if 'ready_to_process' not in st.session_state:
+								st.session_state['ready_to_process'] = False
+							st.session_state['ready_to_process'] = False
 					
 						if CHECK_SIZE == False:
 							dup_ids, dup_ref = _process.check_corpus(ref_files, check_ref=True, target_docs=metadata_target.get('docids'))
 							corpus_size = 0
+							if 'ready_to_process' not in st.session_state:
+								st.session_state['ready_to_process'] = False
+							st.session_state['ready_to_process'] = False
 												
-					if CHECK_SIZE == True and corpus_size > MAX_BYTES:
-						st.sidebar.markdown(_warnings.warning_3, unsafe_allow_html=True)
+					if CHECK_SIZE == True:
+						if corpus_size > MAX_BYTES:
+							st.markdown(_warnings.warning_3, unsafe_allow_html=True)
 
 					if len(dup_ids) > 0:
 						st.markdown(_warnings.warning_2(sorted(dup_ids)), unsafe_allow_html=True)
@@ -231,12 +238,21 @@ def main():
 					if len(dup_ref) > 0:
 						st.markdown(_warnings.warning_5(sorted(dup_ref)), unsafe_allow_html=True)
 					
-					if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0:
-						st.markdown(f"""```
-						{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
-						""")
+					if CHECK_SIZE == True:
+						if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 and corpus_size <= MAX_BYTES:
+							st.markdown(f"""```
+							{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
+							""")
+							st.session_state['ready_to_process'] = True
+					
+					if CHECK_SIZE == False:
+						if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 :
+							st.markdown(f"""```
+							{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
+							""")
+							st.session_state['ready_to_process'] = True
 	
-					if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 and (corpus_size <= MAX_BYTES or CHECK_SIZE == False):
+					if st.session_state['ready_to_process'] == True:
 						st.sidebar.markdown("### Process Reference")
 						st.sidebar.markdown("Click the button to process your reference corpus files.")
 						if st.sidebar.button("Process Reference Corpus"):
@@ -297,6 +313,7 @@ def main():
 		st.markdown("###  :dart: Load or process a target corpus")
 
 		st.markdown(_messages.message_load)
+		st.write(_options)
 		
 		st.markdown("---")
 		st.markdown("### Load a saved corpus:")
@@ -344,22 +361,38 @@ def main():
 				
 				if CHECK_SIZE == True:
 					dup_ids, corpus_size = _process.check_corpus(corp_files, check_size=True)
+					if 'ready_to_process' not in st.session_state:
+						st.session_state['ready_to_process'] = False
+					st.session_state['ready_to_process'] = False
 					
 				if CHECK_SIZE == False:
 					dup_ids = _process.check_corpus(corp_files)
 					corpus_size = 0
+					if 'ready_to_process' not in st.session_state:
+						st.session_state['ready_to_process'] = False
+					st.session_state['ready_to_process'] = False
 
-			if CHECK_SIZE == True and corpus_size > MAX_BYTES:
-				st.markdown(_warnings.warning_3, unsafe_allow_html=True)
+			if CHECK_SIZE == True:
+					if corpus_size > MAX_BYTES:
+						st.markdown(_warnings.warning_3, unsafe_allow_html=True)
 			
 			if len(dup_ids) > 0:
 				st.markdown(_warnings.warning_2(sorted(dup_ids)), unsafe_allow_html=True)
 				
-			if len(corp_files) > 0 and len(dup_ids) == 0 and (corpus_size <= MAX_BYTES or CHECK_SIZE == False):
-				st.markdown(f"""```
-				{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
-				""")		
+			if CHECK_SIZE == True:
+				if len(corp_files) > 0 and len(dup_ids) == 0 and corpus_size <= MAX_BYTES:
+					st.markdown(f"""```
+					{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
+					""")
+					st.session_state['ready_to_process'] = True
 					
+			if CHECK_SIZE == False:
+				if len(corp_files) > 0 and len(dup_ids) == 0:
+					st.markdown(f"""```
+					{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
+					""")
+					st.session_state['ready_to_process'] = True	
+
 			st.sidebar.markdown("### Models")
 			models = load_models()
 			selected_dict = st.sidebar.selectbox("Select a DocuScope model:", options=["Large Dictionary", "Common Dictionary"])
@@ -373,7 +406,7 @@ def main():
 						""")		
 			st.sidebar.markdown("---")
 				
-			if len(corp_files) > 0 and len(dup_ids) == 0 and (corpus_size <= MAX_BYTES or CHECK_SIZE == False):
+			if st.session_state['ready_to_process'] == True:
 				st.sidebar.markdown("### Process Target")
 				st.sidebar.markdown("Once you have selected your files, use the button to process your corpus.")
 				if st.sidebar.button("Process Corpus"):
