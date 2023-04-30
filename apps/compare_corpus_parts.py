@@ -207,9 +207,11 @@ def main():
 								color=alt.Color('Corpus:N', sort=order),
 								row=alt.Row('Tag', title=None, header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Mean', order='descending')),
 								tooltip=[
-								alt.Tooltip('RF:Q', title="Per 100 Tokens", format='.2')
-								]).configure_facet(spacing=0.5).configure_legend(orient='top')
-	
+									alt.Tooltip('Tag'),
+									alt.Tooltip('RF:Q', title="RF", format='.2')
+								]).configure_facet(spacing=2.5).configure_legend(orient='top')
+
+				st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
 				st.altair_chart(base, use_container_width=True)
 	
 			st.sidebar.markdown("---")
@@ -229,10 +231,7 @@ def main():
 						st.markdown(linko, unsafe_allow_html=True)
 			
 			st.sidebar.markdown("---")
-			st.sidebar.markdown("### Generate new table")
-			st.sidebar.markdown("""
-							Click the button to reset the keyness table.
-							""")			
+			st.sidebar.markdown(_messages.message_reset_table)			
 			if st.sidebar.button("Compare New Categories"):
 				_handlers.clear_table('kw_pos_cp')
 				_handlers.clear_table('kw_ds_cp')
@@ -252,53 +251,56 @@ def main():
 			metadata_target = {}
 		
 		st.sidebar.markdown("### Select categories to compare")
-		st.sidebar.markdown("Using this tool requires processing metadata from corpus file names.")
 		st.sidebar.markdown("After **target** and **reference** categories have been selected, click the button to generate a keyness table.")
-		st.sidebar.markdown(":lock: Selecting of the same category as target and reference is prevented.")
 		
 		if session['has_meta'] == True:
 			st.sidebar.markdown('#### Target corpus categories:')
 			st.sidebar.multiselect("Select target categories:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_tar, key='tar')
+		else:
+			st.sidebar.multiselect("Select reference categories:", (['No categories to select']), key='empty_tar')
 		
 		if session['has_meta'] == True:
 			st.sidebar.markdown('#### Reference corpus categories:')
 			st.sidebar.multiselect("Select reference categories:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_ref, key='ref')
+		else:
+			st.sidebar.multiselect("Select reference categories:", (['No categories to select']), key='empty_ref')
 		st.sidebar.markdown("---")
 		
 		st.sidebar.markdown(_messages.message_generate_table)
 		if st.sidebar.button("Keyness Table of Corpus Parts"):
 			if session.get('target_path') == None:
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
-			elif 'tar' not in st.session_state or 'ref' not in st.session_state:
-				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
+			elif session['has_meta'] == False:
+				st.markdown(_warnings.warning_21, unsafe_allow_html=True)
 			elif len(list(st.session_state.tar)) == 0 or len(list(st.session_state.ref)) == 0:
-				st.markdown(":warning: You must select at least one category for your target and one for your reference.")
+				st.markdown(_warnings.warning_22, unsafe_allow_html=True)
 			else:
-				with st.spinner('Generating keywords...'):
-					tp = _handlers.load_corpus_session('target', session)
-					tar_list = [item + "_" for item in list(st.session_state.tar)]
-					ref_list = [item + "_" for item in list(st.session_state.ref)]
+				with st.sidebar:
+					with st.spinner('Generating keywords...'):
+						tp = _handlers.load_corpus_session('target', session)
+						tar_list = [item + "_" for item in list(st.session_state.tar)]
+						ref_list = [item + "_" for item in list(st.session_state.ref)]
+						
+						tar_docs = {key: value for key, value in tp.items() if key.startswith(tuple(tar_list))}
+						ref_docs = {key: value for key, value in tp.items() if key.startswith(tuple(ref_list))}
+						
+						#get target counts
+						tar_docs, ref_docs, tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs = _analysis.split_corpus(tp, tar_docs, ref_docs)
 					
-					tar_docs = {key: value for key, value in tp.items() if key.startswith(tuple(tar_list))}
-					ref_docs = {key: value for key, value in tp.items() if key.startswith(tuple(ref_list))}
+						wc_tar_pos = ds.frequency_table(tar_docs, tar_words)
+						wc_tar_ds = ds.frequency_table(tar_docs, tar_tokens, count_by='ds')
+						tc_tar_pos = ds.tags_table(tar_docs, tar_words)
+						tc_tar_ds = ds.tags_table(tar_docs, tar_tokens, count_by='ds')
+		
+						wc_ref_pos = ds.frequency_table(ref_docs, ref_words)
+						wc_ref_ds = ds.frequency_table(ref_docs, ref_tokens, count_by='ds')
+						tc_ref_pos = ds.tags_table(ref_docs, ref_words)
+						tc_ref_ds = ds.tags_table(ref_docs, ref_tokens, count_by='ds')
 					
-					#get target counts
-					tar_docs, ref_docs, tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs = _analysis.split_corpus(tp, tar_docs, ref_docs)
-				
-					wc_tar_pos = ds.corpus_analysis.frequency_table(tar_docs, tar_words)
-					wc_tar_ds = ds.corpus_analysis.frequency_table(tar_docs, tar_tokens, count_by='ds')
-					tc_tar_pos = ds.corpus_analysis.tags_table(tar_docs, tar_words)
-					tc_tar_ds = ds.corpus_analysis.tags_table(tar_docs, tar_tokens, count_by='ds')
-	
-					wc_ref_pos = ds.corpus_analysis.frequency_table(ref_docs, ref_words)
-					wc_ref_ds = ds.corpus_analysis.frequency_table(ref_docs, ref_tokens, count_by='ds')
-					tc_ref_pos = ds.corpus_analysis.tags_table(ref_docs, ref_words)
-					tc_ref_ds = ds.corpus_analysis.tags_table(ref_docs, ref_tokens, count_by='ds')
-				
-					kw_pos_cp = ds.corpus_analysis.keyness_table(wc_tar_pos, wc_ref_pos)
-					kw_ds_cp = ds.corpus_analysis.keyness_table(wc_tar_ds, wc_ref_ds)
-					kt_pos_cp = ds.corpus_analysis.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True)
-					kt_ds_cp = ds.corpus_analysis.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True)
+						kw_pos_cp = ds.keyness_table(wc_tar_pos, wc_ref_pos)
+						kw_ds_cp = ds.keyness_table(wc_tar_ds, wc_ref_ds)
+						kt_pos_cp = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True)
+						kt_ds_cp = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True)
 					
 					_handlers.save_table(kw_pos_cp, 'kw_pos_cp')
 					_handlers.save_table(kw_ds_cp, 'kw_ds_cp')
