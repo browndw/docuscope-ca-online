@@ -48,6 +48,18 @@ for module in import_params.keys():
 		context_module = __import__(context_module_name, fromlist=[object_name])
 		globals()[short_name] = getattr(context_module, object_name)
 
+# Functions for handling states and files.
+# Handling can be done either by storing temporary files locally or by storing data in session memory.
+# Thus, functions are written in matching pairs, depending on how data is to be stored.
+# These functions can be imported either from handlers_server.py or from handlers_local.py as _handlers
+# When imported, then, a given function call is the same, taking the same arguments.
+# And session data can be imported and stored as needed.
+
+# Handling is set by the enable_save boolean value in options.toml
+
+# Initialize session states.
+# For local file handling, generate a temp folder to be deleted on close.
+
 def generate_temp(states):
 	for key, value in states:
 		if key not in st.session_state:
@@ -69,6 +81,132 @@ def generate_temp(states):
 		for dirs in to_delete:
 			shutil.rmtree(dirs)
 		atexit.register(shutil.rmtree, DATA_DIR)
+
+def data_path():
+	try:
+		session_path = str(TEMP_DIR.joinpath('session.pkl'))
+		with open(session_path, 'rb') as file:
+			session = pickle.load(file)
+		data_dir = session.get('data_dir')
+		DATA_DIR = pathlib.Path(data_dir)
+		if os.path.exists(DATA_DIR) == True:
+			return(DATA_DIR)
+		else:
+			subdirs = len([x[0] for x in os.walk(str(TEMP_DIR))])
+			if subdirs == 2:
+				data_dir = [x[0] for x in os.walk(str(TEMP_DIR))]
+				DATA_DIR = pathlib.Path(data_dir[1])
+				update_session('data_dir', DATA_DIR)
+				return(DATA_DIR)
+			else:
+				generate_temp()
+				data_dir = [x[0] for x in os.walk(str(TEMP_DIR))]
+				DATA_DIR = pathlib.Path(data_dir[1])
+				update_session('data_dir', DATA_DIR)
+				return(DATA_DIR)
+	except:
+		generate_temp()
+		data_dir = [x[0] for x in os.walk(str(TEMP_DIR))]
+		DATA_DIR = pathlib.Path(data_dir[1])
+		update_session('data_dir', DATA_DIR)
+		return(DATA_DIR)
+
+def clear_temp():
+	DATA_DIR = data_path()
+	for filename in os.listdir(DATA_DIR):
+		file_path = os.path.join(DATA_DIR, filename)
+		try:
+			if os.path.isfile(file_path) or os.path.islink(file_path):
+				os.unlink(file_path)
+			elif os.path.isdir(file_path):
+				shutil.rmtree(file_path)
+		except:
+			pass
+			
+# Set session values.
+
+def init_session(tempdir, datadir):
+	session = {}
+	session['data_dir'] = datadir
+	session['target_path'] = None
+	session['from_saved'] = 'No'
+	session['is_saved'] = 'No'
+	session['has_meta'] = False
+	session['has_reference'] = False
+	session['reference_path'] = None
+	session['freq_table'] = False
+	session['tags_table'] = False
+	session['keyness_table'] = False
+	session['ngrams'] = False
+	session['kwic'] = False
+	session['keyness_parts'] = {}
+	session['dtm'] = {}
+	session['pca'] = {}
+	session['collocations'] = {}
+	session['doc'] = {}
+	file_path = str(tempdir.joinpath('session.pkl'))
+	with open(file_path, 'wb') as file:
+		pickle.dump(session, file)
+
+# Functions for managing session values.
+
+def load_session():
+	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+	try:
+		with open(session_path, 'rb') as file:
+			session = pickle.load(file)
+		return(session)
+	except:
+		generate_temp(_states.STATES.items())
+
+def load_corpus_session(table_id, session_data):
+	corpus = table_id + '_path'
+	corpus_path = str(session_data.get(corpus))
+	corpus_name = 'temp_' + table_id
+	if corpus_path == 'session':
+		corpus = st.session_state.data[corpus_name]
+		return(corpus)
+	else:	
+		try:
+			with open(corpus_path, 'rb') as file:
+				corpus = pickle.load(file)
+			return(corpus)
+		except:
+			st.session_state.session[corpus_name] = None
+	
+def reset_session():
+	DATA_DIR = data_path()
+	session = {}
+	session['data_dir'] = DATA_DIR
+	session['target_path'] = None
+	session['from_saved'] = 'No'
+	session['is_saved'] = 'No'
+	session['has_meta'] = False
+	session['has_reference'] = False
+	session['reference_path'] = None
+	session['freq_table'] = False
+	session['tags_table'] = False
+	session['keyness_table'] = False
+	session['ngrams'] = False
+	session['kwic'] = False
+	session['keyness_parts'] = {}
+	session['dtm'] = {}
+	session['pca'] = {}
+	session['collocations'] = {}
+	session['doc'] = {}
+	file_path = str(TEMP_DIR.joinpath('session.pkl'))
+	with open(file_path, 'wb') as file:
+		pickle.dump(session, file)
+
+def update_session(key, value):
+	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+	with open(session_path, 'rb') as file:
+		session = pickle.load(file)
+	session[key] = value
+	with open(session_path, 'wb') as file:
+		pickle.dump(session, file)
+
+# Functions for storing and managing corpus metadata
 
 def init_metadata_target(corpus, model, tags_pos, tags_ds):
 	DATA_DIR = data_path()
@@ -110,60 +248,109 @@ def init_metadata_reference(corpus, model, tags_pos, tags_ds):
 	with open(file_path, 'wb') as file:
 		pickle.dump(temp_metadata_reference, file)
 
-def init_session(tempdir, datadir):
-	session = {}
-	session['data_dir'] = datadir
-	session['target_path'] = None
-	session['from_saved'] = 'No'
-	session['is_saved'] = 'No'
-	session['has_meta'] = False
-	session['has_reference'] = False
-	session['reference_path'] = None
-	session['freq_table'] = False
-	session['tags_table'] = False
-	session['keyness_table'] = False
-	session['ngrams'] = False
-	session['kwic'] = False
-	session['keyness_parts'] = {}
-	session['dtm'] = {}
-	session['pca'] = {}
-	session['collocations'] = {}
-	session['doc'] = {}
-	file_path = str(tempdir.joinpath('session.pkl'))
-	with open(file_path, 'wb') as file:
-		pickle.dump(session, file)
-
-def reset_session():
+def load_metadata(corpus_type):
 	DATA_DIR = data_path()
-	session = {}
-	session['data_dir'] = DATA_DIR
-	session['target_path'] = None
-	session['from_saved'] = 'No'
-	session['is_saved'] = 'No'
-	session['has_meta'] = False
-	session['has_reference'] = False
-	session['reference_path'] = None
-	session['freq_table'] = False
-	session['tags_table'] = False
-	session['keyness_table'] = False
-	session['ngrams'] = False
-	session['kwic'] = False
-	session['keyness_parts'] = {}
-	session['dtm'] = {}
-	session['pca'] = {}
-	session['collocations'] = {}
-	session['doc'] = {}
-	file_path = str(TEMP_DIR.joinpath('session.pkl'))
-	with open(file_path, 'wb') as file:
-		pickle.dump(session, file)
+	file_name = 'temp_metadata_' + corpus_type + '.pkl'
+	file_path = str(DATA_DIR.joinpath(file_name))
+	with open(file_path, 'rb') as file:
+		metadata = pickle.load(file)
+	return(metadata)
 
-def update_session(key, value):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
-	with open(session_path, 'rb') as file:
-		session = pickle.load(file)
-	session[key] = value
-	with open(session_path, 'wb') as file:
-		pickle.dump(session, file)
+def update_metadata(corpus_type, key, value):
+	DATA_DIR = data_path()
+	file_name = 'temp_metadata_' + corpus_type + '.pkl'
+	file_path = str(DATA_DIR.joinpath(file_name))
+	with open(file_path, 'rb') as file:
+		metadata = pickle.load(file)
+	metadata[key] = value
+	with open(file_path, 'wb') as file:
+		pickle.dump(metadata, file)
+
+# Functions for handling corpora
+
+def check_model(tagset):
+	tags_to_check = tagset
+	tags = ['Actors', 'Organization', 'Planning', 'Sentiment', 'Signposting', 'Stance']
+	if any(tag in item for item in tags_to_check for tag in tags):
+		model = 'Common Dictionary'
+	else:
+		model = 'Large Dictionary'
+	return(model)
+
+def load_corpus_path(file_path):
+	try:
+		with open(file_path, 'rb') as file:
+			corpus = pickle.load(file)
+		return(corpus)
+	except:
+		pass
+
+def load_temp(corpus_type):
+	DATA_DIR = data_path()
+	file_name = 'temp_' + corpus_type + '.pkl'
+	file_path = str(DATA_DIR.joinpath(file_name))
+	with open(file_path, 'rb') as file:
+		corpus = pickle.load(file)
+	return(corpus)
+	
+def save_corpus(corpus, model_name: str, corpus_name: str):
+	model_dir = ''.join(word[0] for word in model_name.lower().split())
+	file_name = corpus_name + '.pkl'
+	file_path = str(CORPUS_DIR.joinpath(model_dir, file_name))
+	with open(file_path, 'wb') as file:
+		pickle.dump(corpus, file)
+
+def save_corpus_temp(corpus, corpus_type: str):
+	DATA_DIR = data_path()
+	file_name = 'temp_' + corpus_type + '.pkl'
+	file_path = str(DATA_DIR.joinpath(file_name))
+	key = corpus_type + '_path'
+	update_session(key, file_path)
+	with open(file_path, 'wb') as file:
+		pickle.dump(corpus, file)
+
+def find_saved(model_type: str):
+	SUB_DIR = CORPUS_DIR.joinpath(model_type)
+	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.pkl'))
+	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
+	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
+	return(saved_corpora)
+
+def find_saved_reference(target_model, target_path):
+	model_type = ''.join(word[0] for word in target_model.lower().split())
+	SUB_DIR = CORPUS_DIR.joinpath(model_type)
+	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.pkl'))
+	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
+	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
+	saved_ref = {key:val for key, val in saved_corpora.items() if val != target_path}
+	return(saved_corpora, saved_ref)
+
+# Functions for handling data tables
+
+def clear_table(table_id):
+	DATA_DIR = data_path()
+	file_name = 'temp_' + table_id + '.pkl'
+	file_path = str(DATA_DIR.joinpath(file_name))
+	try:
+		if os.path.isfile(file_path) or os.path.islink(file_path):
+			os.unlink(file_path)
+	except:
+		pass
+
+def load_table(table_id):
+	DATA_DIR = data_path()
+	file_name = 'temp_' + table_id + '.pkl'
+	file_path = str(DATA_DIR.joinpath(file_name))
+	table = pd.read_pickle(file_path)  
+	return(table)
+
+def save_table(table, table_id: str):
+	file_name = 'temp_' + table_id + '.pkl'
+	DATA_DIR = data_path()
+	file_path = str(DATA_DIR.joinpath(file_name))
+	table.to_pickle(file_path)
+
+# Functions for storing values associated with specific apps
 
 def update_collocations(node_word, stat_mode, to_left, to_right):
 	session_path = str(TEMP_DIR.joinpath('session.pkl'))
@@ -178,6 +365,22 @@ def update_collocations(node_word, stat_mode, to_left, to_right):
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
+def update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key):
+	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+	with open(session_path, 'rb') as file:
+		session = pickle.load(file)
+	temp_doc = {}
+	temp_doc['dc_pos']      = dc_pos
+	temp_doc['dc_simple']   = dc_simple
+	temp_doc['dc_ds']       = dc_ds
+	temp_doc['html_pos']    = html_pos
+	temp_doc['html_simple'] = html_simple
+	temp_doc['html_ds']     = html_ds
+	temp_doc['doc_key']     = doc_key
+	session['doc'].update(temp_doc)
+	with open(session_path, 'wb') as file:
+		pickle.dump(session, file)
+
 def update_dtm(sums_pos, sums_ds, units):
 	session_path = str(TEMP_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
@@ -187,19 +390,6 @@ def update_dtm(sums_pos, sums_ds, units):
 	temp_dtm['sums_ds']  = sums_ds
 	temp_dtm['units']    = units
 	session['dtm'].update(temp_dtm)
-	with open(session_path, 'wb') as file:
-		pickle.dump(session, file)
-
-def update_pca(pca, contrib, variance, pca_idx):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
-	with open(session_path, 'rb') as file:
-		session = pickle.load(file)
-	temp_pca = {}
-	temp_pca['pca']      = pca
-	temp_pca['contrib']  = contrib
-	temp_pca['variance'] = variance
-	temp_pca['pca_idx']  = pca_idx
-	session['pca'].update(temp_pca)
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
@@ -220,144 +410,18 @@ def update_keyness_parts(tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key):
+def update_pca(pca, contrib, variance, pca_idx):
 	session_path = str(TEMP_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
-	temp_doc = {}
-	temp_doc['dc_pos']      = dc_pos
-	temp_doc['dc_simple']   = dc_simple
-	temp_doc['dc_ds']       = dc_ds
-	temp_doc['html_pos']    = html_pos
-	temp_doc['html_simple'] = html_simple
-	temp_doc['html_ds']     = html_ds
-	temp_doc['doc_key']     = doc_key
-	session['doc'].update(temp_doc)
+	temp_pca = {}
+	temp_pca['pca']      = pca
+	temp_pca['contrib']  = contrib
+	temp_pca['variance'] = variance
+	temp_pca['pca_idx']  = pca_idx
+	session['pca'].update(temp_pca)
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
-
-def load_session():
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
-	try:
-		with open(session_path, 'rb') as file:
-			session = pickle.load(file)
-		return(session)
-	except:
-		generate_temp(_states.STATES.items())
-
-def data_path():
-	try:
-		session_path = str(TEMP_DIR.joinpath('session.pkl'))
-		with open(session_path, 'rb') as file:
-			session = pickle.load(file)
-		data_dir = session.get('data_dir')
-		DATA_DIR = pathlib.Path(data_dir)
-		if os.path.exists(DATA_DIR) == True:
-			return(DATA_DIR)
-		else:
-			subdirs = len([x[0] for x in os.walk(str(TEMP_DIR))])
-			if subdirs == 2:
-				data_dir = [x[0] for x in os.walk(str(TEMP_DIR))]
-				DATA_DIR = pathlib.Path(data_dir[1])
-				update_session('data_dir', DATA_DIR)
-				return(DATA_DIR)
-			else:
-				generate_temp()
-				data_dir = [x[0] for x in os.walk(str(TEMP_DIR))]
-				DATA_DIR = pathlib.Path(data_dir[1])
-				update_session('data_dir', DATA_DIR)
-				return(DATA_DIR)
-	except:
-		generate_temp()
-		data_dir = [x[0] for x in os.walk(str(TEMP_DIR))]
-		DATA_DIR = pathlib.Path(data_dir[1])
-		update_session('data_dir', DATA_DIR)
-		return(DATA_DIR)
-			
-def save_corpus_temp(corpus, corpus_type: str):
-	DATA_DIR = data_path()
-	file_name = 'temp_' + corpus_type + '.pkl'
-	file_path = str(DATA_DIR.joinpath(file_name))
-	key = corpus_type + '_path'
-	update_session(key, file_path)
-	with open(file_path, 'wb') as file:
-		pickle.dump(corpus, file)
-
-def save_corpus(corpus, model_name: str, corpus_name: str):
-	model_dir = ''.join(word[0] for word in model_name.lower().split())
-	file_name = corpus_name + '.pkl'
-	file_path = str(CORPUS_DIR.joinpath(model_dir, file_name))
-	with open(file_path, 'wb') as file:
-		pickle.dump(corpus, file)
-
-def save_table(table, table_id: str):
-	file_name = 'temp_' + table_id + '.pkl'
-	DATA_DIR = data_path()
-	file_path = str(DATA_DIR.joinpath(file_name))
-	table.to_pickle(file_path)
-
-def find_saved(model_type: str):
-	SUB_DIR = CORPUS_DIR.joinpath(model_type)
-	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.pkl'))
-	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
-	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
-	return(saved_corpora)
-
-def load_temp(corpus_type):
-	DATA_DIR = data_path()
-	file_name = 'temp_' + corpus_type + '.pkl'
-	file_path = str(DATA_DIR.joinpath(file_name))
-	with open(file_path, 'rb') as file:
-		corpus = pickle.load(file)
-	return(corpus)
-	
-def load_corpus_path(file_path):
-	try:
-		with open(file_path, 'rb') as file:
-			corpus = pickle.load(file)
-		return(corpus)
-	except:
-		pass
-
-def load_corpus_session(table_id, session_data):
-	corpus = table_id + '_path'
-	corpus_path = str(session_data.get(corpus))
-	corpus_name = 'temp_' + table_id
-	if corpus_path == 'session':
-		corpus = st.session_state.data[corpus_name]
-		return(corpus)
-	else:	
-		try:
-			with open(corpus_path, 'rb') as file:
-				corpus = pickle.load(file)
-			return(corpus)
-		except:
-			st.session_state.session[corpus_name] = None
-
-def load_table(table_id):
-	DATA_DIR = data_path()
-	file_name = 'temp_' + table_id + '.pkl'
-	file_path = str(DATA_DIR.joinpath(file_name))
-	table = pd.read_pickle(file_path)  
-	return(table)
-
-def load_metadata(corpus_type):
-	DATA_DIR = data_path()
-	file_name = 'temp_metadata_' + corpus_type + '.pkl'
-	file_path = str(DATA_DIR.joinpath(file_name))
-	with open(file_path, 'rb') as file:
-		metadata = pickle.load(file)
-	return(metadata)
-
-def update_metadata(corpus_type, key, value):
-	DATA_DIR = data_path()
-	file_name = 'temp_metadata_' + corpus_type + '.pkl'
-	file_path = str(DATA_DIR.joinpath(file_name))
-	with open(file_path, 'rb') as file:
-		metadata = pickle.load(file)
-	metadata[key] = value
-	with open(file_path, 'wb') as file:
-		pickle.dump(metadata, file)
 
 def update_tags(html_state):
 	html_highlights = [' { background-color:#5fb7ca; }', ' { background-color:#e35be5; }', ' { background-color:#ffc701; }', ' { background-color:#fe5b05; }', ' { background-color:#cb7d60; }']
@@ -377,39 +441,10 @@ def update_tags(html_state):
 	style_sheet_str = '<style>' + style_str + '</style>'
 	st.session_state['html_str'] = style_sheet_str + html_state
 
-def check_name(strg, search=re.compile(r'[^A-Za-z_-]').search):
+# Convenience function called by widgets
+
+def check_name(strg, search=re.compile(r'[^A-Za-z0-9_-]').search):
 	return not bool(search(strg))
-
-def check_model(tagset):
-	tags_to_check = tagset
-	tags = ['Actors', 'Organization', 'Planning', 'Sentiment', 'Signposting', 'Stance']
-	if any(tag in item for item in tags_to_check for tag in tags):
-		model = 'Common Dictionary'
-	else:
-		model = 'Large Dictionary'
-	return(model)
-
-def clear_temp():
-	DATA_DIR = data_path()
-	for filename in os.listdir(DATA_DIR):
-		file_path = os.path.join(DATA_DIR, filename)
-		try:
-			if os.path.isfile(file_path) or os.path.islink(file_path):
-				os.unlink(file_path)
-			elif os.path.isdir(file_path):
-				shutil.rmtree(file_path)
-		except:
-			pass
-
-def clear_table(table_id):
-	DATA_DIR = data_path()
-	file_name = 'temp_' + table_id + '.pkl'
-	file_path = str(DATA_DIR.joinpath(file_name))
-	try:
-		if os.path.isfile(file_path) or os.path.islink(file_path):
-			os.unlink(file_path)
-	except:
-		pass
 
 def clear_plots():
 	update_session('pca', dict())
@@ -417,15 +452,6 @@ def clear_plots():
 		st.session_state['grpa'] = []
 	if 'grpb' in st.session_state:
 		st.session_state['grpb'] = []
-
-def find_saved_reference(target_model, target_path):
-	model_type = ''.join(word[0] for word in target_model.lower().split())
-	SUB_DIR = CORPUS_DIR.joinpath(model_type)
-	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.pkl'))
-	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
-	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
-	saved_ref = {key:val for key, val in saved_corpora.items() if val != target_path}
-	return(saved_corpora, saved_ref)
 
 def persist(key: str, app_name: str):
 	_PERSIST_STATE_KEY = f"{app_name}_PERSIST"
