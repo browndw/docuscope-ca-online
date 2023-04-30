@@ -98,6 +98,7 @@ def main():
 	    				y = alt.Y('Tag', sort=cols, title='')
 						)
 						
+					st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
 					st.altair_chart(base, use_container_width=True)
 					
 					st.markdown(_messages.message_stats_info(stats))				
@@ -138,6 +139,7 @@ def main():
 									stroke=None
 								).configure_legend(orient='top')
 							
+							st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
 							st.altair_chart(plot, use_container_width=True)					
 							
 							st.markdown(_messages.message_group_info(grpa_list, grpb_list))
@@ -172,65 +174,67 @@ def main():
 				
 				st.markdown(_messages.message_correlation_info(cc_df, cc_r, cc_p))
 	
-		st.sidebar.markdown("""---""") 
-		st.sidebar.markdown("### Principal Component Analysis")
-		st.sidebar.markdown("""
-							Click the button to plot principal compenents.
-							""")
-	
-		if st.sidebar.button("PCA"):
-			_handlers.update_session('pca', dict())
-			if session['has_meta'] == True:
-				grouping = metadata_target['doccats']
-			else:
-				grouping = []
+		if session['dtm']['units'] != 'norm':
 
-			pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
-			if bool(session['pca']) == False:
-				_handlers.update_pca(pca_df, contrib_df, ve, 1)
-				st.experimental_rerun()
-			else:
-				_handlers.update_pca(pca_df, contrib_df, ve, 1)
-			
-		if bool(session['pca']) == True:
-			session['pca']['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
-			
-			cp_1, cp_2, pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2 = _analysis.update_pca_plot(session['pca'])
-			
-			base = alt.Chart(session['pca']['pca']).mark_circle(size=50).encode(
-	    			alt.X(pca_x),
-	    			alt.Y(pca_y),
-	    			tooltip=['doc_id:N']
-	    			)
+			st.sidebar.markdown("""---""") 
+			st.sidebar.markdown("### Principal Component Analysis")
+			st.sidebar.markdown("""
+								Click the button to plot principal compenents.
+								""")
+		
+			if st.sidebar.button("PCA"):
+				_handlers.update_session('pca', dict())
+				if session['has_meta'] == True:
+					grouping = metadata_target['doccats']
+				else:
+					grouping = []
 	
-			#zero axes
-			line_y = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule().encode(y=alt.Y('y', title=pca_y))
-			line_x = alt.Chart(pd.DataFrame({'x': [0]})).mark_rule().encode(x=alt.X('x', title=pca_x))
-
-			if session['has_meta'] == True:
-				groups = sorted(set(metadata_target['doccats']))
-				# A dropdown filter
-				group_dropdown = alt.binding_select(options=groups)
-				group_select = alt.selection_single(fields=['Group'], bind=group_dropdown, name="Select")
-				group_color_condition = alt.condition(group_select,
-                      alt.Color('Group:N', legend=None),
-                      alt.value('lightgray'))
-                
-				highlight_groups = base.add_selection(group_select).encode(color=group_color_condition)
-				st.altair_chart(highlight_groups + line_y + line_x, use_container_width = True)
-
-			else:
-				st.altair_chart(base + line_y + line_x, use_container_width = True)
-			
-			st.markdown(_messages.message_variance_info(pca_x, pca_y, ve_1, ve_2))
-			
-			st.markdown(_messages.message_contribution_info(pca_x, pca_y, contrib_x, contrib_y))
-			
-			st.markdown("##### Variable contribution (by %) to principal component:")
+				pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
+				if bool(session['pca']) == False:
+					_handlers.update_pca(pca_df, contrib_df, ve, 1)
+					st.experimental_rerun()
+				else:
+					_handlers.update_pca(pca_df, contrib_df, ve, 1)
+				
+			if bool(session['pca']) == True:
+				session['pca']['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
+				
+				cp_1, cp_2, pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2 = _analysis.update_pca_plot(session['pca'])
+				
+				base = alt.Chart(session['pca']['pca']).mark_circle(size=50, opacity=.75).encode(
+		    			alt.X(pca_x),
+		    			alt.Y(pca_y),
+		    			tooltip=['doc_id:N']
+		    			)
+		
+				#zero axes
+				line_y = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule().encode(y=alt.Y('y', title=pca_y))
+				line_x = alt.Chart(pd.DataFrame({'x': [0]})).mark_rule().encode(x=alt.X('x', title=pca_x))
 	
-			col1,col2 = st.columns(2)
-			col1.altair_chart(cp_1, use_container_width = True)
-			col2.altair_chart(cp_2, use_container_width = True)
+				if session['has_meta'] == True:
+					groups = sorted(set(metadata_target['doccats']))
+					# A dropdown filter
+					group_dropdown = alt.binding_select(options=groups)
+					group_select = alt.selection_single(fields=['Group'], bind=group_dropdown, name="Select")
+					group_color_condition = alt.condition(group_select,
+	                      alt.Color('Group:N', legend=None, scale=alt.Scale(range=['#133955'])),
+	                      alt.value('lightgray'))
+	                
+					highlight_groups = base.add_selection(group_select).encode(color=group_color_condition)
+					st.altair_chart(highlight_groups + line_y + line_x, use_container_width = True)
+	
+				else:
+					st.altair_chart(base + line_y + line_x, use_container_width = True)
+				
+				st.markdown(_messages.message_variance_info(pca_x, pca_y, ve_1, ve_2))
+				
+				st.markdown(_messages.message_contribution_info(pca_x, pca_y, contrib_x, contrib_y))
+				
+				st.markdown("##### Variable contribution (by %) to principal component:")
+		
+				col1,col2 = st.columns(2)
+				col1.altair_chart(cp_1, use_container_width = True)
+				col2.altair_chart(cp_2, use_container_width = True)
 
 
 		st.sidebar.markdown("---")
@@ -314,31 +318,32 @@ def main():
 			if session.get('target_path') == None:
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			else:
-				with st.spinner('Generating dtm for plotting...'):
-					tp = _handlers.load_corpus_session('target', session)
-					dtm_pos = ds.corpus_analysis.tags_dtm(tp, count_by='pos')
-					dtm_pos.set_index('doc_id', inplace=True)
-					sums_pos = np.array(dtm_pos.sum(axis=1))
-					dtm_ds = ds.corpus_analysis.tags_dtm(tp, count_by='ds')
-					dtm_ds.set_index('doc_id', inplace=True)
-					sums_ds = np.array(dtm_ds.sum(axis=1))
-					
-					if dtm_type == 'Normalized' and scale == 'No':
-						dtm_simple = _analysis.simplify_dtm(dtm_pos, sums_pos)					
-						dtm_pos = _analysis.tf_proportions(dtm_pos, norm=True)
-						dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=True)
-						units = 'norm'
-						_handlers.save_table(dtm_simple, 'dtm_simple')
-
-					elif dtm_type == 'Normalized' and scale == 'Yes':
-						dtm_pos = _analysis.tf_proportions(dtm_pos, norm=False, scale=True)
-						dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=False, scale=True)
-						units = 'scaled'
-
-					else:
-						dtm_pos = _analysis.tfidf(dtm_pos)
-						dtm_ds = _analysis.tfidf(dtm_ds)
-						units = 'tfidf'
+				with st.sidebar:
+					with st.spinner('Generating dtm for plotting...'):
+						tp = _handlers.load_corpus_session('target', session)
+						dtm_pos = ds.tags_dtm(tp, count_by='pos')
+						dtm_pos.set_index('doc_id', inplace=True)
+						sums_pos = np.array(dtm_pos.sum(axis=1))
+						dtm_ds = ds.tags_dtm(tp, count_by='ds')
+						dtm_ds.set_index('doc_id', inplace=True)
+						sums_ds = np.array(dtm_ds.sum(axis=1))
+						
+						if dtm_type == 'Normalized' and scale == 'No':
+							dtm_simple = _analysis.simplify_dtm(dtm_pos, sums_pos)					
+							dtm_pos = _analysis.tf_proportions(dtm_pos, norm=True)
+							dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=True)
+							units = 'norm'
+							_handlers.save_table(dtm_simple, 'dtm_simple')
+	
+						elif dtm_type == 'Normalized' and scale == 'Yes':
+							dtm_pos = _analysis.tf_proportions(dtm_pos, norm=False, scale=True)
+							dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=False, scale=True)
+							units = 'scaled'
+	
+						else:
+							dtm_pos = _analysis.tfidf(dtm_pos)
+							dtm_ds = _analysis.tfidf(dtm_ds)
+							units = 'tfidf'
 
 					dtm_ds.drop('Untagged', axis=1, inplace=True, errors='ignore')
 					_handlers.save_table(dtm_pos, 'dtm_pos')
