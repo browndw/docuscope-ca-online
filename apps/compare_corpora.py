@@ -195,8 +195,11 @@ def main():
 							color=alt.Color('Corpus:N', sort=order),
 							row=alt.Row('Tag', title=None, header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Mean', order='descending')),
 							tooltip=[
-							alt.Tooltip('RF:Q', title="Per 100 Tokens", format='.2')
-							]).configure_facet(spacing=0.5).configure_legend(orient='top')				
+								alt.Tooltip('Tag'),
+								alt.Tooltip('RF:Q', title="RF", format='.2')
+							]).configure_facet(spacing=2.5).configure_legend(orient='top')				
+				
+				st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
 				st.altair_chart(base, use_container_width=True)
 			
 			st.sidebar.markdown("---")
@@ -228,44 +231,46 @@ def main():
 			elif session.get('reference_path') == None:
 				st.markdown(_warnings.warning_17, unsafe_allow_html=True)
 			else:
-				with st.spinner('Generating keywords...'):
-					tp_ref = _handlers.load_corpus_session('reference', session)
-					metadata_reference = _handlers.load_metadata('reference')
-					wc_ref_pos = ds.corpus_analysis.frequency_table(tp_ref, metadata_reference.get('words'))
-					wc_ref_ds  = ds.corpus_analysis.frequency_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
-					tc_ref_pos = ds.corpus_analysis.tags_table(tp_ref, metadata_reference.get('words'))
-					tc_ref_ds  = ds.corpus_analysis.tags_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
+				with st.sidebar:
+					with st.spinner('Generating keywords...'):
+						tp_ref = _handlers.load_corpus_session('reference', session)
+						metadata_reference = _handlers.load_metadata('reference')
+						wc_ref_pos = ds.frequency_table(tp_ref, metadata_reference.get('words'))
+						wc_ref_ds  = ds.frequency_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
+						tc_ref_pos = ds.tags_table(tp_ref, metadata_reference.get('words'))
+						tc_ref_ds  = ds.tags_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
+						
+						if session.get('tags_table') == False:
+							tp = _handlers.load_corpus_session('target', session)
+							metadata_target = _handlers.load_metadata('target')
+							tc_pos = ds.tags_table(tp, metadata_target.get('words'))
+							tc_ds  = ds.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
+							_handlers.save_table(tc_pos, 'tt_pos')
+							_handlers.save_table(tc_ds, 'tt_ds')
+							_handlers.update_session('tags_table', True)
+						
+						if session.get('freq_table') == False:
+							tp = _handlers.load_corpus_session('target', session)
+							metadata_target = _handlers.load_metadata('target')
+							wc_pos = ds.frequency_table(tp, metadata_target.get('words'))
+							wc_ds  = ds.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
+							_handlers.save_table(wc_pos, 'ft_pos')
+							_handlers.save_table(wc_ds, 'ft_ds')
+							_handlers.update_session('freq_table', True)
 					
-					if session.get('tags_table') == False:
-						tp = _handlers.load_corpus_session('target', session)
-						metadata_target = _handlers.load_metadata('target')
-						tc_pos = ds.corpus_analysis.tags_table(tp, metadata_target.get('words'))
-						tc_ds  = ds.corpus_analysis.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
-						_handlers.save_table(tc_pos, 'tt_pos')
-						_handlers.save_table(tc_ds, 'tt_ds')
-						_handlers.update_session('tags_table', True)
-					
-					if session.get('freq_table') == False:
-						tp = _handlers.load_corpus_session('target', session)
-						metadata_target = _handlers.load_metadata('target')
-						wc_pos = ds.corpus_analysis.frequency_table(tp, metadata_target.get('words'))
-						wc_ds  = ds.corpus_analysis.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
-						_handlers.save_table(wc_pos, 'ft_pos')
-						_handlers.save_table(wc_ds, 'ft_ds')
-						_handlers.update_session('freq_table', True)
-				
-					kw_pos = ds.corpus_analysis.keyness_table(_handlers.load_table('ft_pos'), wc_ref_pos)
-					kw_ds  = ds.corpus_analysis.keyness_table(_handlers.load_table('ft_ds'), wc_ref_ds)
-					kt_pos = ds.corpus_analysis.keyness_table(_handlers.load_table('tt_pos'), tc_ref_pos, tags_only=True)
-					kt_ds  = ds.corpus_analysis.keyness_table(_handlers.load_table('tt_ds'), tc_ref_ds, tags_only=True)
-					_handlers.save_table(kw_pos, 'kw_pos')
-					_handlers.save_table(kw_ds, 'kw_ds')
-					_handlers.save_table(kt_pos, 'kt_pos')
-					_handlers.save_table(kt_ds, 'kt_ds')
-					_handlers.update_session('keyness_table', True)
-					st.success('Keywords generated!')
-					st.experimental_rerun()
+						kw_pos = ds.keyness_table(_handlers.load_table('ft_pos'), wc_ref_pos)
+						kw_ds  = ds.keyness_table(_handlers.load_table('ft_ds'), wc_ref_ds)
+						kt_pos = ds.keyness_table(_handlers.load_table('tt_pos'), tc_ref_pos, tags_only=True)
+						kt_ds  = ds.keyness_table(_handlers.load_table('tt_ds'), tc_ref_ds, tags_only=True)
+						_handlers.save_table(kw_pos, 'kw_pos')
+						_handlers.save_table(kw_ds, 'kw_ds')
+						_handlers.save_table(kt_pos, 'kt_pos')
+						_handlers.save_table(kt_ds, 'kt_ds')
+						_handlers.update_session('keyness_table', True)
+						st.success('Keywords generated!')
+						st.experimental_rerun()
 		
+		st.sidebar.markdown("---")		
 
 if __name__ == "__main__":
     main()
