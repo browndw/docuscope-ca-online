@@ -153,3 +153,12 @@ def check_reference(corpus, target_docs):
 	for dup in dup_docs:
 		corpus.pop(dup, None)
 	return corpus, dup_docs
+
+def get_doc_cats(doc_ids):
+	if all(['_' in item for item in doc_ids]):
+		doc_cats = [re.sub(r"_\S+$", "", item, flags=re.UNICODE) for item in doc_ids]
+		if min([len(item) for item in doc_cats]) == 0:
+			doc_cats = []
+	else:
+		doc_cats = []
+	return doc_cats
