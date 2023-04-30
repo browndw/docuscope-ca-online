@@ -195,31 +195,24 @@ def main():
 			elif len(node_word) > 15:
 				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				with st.spinner('Processing n-grams...'):
-					tp = _handlers.load_corpus_session('target', session)
-					metadata_target = _handlers.load_metadata('target')
-					if from_anchor == 'Token':
-						ngram_df = _analysis.ngrams_by_token(tp, node_word, position, ngram_span, total, search, ts)
-						#cap size of dataframe
-						if len(ngram_df.index) < 2:
-							st.markdown(_warnings.warning_12, unsafe_allow_html=True)
-						elif len(ngram_df.index) > 100000:
-							st.markdown(_warnings.warning_13, unsafe_allow_html=True)
-						else:
-							_handlers.save_table(ngram_df, 'ngrams')
-							_handlers.update_session('ngrams', True)
-							st.experimental_rerun()				
-					if from_anchor == 'Tag':
-						ngram_df = _analysis.ngrams_by_tag(tp, tag, position, ngram_span, total, ts)
-						#cap size of dataframe
-						if len(ngram_df.index) < 2:
-							st.markdown(_warnings.warning_12, unsafe_allow_html=True)
-						elif len(ngram_df.index) > 100000:
-							st.markdown(_warnings.warning_13, unsafe_allow_html=True)
-						else:
-							_handlers.save_table(ngram_df, 'ngrams')
-							_handlers.update_session('ngrams', True)
-							st.experimental_rerun()				
+				with st.sidebar:
+					with st.spinner('Processing n-grams...'):
+						tp = _handlers.load_corpus_session('target', session)
+						metadata_target = _handlers.load_metadata('target')
+						if from_anchor == 'Token':
+							ngram_df = _analysis.ngrams_by_token(tp, node_word, position, ngram_span, total, search, ts)
+							#cap size of dataframe
+						if from_anchor == 'Tag':
+							ngram_df = _analysis.ngrams_by_tag(tp, tag, position, ngram_span, total, ts)
+				#cap size of dataframe
+				if len(ngram_df.index) < 2:
+					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
+				elif len(ngram_df.index) > 100000:
+					st.markdown(_warnings.warning_13, unsafe_allow_html=True)
+				else:
+					_handlers.save_table(ngram_df, 'ngrams')
+					_handlers.update_session('ngrams', True)
+					st.experimental_rerun()				
 				
 		st.sidebar.markdown("---")
 
