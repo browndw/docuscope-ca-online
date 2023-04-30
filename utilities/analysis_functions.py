@@ -28,7 +28,7 @@ IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 _imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
 _options = _imports.import_options_general(OPTIONS)
 
-modules = ['altair', 'docx', 'numpy', 'docuscospacy', 'pandas', 'scipy', 'sklearn', 'decomposition']
+modules = ['altair', 'docx', 'numpy', 'docuscospacy', 'corpus_utils', 'pandas', 'scipy', 'sklearn', 'decomposition']
 import_params = _imports.import_parameters(_options, modules)
 
 for module in import_params.keys():
@@ -77,9 +77,9 @@ def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_t
     span_r = span - span_l
     tok = list(tok.values())
     if count_by == 'pos':
-        tc = ds.corpus_utils._merge_tags(tok)
+        tc = corpus_utils._merge_tags(tok)
     if count_by == 'ds':
-        tc = ds.corpus_utils._merge_ds(tok)
+        tc = corpus_utils._merge_ds(tok)
     ngram_list = []
     for i in range(0,len(tc)):
         tp = tc[i]
@@ -149,9 +149,9 @@ def ngrams_by_tag(tok, tag: str, tag_position, span, n_tokens, count_by='pos'):
     span_r = span - span_l
     tok = list(tok.values())
     if count_by == 'pos':
-        tc = ds.corpus_utils._merge_tags(tok)
+        tc = corpus_utils._merge_tags(tok)
     if count_by == 'ds':
-        tc = ds.corpus_utils._merge_ds(tok)
+        tc = corpus_utils._merge_ds(tok)
     ngram_list = []
     for i in range(0,len(tc)):
         tp = tc[i]
@@ -457,19 +457,21 @@ def update_pca_plot(pca: dict):
 	ve_1 = "{:.2%}".format(variance[pca_idx - 1])
 	ve_2 = "{:.2%}".format(variance[pca_idx])
 
-	cp_1 = alt.Chart(contrib_1, height={"step": 12}).mark_bar(size=10).encode(
+	cp_1 = alt.Chart(contrib_1, height={"step": 24}).mark_bar(size=12).encode(
 				x=alt.X(pca_x, axis=alt.Axis(format='%')), 
-				y=alt.Y('Tag', sort='-x', title=None),
+				y=alt.Y('Tag', sort='-x', title=None, axis=alt.Axis(labelLimit=200)),
 	 			tooltip=[
-     	  		 alt.Tooltip(pca_x, title="Percentage of Contribution", format='.2%')
+				alt.Tooltip('Tag'),
+     	  		 alt.Tooltip(pca_x, title="Cont.", format='.2%')
     			])
 	
-	cp_2 = alt.Chart(contrib_2, height={"step": 12}).mark_bar(size=10).encode(
+	cp_2 = alt.Chart(contrib_2, height={"step": 24}).mark_bar(size=12).encode(
 				x=alt.X(pca_y, 
 				axis=alt.Axis(format='%')), 
-				y=alt.Y('Tag', sort='-x', title=None),
+				y=alt.Y('Tag', sort='-x', title=None, axis=alt.Axis(labelLimit=200)),
 				tooltip=[
-				alt.Tooltip(pca_y, title="Percentage of Contribution", format='.2%')
+				alt.Tooltip('Tag'),
+				alt.Tooltip(pca_y, title="Cont.", format='.2%')
 				])
 		
 	return(cp_1, cp_2, pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2)
@@ -581,7 +583,7 @@ def simplify_span(pos_span):
         return(df)
 
 def html_build(tok, key, count_by="tag"):
-    df = ds.corpus_analysis.tag_ruler(tok=tok, key=key, count_by=count_by)
+    df = ds.tag_ruler(tok=tok, key=key, count_by=count_by)
     df['ws'] = df['Token'].str.extract(r'(\s+)$')
     df['Token'] = df['Token'].str.replace(r'(\s+)$', '')
     df.Token[df['Tag'] != 'Untagged'] = df['Token'].str.replace(r'^(.*?)$', '\\1</span>')
