@@ -452,10 +452,10 @@ def main():
 				del_from_model = st.sidebar.radio("Select data tagged with:", ("Large Dictionary", "Common Dictionary"), key='corpora_to_delete')
 				if del_from_model == 'Large Dictionary':
 					saved_corpora = _handlers.find_saved('ld')
-					to_delete = st.sidebar.selectbox('Select a saved corpus to delete:', (saved_corpora))
+					to_delete = st.sidebar.selectbox('Select a saved corpus to delete:', (sorted(saved_corpora)))
 				if del_from_model == 'Common Dictionary':
 					saved_corpora = _handlers.find_saved('cd')		
-					to_delete = st.sidebar.selectbox('Select a saved corpus to delete:', (saved_corpora))	
+					to_delete = st.sidebar.selectbox('Select a saved corpus to delete:', (sorted(saved_corpora)))
 				if st.sidebar.button("Delete Corpus"):
 					path = pathlib.Path(saved_corpora.get(to_delete))
 					path.unlink()
