@@ -315,6 +315,10 @@ def main():
 		st.markdown(_messages.message_load)
 		
 		st.markdown("---")
+		
+		with st.expander("About saved corpora"):
+				st.markdown(_messages.message_saved_corpora)
+		
 		st.markdown("### Load a saved corpus:")
 		
 		from_saved = st.radio("Would you like to load a saved corpus?", ("No", "Yes"), horizontal=True)
@@ -399,10 +403,8 @@ def main():
 			st.session_state.model = selected_dict
 		
 			with st.sidebar.expander("Which model do I choose?"):
-				st.markdown("""
-						For detailed descriptions, see the tags tables available from the Help menu.
-						But in short, the full dictionary has more categories and coverage than the common dictionary.
-						""")		
+				st.markdown(_messages.message_models)		
+			
 			st.sidebar.markdown("---")
 				
 			if st.session_state['ready_to_process'] == True:
