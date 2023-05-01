@@ -129,17 +129,6 @@ message_load_reference = """
     :exclamation: Be sure that all file names are unique and that they don't share names with your target corpus.\n
     :alarm_clock: Processing times may vary, but you can expect the initial corpus processing to take roughly 1 minute for every 1 million words.
     """
-
-message_naming = """
-    Files must be in a \*.txt format. If you are preparing files for the first time,
-    it is recommended that you use a plain text editor (rather than an application like Word).
-    Avoid using spaces in file names.
-    Also, you needn't worry about preserving paragraph breaks, as those will be stripped out during processing.\n
-    Metadata can be encoded at the beginning of a file name, before an underscore. For example: acad_01.txt, acad_02.txt, 
-    blog_01.txt, blog_02.txt. These would allow you to compare **acad** vs. **blog** as categories.
-    You can designate up to 20 categories.
-	"""
-
 message_select_target = """
     :point_left: Select a saved corpus from the lists in the sidebar.\n
     :exclamation:  Note that corpora are organized by model with which they were tagged.
@@ -261,6 +250,32 @@ message_reset_table = """
     """
 
 # Static messages that populate the expanders.
+
+message_saved_corpora = """
+	DocuScope CAC comes with some pre-processed corpus data to get you started.
+	There is a sub-sample of the [Michigan Corpus of Upper-Level Student Papers (MICUSP)](https://elicorpora.info/main).
+	The sub-sample contains 10 papers from 17 disciplines.
+	This is called **MICUSP-mini** and is recommended for exploring, if you are new to the tool.\n\n
+	There is also a parsed version of the full MICUSP corpus, as well as a corpus of published academic papers.
+	The latter is named **ELSEVIER** and contains data from open access publications from 20 disciplines.
+	You can see the metadata (as well as the full subject area names) on the [GitHub repository](https://github.com/browndw/corpus-tagger#elesevier-corpus).\n\n
+	If you are using the MICUSP data for academic work or for publication, [please cite it](https://www.euppublishing.com/doi/abs/10.3366/cor.2011.0011).
+	"""
+
+message_naming = """
+    Files must be in a \*.txt format. If you are preparing files for the first time,
+    it is recommended that you use a plain text editor (rather than an application like Word).
+    Avoid using spaces in file names.
+    Also, you needn't worry about preserving paragraph breaks, as those will be stripped out during processing.\n
+    Metadata can be encoded at the beginning of a file name, before an underscore. For example: acad_01.txt, acad_02.txt, 
+    blog_01.txt, blog_02.txt. These would allow you to compare **acad** vs. **blog** as categories.
+    You can designate up to 20 categories.
+	"""
+
+message_models = """
+	For detailed descriptions, see the tags tables available from the Help menu.
+	But in short, the full dictionary has more categories and coverage than the common dictionary.
+	"""
 
 message_association_measures = """
 	The most common statistic for measuring token associations is Pointwise Mutual Information (PMI),
