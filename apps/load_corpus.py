@@ -127,7 +127,7 @@ def main():
 				st.markdown("---")
 				save_target = st.radio("Would you like to save your target corpus for future analysis?", ("No", "Yes"), horizontal=True)
 				if save_target == 'Yes':
-					target_name = st.text_input("Name your target corpus (using only letters or the underscore):")
+					target_name = st.text_input("Name your target corpus (only letters, numbers, the hyphen or the underscore are allowed):")
 					if st.button("Save Corpus"):
 						if len(target_name) > 2 & len(target_name) < 15 and _handlers.check_name(target_name) == True:
 							corp = _handlers.load_temp('target')
