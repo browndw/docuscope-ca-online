@@ -1,7 +1,10 @@
 
-[![](https://avatars.githubusercontent.com/u/21162269?s=200&v=4)](https://www.cmu.edu/dietrich/english/research-and-publications/docuscope.html)
-
 # DocuScope Corpus Analysis & Concordancer
+
+<div class="image" align="center">
+    <img width="150" height="auto" src="https://github.com/browndw/corpus-tagger/raw/main/_static/docuscope-logo.png" alt="DocuScope logo">
+    <br>
+</div>
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://browndw-corpus-tagger-index-st-deploy-3f662p.streamlit.app/) [![](https://badge.fury.io/py/docuscospacy.svg)](https://badge.fury.io/py/docuscospacy) [![](https://readthedocs.org/projects/docuscospacy/badge/?version=latest)](https://docuscospacy.readthedocs.io/) [![](https://zenodo.org/badge/512227318.svg)](https://zenodo.org/badge/latestdoi/512227318) [![Built with spaCy](https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg)](https://spacy.io) ![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)
 
