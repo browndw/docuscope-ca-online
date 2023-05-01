@@ -21,6 +21,8 @@ With the application users can:
 
 ## Elesevier Corpus
 
+For convenience, DocuScope CAC come with some pre-processed data. One of those was compiled specifically for the tool. It contains published academic articles, which were harvested from Elesevier open access. The entire dataset includes more than 40,000 articles. The data processed and saved for the tool have 20 randomly sampled articles from 20 disciplines.
+
 ### Corpus Metadata
 
 |doc_id           |doi                               |pub_year|subj_short|subj_name                                   |title                                                                                                                                                                                                                           |
