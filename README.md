@@ -1,7 +1,7 @@
 
 [![](https://avatars.githubusercontent.com/u/21162269?s=200&v=4)](https://www.cmu.edu/dietrich/english/research-and-publications/docuscope.html)
 
-# DocuScope Corpus Analysis
+# DocuScope Corpus Analysis & Concordancer
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://browndw-corpus-tagger-index-st-deploy-3f662p.streamlit.app/) [![](https://badge.fury.io/py/docuscospacy.svg)](https://badge.fury.io/py/docuscospacy) [![](https://readthedocs.org/projects/docuscospacy/badge/?version=latest)](https://docuscospacy.readthedocs.io/) [![](https://zenodo.org/badge/512227318.svg)](https://zenodo.org/badge/latestdoi/512227318) [![Built with spaCy](https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg)](https://spacy.io) ![](https://raw.githubusercontent.com/browndw/corpus-tagger/main/_static/porpoise_badge.svg)
 
@@ -23,7 +23,7 @@ With the application users can:
 
 ### Corpus Metadata
 
-|doc_id           |doi                               |pub_year|subjareas|subj                                        |title                                                                                                                                                                                                                           |
+|doc_id           |doi                               |pub_year|subj_short|subj_name                                   |title                                                                                                                                                                                                                           |
 |-----------------|----------------------------------|--------|---------|--------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 |S0039368115001612|10.1016/j.shpsa.2015.11.001       |2016    |ARTS     |Arts and Humanities                         |Experiment and speculation in seventeenth-century Italy: The case of Geminiano Montanari                                                                                                                                        |
 |S0160932718300012|10.1016/j.endeavour.2018.01.001   |2018    |ARTS     |Arts and Humanities                         |Why the history of public consultation matters for contemporary health policy                                                                                                                                                   |
