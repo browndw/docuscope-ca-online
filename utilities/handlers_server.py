@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import atexit
 import glob
 import os
 import pathlib
 import pickle
 import re
-import shutil
-import tempfile
 from importlib.machinery import SourceFileLoader
 
 HERE = pathlib.Path(__file__).parents[1].resolve()
@@ -31,7 +28,7 @@ IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 _imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
 _options = _imports.import_options_general(OPTIONS)
 
-modules = ['states', 'streamlit', 'pandas']
+modules = ['states', 'streamlit', 'pandas', 'blosc']
 import_params = _imports.import_parameters(_options, modules)
 
 for module in import_params.keys():
@@ -58,7 +55,7 @@ for module in import_params.keys():
 # Initialize session states.
 # For local file handling, generate a temp folder to be deleted on close.
 
-# data_path  and clear_temp only when save is enabled
+# data_path()  and clear_temp() only when save is enabled
 
 def generate_temp(states):
 	for key, value in states:
@@ -97,21 +94,6 @@ def load_session():
 		return(session)
 	except:
 		generate_temp(_states.STATES.items())
-
-def load_corpus_session(table_id, session_data):
-	corpus = table_id + '_path'
-	corpus_path = str(session_data.get(corpus))
-	corpus_name = 'temp_' + table_id
-	if corpus_path == 'session':
-		corpus = st.session_state.data[corpus_name]
-		return(corpus)
-	else:	
-		try:
-			with open(corpus_path, 'rb') as file:
-				corpus = pickle.load(file)
-			return(corpus)
-		except:
-			st.session_state.session[corpus_name] = None
 	
 def reset_session():
 	temp_session = {}
@@ -181,7 +163,7 @@ def update_metadata(corpus_type, key, value):
 
 # Functions for handling corpora
 
-# save_corpus only when save is enabled
+# save_corpus() only when save is enabled
 
 def check_model(tagset):
 	tags_to_check = tagset
@@ -195,16 +177,37 @@ def check_model(tagset):
 def load_corpus_path(file_path):
 	try:
 		with open(file_path, 'rb') as file:
-			corpus = pickle.load(file)
+			compressed_corpus = file.read()
+		depressed_corpus = blosc.decompress(compressed_corpus)
+		corpus = pickle.loads(depressed_corpus)
 		return(corpus)
 	except:
 		pass
+
+def load_corpus_session(corpus_id, session_data):
+	corpus = corpus_id + '_path'
+	corpus_path = str(session_data.get(corpus))
+	corpus_name = 'temp_' + corpus_id
+	if corpus_path == 'session':
+		corpus = st.session_state.data[corpus_name]
+		return(corpus)
+	else:	
+		try:
+			with open(corpus_path, 'rb') as file:
+				compressed_corpus = file.read()
+			depressed_corpus = blosc.decompress(compressed_corpus)
+			corpus = pickle.loads(depressed_corpus)
+			return(corpus)
+		except:
+			st.session_state.session[corpus_name] = None
 
 def load_temp(corpus_type):
 	file_name = 'temp_' + corpus_type
 	file_path = str(DATA_DIR.joinpath(file_name))
 	with open(file_path, 'rb') as file:
-		corpus = pickle.load(file)
+		compressed_corpus = file.read()
+	depressed_corpus = blosc.decompress(compressed_corpus)
+	corpus = pickle.loads(depressed_corpus)
 	return(corpus)
 	
 def save_corpus_temp(corpus, corpus_type: str):
@@ -218,7 +221,7 @@ def save_corpus_temp(corpus, corpus_type: str):
 	
 def find_saved(model_type: str):
 	SUB_DIR = CORPUS_DIR.joinpath(model_type)
-	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.pkl'))
+	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.dat'))
 	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
 	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
 	return(saved_corpora)
@@ -226,7 +229,7 @@ def find_saved(model_type: str):
 def find_saved_reference(target_model, target_path):
 	model_type = ''.join(word[0] for word in target_model.lower().split())
 	SUB_DIR = CORPUS_DIR.joinpath(model_type)
-	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.pkl'))
+	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.dat'))
 	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
 	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
 	saved_ref = {key:val for key, val in saved_corpora.items() if val != target_path}
