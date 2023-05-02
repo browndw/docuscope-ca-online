@@ -352,6 +352,20 @@ message_span = """
 	There could be cases when you want a narrower window or a wider one.
 	"""
 
+message_general_tags = """
+	The conventions for aggregating tags follow those used by the [Corpus of Contemporary American English (COCA)](https://www.english-corpora.org/coca/).\n\n
+	Nouns are identified by tags starting with **NN**, which means they are capturing **common nouns** not [proper nouns or pronouns](https://ucrel.lancs.ac.uk/claws7tags.html).\n\n
+	Even more importantly verbs are identified by tags starting with **VV**.
+	Those are assigned to **lexical verbs**.
+	Modal verbs, for example, are identified by **VM**, and are not included in those counts.
+	"""
+
+message_variable_contrib = """
+	The plots are a Python implementation of [fviz_contrib()](http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining), 
+	an **R** function that is part of the **factoextra** package.
+	"""
+
+
 # Style option hack to disable full page view of plots.
 # Some don't render correctly in the full-page view.
 
