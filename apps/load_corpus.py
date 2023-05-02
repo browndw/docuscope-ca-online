@@ -85,6 +85,9 @@ def main():
 
 	session = _handlers.load_session()
 			
+	if 'warning' not in st.session_state:
+		st.session_state['warning'] = 0
+
 	if session.get('target_path') is not None:
 		metadata_target = _handlers.load_metadata('target')
 		if session.get('has_reference') == True:
