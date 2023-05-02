@@ -57,8 +57,12 @@ def main():
 		metadata_target = _handlers.load_metadata('target')
 
 		st.sidebar.markdown("### Tagset")
+
 		st.sidebar.markdown("Use the menus to select up to **5 tags** you would like to highlight.")
 		
+		with st.sidebar.expander("About general tags"):
+			st.markdown(_messages.message_general_tags)		
+
 		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("sd_radio", pathlib.Path(__file__).stem), horizontal=True)
 	
 		if tag_radio == 'Parts-of-Speech':
