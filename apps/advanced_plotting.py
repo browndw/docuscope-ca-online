@@ -55,6 +55,10 @@ def main():
 		metadata_target = _handlers.load_metadata('target')
 		
 		st.sidebar.markdown("### Tagset")
+		
+		with st.sidebar.expander("About general tags"):
+			st.markdown(_messages.message_general_tags)		
+
 		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, horizontal=True)
 	
 		if session['dtm']['units'] == 'norm':
@@ -231,6 +235,10 @@ def main():
 				st.markdown(_messages.message_contribution_info(pca_x, pca_y, contrib_x, contrib_y))
 				
 				st.markdown("##### Variable contribution (by %) to principal component:")
+				
+				with st.expander("About variable contribution"):
+					st.markdown(_messages.message_variable_contrib)
+
 		
 				col1,col2 = st.columns(2)
 				col1.altair_chart(cp_1, use_container_width = True)
