@@ -40,7 +40,7 @@ for module in import_params.keys():
 		globals()[short_name] = getattr(context_module, object_name)
 
 CATEGORY = _categories.HELP
-TITLE = "Togging between Tagsets"
+TITLE = "Toggling between Tagsets"
 KEY_SORT = 14
 
 def main():
