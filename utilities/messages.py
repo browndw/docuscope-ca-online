@@ -259,7 +259,7 @@ message_saved_corpora = """
 	There is also a parsed version of the full MICUSP corpus, as well as a corpus of published academic papers.
 	The latter is named **ELSEVIER** and contains data from open access publications from 20 disciplines.
 	You can see the metadata (as well as the full subject area names) on the [GitHub repository](https://github.com/browndw/corpus-tagger#elesevier-corpus).\n\n
-	If you are using the MICUSP data for academic work or for publication, [please cite it](https://www.euppublishing.com/doi/abs/10.3366/cor.2011.0011).
+	If you are using the MICUSP data for academic work or for publication, [please cite it](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=U8wDvfIAAAAJ&citation_for_view=U8wDvfIAAAAJ:roLk4NBRz8UC).
 	"""
 
 message_naming = """
