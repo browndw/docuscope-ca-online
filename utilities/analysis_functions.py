@@ -16,7 +16,7 @@ import pathlib
 import re
 from collections import Counter
 from functools import partial
-from typing import Union, List
+from typing import Union, List, Callable, Optional
 from importlib.machinery import SourceFileLoader
 
 # set paths
@@ -71,6 +71,106 @@ def index_windows_around_matches(matches: np.ndarray, left: int, right: int,
             return window_ind
     else:
         return [w[(w >= 0) & (w < len(matches))] for w in nested_ind]
+
+# https://github.com/WZBSocialScienceCenter/tmtoolkit/blob/master/tmtoolkit/tokenseq.py
+def pmi(x: np.ndarray, y: np.ndarray, xy: np.ndarray, n_total: Optional[int] = None, logfn: Callable = np.log,
+        k: int = 1, normalize: bool = False) -> np.ndarray:
+    if not isinstance(k, int) or k < 1:
+        raise ValueError('`k` must be a strictly positive integer')
+
+    if k > 1 and normalize:
+        raise ValueError('normalization is only implemented for standard PMI with `k=1`')
+
+    if n_total is not None:
+        if n_total < 1:
+            raise ValueError('`n_total` must be strictly positive')
+        x = x/n_total
+        y = y/n_total
+        xy = xy/n_total
+
+    pmi_val = logfn(xy) - logfn(x * y)
+
+    if k > 1:
+        return pmi_val - (1-k) * logfn(xy)
+    else:
+        if normalize:
+            return pmi_val / -logfn(xy)
+        else:
+            return pmi_val
+
+npmi = partial(pmi, k=1, normalize=True)
+pmi2 = partial(pmi, k=2, normalize=False)
+pmi3 = partial(pmi, k=3, normalize=False)
+
+def coll_table(tok, node_word, l_span=4, r_span=4, statistic='pmi', count_by='pos', node_tag=None, tag_ignore=False):
+    tok = list(tok.values())
+    stats = {'pmi', 'npmi', 'pmi2', 'pmi3'}
+    if statistic not in stats:
+        raise ValueError("results: statistic must be one of %r." % stats)
+    if l_span < 0 or l_span > 9:
+        raise ValueError("Span must be < " + str(0) + " and > " + str(9))
+    if r_span < 0 or r_span > 9:
+        raise ValueError("Span must be < " + str(0) + " and > " + str(9))
+    if bool(tag_ignore) == True:
+        node_tag = None
+    if count_by == 'pos':
+        tc = corpus_utils._merge_tags(tok)
+    if count_by == 'ds':
+        tc = corpus_utils._merge_ds(tok)
+    in_span = []
+    for i in range(0,len(tc)):
+        tpf = tc[i]
+        # create a boolean vector for node word
+        if node_tag is None:
+            v = [t[0] == node_word for t in tpf]
+        else:
+            v = [t[0] == node_word and t[1].startswith(node_tag) for t in tpf]
+        if sum(v) > 0:
+            # get indices within window around the node
+            idx = list(index_windows_around_matches(np.array(v), left=l_span, right=r_span, flatten=False))
+            node_idx = [i for i, x in enumerate(v) if x == True]
+            # remove node word from collocates
+            coll_idx = [np.setdiff1d(idx[i], node_idx[i]) for i in range(len(idx))]
+            coll_idx = [x for xs in coll_idx for x in xs]
+            coll = [tpf[i] for i in coll_idx]
+        else:
+            coll = []
+        in_span.append(coll)
+    in_span = [x for xs in in_span for x in xs]
+    tc = [x for xs in tc for x in xs]
+    df_total = pd.DataFrame(tc, columns=['Token', 'Tag'])
+    if bool(tag_ignore) == True:
+        df_total = df_total.drop(columns=['Tag'])
+    if bool(tag_ignore) == True:
+        df_total = df_total.groupby(['Token']).value_counts().to_frame('Freq Total').reset_index()
+    else:
+        df_total = df_total.groupby(['Token','Tag']).value_counts().to_frame('Freq Total').reset_index()
+    df_span = pd.DataFrame(in_span, columns=['Token', 'Tag'])
+    if bool(tag_ignore) == True:
+        df_span = df_span.drop(columns=['Tag'])
+    if bool(tag_ignore) == True:
+        df_span = df_span.groupby(['Token']).value_counts().to_frame('Freq Span').reset_index()
+    else:
+        df_span = df_span.groupby(['Token','Tag']).value_counts().to_frame('Freq Span').reset_index()
+    if node_tag is None:
+        node_freq = sum(df_total[df_total['Token'] == node_word]['Freq Total'])
+    else:
+        node_freq = sum(df_total[(df_total['Token'] == node_word) & (df_total['Tag'].str.startswith(node_tag, na=False))]['Freq Total'])
+    if bool(tag_ignore) == True:
+        df = pd.merge(df_span, df_total, how='inner', on=['Token'])
+    else:
+        df = pd.merge(df_span, df_total, how='inner', on=['Token', 'Tag'])
+    if statistic=='pmi':
+        df['MI'] = pmi(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']), normalize=False)
+    if statistic=='npmi':
+        df['MI'] = pmi(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']), normalize=True)
+    if statistic=='pmi2':
+        df['MI'] = pmi2(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']))
+    if statistic=='pmi3':
+        df['MI'] = pmi3(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']))
+    df.sort_values(by=['MI', 'Token'], ascending=[False, True], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return(df)
 
 def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_type, count_by='pos'):
     span_l = node_position - 1
