@@ -61,7 +61,7 @@ if CHECK_SIZE == True:
 	MAX_BYTES = _options['global']['max_bytes']
 
 CATEGORY = _categories.CORPUS_LOAD
-TITLE = "Mangage Corpus Data"
+TITLE = "Managage Corpus Data"
 KEY_SORT = 1
 
 # desktop uses and older streamlit version with different caching function
