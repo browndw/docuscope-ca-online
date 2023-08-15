@@ -84,6 +84,7 @@ if DESKTOP == False:
 def main():
 
 	session = _handlers.load_session()
+	user_session_id = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 			
 	if 'warning' not in st.session_state:
 		st.session_state['warning'] = 0
@@ -316,8 +317,9 @@ def main():
 		
 	else:
 	
-		st.write(session)
+		st.write(user_session_id.session_id)
 		st.write(_handlers.data_path())
+
 		st.markdown("###  :dart: Load or process a target corpus")
 
 		st.markdown(_messages.message_load)

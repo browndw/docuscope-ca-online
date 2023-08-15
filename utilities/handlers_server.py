@@ -19,11 +19,10 @@ import os
 import pathlib
 import pickle
 import re
+import secrets
 import shutil
 import tempfile
 from importlib.machinery import SourceFileLoader
-
-import extra_streamlit_components as stx
 
 HERE = pathlib.Path(__file__).parents[1].resolve()
 TEMP_DIR = HERE.joinpath("_temp")
@@ -50,12 +49,6 @@ for module in import_params.keys():
 		context_module = __import__(context_module_name, fromlist=[object_name])
 		globals()[short_name] = getattr(context_module, object_name)
 
-@st.cache(allow_output_mutation=True, suppress_st_warning=True)
-def get_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_manager()
-corpus_session = cookie_manager.get_all()
 
 # Functions for handling states and files.
 # Handling can be done either by storing temporary files locally or by storing data in session memory.
@@ -70,38 +63,44 @@ corpus_session = cookie_manager.get_all()
 # For local file handling, generate a temp folder to be deleted on close.
 
 def generate_temp(states):
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+	subdirs = [x[0] for x in os.walk(TEMP_DIR)]
+	DATA_DIR = [x for x in subdirs if x.endswith(user_session_id)]
+	if len(DATA_DIR) > 0:
+		DATA_DIR = TEMP_DIR.joinpath(DATA_DIR[0])
 	for key, value in states:
 		if key not in st.session_state:
 			setattr(st.session_state, key, value)
 	try:
-		DATA_DIR = pathlib.Path(corpus_session['data_dir'])
 		if os.path.exists(DATA_DIR) == True:
 			pass
 		else:
-			DATA_DIR = tempfile.mkdtemp(dir=str(TEMP_DIR))
-			corpus_session['data_dir'] = DATA_DIR
+			DATA_DIR = tempfile.mkdtemp(suffix = user_session_id, dir=str(TEMP_DIR))
 			init_session(TEMP_DIR, DATA_DIR)
 			atexit.register(shutil.rmtree, DATA_DIR)
 	except:
-		DATA_DIR = tempfile.mkdtemp(dir=str(TEMP_DIR))
-		corpus_session['data_dir'] = DATA_DIR
+		DATA_DIR = tempfile.mkdtemp(suffix = user_session_id, dir=str(TEMP_DIR))
 		init_session(TEMP_DIR, DATA_DIR)
 		atexit.register(shutil.rmtree, DATA_DIR)
 	
 
 def data_path():
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+	subdirs = [x[0] for x in os.walk(TEMP_DIR)]
+	DATA_DIR = [x for x in subdirs if x.endswith(user_session_id)]
+	if len(DATA_DIR) > 0:
+		DATA_DIR = TEMP_DIR.joinpath(DATA_DIR[0])
 	try:
-		DATA_DIR = pathlib.Path(corpus_session['data_dir'])
 		if os.path.exists(DATA_DIR) == True:
 			return(DATA_DIR)
 		else:
-			pass
-			#generate_temp()
+			generate_temp()
 	except:
-		pass
-		#generate_temp()
-		#update_session('data_dir', DATA_DIR)
-		#return(DATA_DIR)
+		generate_temp()
+		update_session('data_dir', DATA_DIR)
+		return(DATA_DIR)
 
 def clear_temp():
 	DATA_DIR = data_path()
@@ -144,7 +143,7 @@ def init_session(tempdir, datadir):
 # Functions for managing session values.
 
 def load_session():
-	DATA_DIR = pathlib.Path(corpus_session['data_dir'])
+	DATA_DIR = data_path()
 	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	try:
 		with open(session_path, 'rb') as file:
@@ -180,7 +179,7 @@ def reset_session():
 		pickle.dump(session, file)
 
 def update_session(key, value):
-	DATA_DIR = pathlib.Path(corpus_session['data_dir'])
+	DATA_DIR = data_path()
 	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
