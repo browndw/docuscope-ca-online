@@ -316,6 +316,8 @@ def main():
 		
 	else:
 	
+		st.write(session)
+		st.write(_handlers.data_path())
 		st.markdown("###  :dart: Load or process a target corpus")
 
 		st.markdown(_messages.message_load)
