@@ -83,22 +83,24 @@ if DESKTOP == False:
 
 def main():
 
-	session = _handlers.load_session()
-	user_session_id = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
-			
-	if 'warning' not in st.session_state:
-		st.session_state['warning'] = 0
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
+				
+	if 'warning' not in st.session_state[user_session_id]:
+		st.session_state[user_session_id]['warning'] = 0
 	
 	if session.get('target_path') is not None:
-		metadata_target = _handlers.load_metadata('target')
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 
 		if session.get('has_reference') == True:
-			metadata_reference = _handlers.load_metadata('reference')
+			metadata_reference = _handlers.load_metadata('reference', user_session_id)
 		
 		st.markdown(_messages.message_target_info(metadata_target))
 				
-		if st.session_state.warning == 4:
-			st.markdown(_warnings.warning_4(st.session_state.exceptions))
+		if st.session_state[user_session_id]['warning'] == 4:
+			st.markdown(_warnings.warning_4(st.session_state[user_session_id]['exceptions']))
 		
 		with st.expander("Documents:"):
 			st.write(sorted(metadata_target.get('docids')))
@@ -116,8 +118,8 @@ def main():
 					with st.spinner('Processing metadata...'):
 						doc_cats = _process.get_doc_cats(metadata_target.get('docids'))
 						if len(set(doc_cats)) > 1 and len(set(doc_cats)) < 21:
-							_handlers.update_metadata('target', 'doccats', doc_cats)
-							_handlers.update_session('has_meta', True)
+							_handlers.update_metadata('target', 'doccats', doc_cats, user_session_id)
+							_handlers.update_session('has_meta', True, user_session_id)
 							st.success('Processing complete!')
 							st.experimental_rerun()
 						elif len(doc_cats) != 0:
@@ -140,22 +142,22 @@ def main():
 								tags_pos, tags_ds = _process.get_corpus_features(corp)
 								model = _process.check_model(tags_ds)
 								_handlers.save_corpus(corp, model, target_name)
-								_handlers.update_session('is_saved', 'Yes')
+								_handlers.update_session('is_saved', 'Yes', user_session_id)
 								st.success('Corpus saved!')
 								st.experimental_rerun()
 							else:
 								st.markdown(_warnings.warning_10, unsafe_allow_html=True)
 		
 		if session.get('has_reference') == True:
-			metadata_reference = _handlers.load_metadata('reference')
+			metadata_reference = _handlers.load_metadata('reference', user_session_id)
 			
 			st.markdown(_messages.message_reference_info(metadata_reference))
 			
-			if st.session_state.warning == 5:
-				st.markdown(_warnings.warning_5(st.session_state.ref_exceptions))
+			if st.session_state[user_session_id]['warning'] == 5:
+				st.markdown(_warnings.warning_5(st.session_state[user_session_id]['ref_exceptions']))
 
-			if st.session_state.warning == 4:
-				st.markdown(_warnings.warning_4(st.session_state.ref_exceptions))
+			if st.session_state[user_session_id]['warning'] == 4:
+				st.markdown(_warnings.warning_4(st.session_state[user_session_id]["ref_exceptions"]))
 	
 			with st.expander("Documents in reference corpus:"):
 				st.write(sorted(metadata_reference.get('docids')))
@@ -165,10 +167,10 @@ def main():
 			st.markdown('### Reference corpus:')
 			load_ref = st.radio("Would you like to load a reference corpus?", ("No", "Yes"), horizontal=True)
 			
-			if st.session_state.warning == 1:
+			if st.session_state[user_session_id]['warning'] == 1:
 				st.markdown(_warnings.warning_1, unsafe_allow_html=True)
 
-			if st.session_state.warning == 6:
+			if st.session_state[user_session_id]['warning'] == 6:
 				st.markdown(_warnings.warning_6, unsafe_allow_html=True)
 			
 			st.markdown("---")
@@ -188,31 +190,31 @@ def main():
 						ref_corp, exceptions = _process.check_reference(ref_corp, metadata_target.get('docids'))
 
 						if len(exceptions) > 0 and bool(ref_corp) == False:
-							st.session_state.warning = 6
+							st.session_state[user_session_id]['warning'] = 6
 							st.experimental_rerun()
 						
 						elif len(exceptions) > 0 and bool(ref_corp) == True:
-							st.session_state.warning = 7
-							st.session_state.ref_exceptions = exceptions
+							st.session_state[user_session_id]['warning'] = 7
+							st.session_state[user_session_id]['ref_exceptions'] = exceptions
 							#get features
 							tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
 							model = _process.check_model(tags_ds)
 							#assign session states
-							_handlers.init_metadata_reference(ref_corp, model, tags_pos, tags_ds)
-							_handlers.update_session('reference_path', corp_path)
-							_handlers.update_session('has_reference', True)
+							_handlers.init_metadata_reference(ref_corp, model, tags_pos, tags_ds, user_session_id)
+							_handlers.update_session('reference_path', corp_path, user_session_id)
+							_handlers.update_session('has_reference', True, user_session_id)
 							st.experimental_rerun()
 						
 						else:
 							st.success('Processing complete!')
-							st.session_state.warning = 0
+							st.session_state[user_session_id]['warning'] = 0
 							#get features
 							tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
 							model = _process.check_model(tags_ds)
 							#assign session states
-							_handlers.init_metadata_reference(ref_corp, model, tags_pos, tags_ds)
-							_handlers.update_session('reference_path', corp_path)
-							_handlers.update_session('has_reference', True)
+							_handlers.init_metadata_reference(ref_corp, model, tags_pos, tags_ds, user_session_id)
+							_handlers.update_session('reference_path', corp_path, user_session_id)
+							_handlers.update_session('has_reference', True, user_session_id)
 							st.experimental_rerun()
 					st.sidebar.markdown("---")
 
@@ -224,16 +226,16 @@ def main():
 				
 						if CHECK_SIZE == True:
 							dup_ids, dup_ref, corpus_size = _process.check_corpus(ref_files, check_size=True, check_ref=True, target_docs=metadata_target.get('docids'))
-							if 'ready_to_process' not in st.session_state:
-								st.session_state['ready_to_process'] = False
-							st.session_state['ready_to_process'] = False
+							if 'ready_to_process' not in st.session_state[user_session_id]:
+								st.session_state[user_session_id]['ready_to_process'] = False
+							st.session_state[user_session_id]['ready_to_process'] = False
 					
 						if CHECK_SIZE == False:
 							dup_ids, dup_ref = _process.check_corpus(ref_files, check_ref=True, target_docs=metadata_target.get('docids'))
 							corpus_size = 0
-							if 'ready_to_process' not in st.session_state:
-								st.session_state['ready_to_process'] = False
-							st.session_state['ready_to_process'] = False
+							if 'ready_to_process' not in st.session_state[user_session_id]:
+								st.session_state[user_session_id]['ready_to_process'] = False
+							st.session_state[user_session_id]['ready_to_process'] = False
 												
 					if CHECK_SIZE == True:
 						if corpus_size > MAX_BYTES:
@@ -250,16 +252,16 @@ def main():
 							st.markdown(f"""```
 							{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
 							""")
-							st.session_state['ready_to_process'] = True
+							st.session_state[user_session_id]['ready_to_process'] = True
 					
 					if CHECK_SIZE == False:
 						if len(ref_files) > 0 and len(dup_ids) == 0 and len(dup_ref) == 0 :
 							st.markdown(f"""```
 							{len(ref_files)} reference corpus files ready to be processed! Use the button on the sidebar.
 							""")
-							st.session_state['ready_to_process'] = True
+							st.session_state[user_session_id]['ready_to_process'] = True
 	
-					if st.session_state['ready_to_process'] == True:
+					if st.session_state[user_session_id]['ready_to_process'] == True:
 						st.sidebar.markdown("### Process Reference")
 						st.sidebar.markdown("Click the button to process your reference corpus files.")
 						if st.sidebar.button("Process Reference Corpus"):
@@ -275,29 +277,29 @@ def main():
 										ref_corp, exceptions = _process.process_corpus(ref_files, nlp)
 								
 								if len(exceptions) > 0 and bool(ref_corp) == False:
-									st.session_state.warning = 1
+									st.session_state[user_session_id]['warning'] = 1
 									st.experimental_rerun()
 								
 								elif len(exceptions) > 0 and bool(ref_corp) == True:
-									st.session_state.warning = 4
-									st.session_state.ref_exceptions = exceptions
+									st.session_state[user_session_id]['warning'] = 4
+									st.session_state[user_session_id]['ref_exceptions'] = exceptions
 									#get features
 									tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
 									#assign session states
 									_handlers.save_corpus_temp(ref_corp, 'reference')
-									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds)
-									_handlers.update_session('has_reference', True)
+									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds, user_session_id)
+									_handlers.update_session('has_reference', True, user_session_id)
 									st.experimental_rerun()
 								
 								else:
 									st.success('Processing complete!')
-									st.session_state.warning = 0
+									st.session_state[user_session_id]['warning'] = 0
 									#get features
 									tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
 									#assign session states
 									_handlers.save_corpus_temp(ref_corp, 'reference')
-									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds)
-									_handlers.update_session('has_reference', True)
+									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds, user_session_id)
+									_handlers.update_session('has_reference', True, user_session_id)
 									st.experimental_rerun()
 								
 						st.sidebar.markdown("---")
@@ -305,21 +307,18 @@ def main():
 		st.sidebar.markdown('### Reset all tools and files:')
 		st.sidebar.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 		if st.sidebar.button("Reset Corpus"):
-			for key in st.session_state.keys():
-				del st.session_state[key]
+			st.session_state[user_session_id] = {}
 			for key, value in _states.STATES.items():
-				setattr(st.session_state, key, value)
-			if ENABLE_SAVE == True:
-				_handlers.clear_temp()
-			_handlers.reset_session()
+				st.session_state[user_session_id][key] = value
+			_handlers.clear_temp(user_session_id)
+			_handlers.reset_session(user_session_id)
 			st.experimental_rerun()
 		st.sidebar.markdown("""---""")
 		
 	else:
 	
-		st.write(user_session_id.session_id)
+		st.write(st.session_state[user_session_id])
 		st.write(_handlers.data_path())
-
 		st.markdown("###  :dart: Load or process a target corpus")
 
 		st.markdown(_messages.message_load)
@@ -349,10 +348,10 @@ def main():
 				corp = _handlers.load_corpus_path(corp_path)
 				tags_pos, tags_ds = _process.get_corpus_features(corp)
 				model = _process.check_model(tags_ds)
-				_handlers.init_metadata_target(corp, model, tags_pos, tags_ds)
-				_handlers.update_session('target_path', corp_path)
-				_handlers.update_session('from_saved', 'Yes')
-				_handlers.update_session('is_saved', 'Yes')
+				_handlers.init_metadata_target(corp, model, tags_pos, tags_ds, user_session_id)
+				_handlers.update_session('target_path', corp_path, user_session_id)
+				_handlers.update_session('from_saved', 'Yes', user_session_id)
+				_handlers.update_session('is_saved', 'Yes', user_session_id)
 				st.experimental_rerun()
 			st.sidebar.markdown("---")
 		
@@ -365,7 +364,7 @@ def main():
 			with st.expander("File preparation and file naming tips"):
 				st.markdown(_messages.message_naming)
 				
-			if st.session_state.warning == 1:
+			if st.session_state[user_session_id]['warning'] == 1:
 				st.markdown(_warnings.warning_1, unsafe_allow_html=True)
 			
 			with st.form("corpus-form", clear_on_submit=True):
@@ -374,16 +373,16 @@ def main():
 				
 				if CHECK_SIZE == True:
 					dup_ids, corpus_size = _process.check_corpus(corp_files, check_size=True)
-					if 'ready_to_process' not in st.session_state:
-						st.session_state['ready_to_process'] = False
-					st.session_state['ready_to_process'] = False
+					if 'ready_to_process' not in st.session_state[user_session_id]:
+						st.session_state[user_session_id]['ready_to_process'] = False
+					st.session_state[user_session_id]['ready_to_process'] = False
 					
 				if CHECK_SIZE == False:
 					dup_ids = _process.check_corpus(corp_files)
 					corpus_size = 0
 					if 'ready_to_process' not in st.session_state:
-						st.session_state['ready_to_process'] = False
-					st.session_state['ready_to_process'] = False
+						st.session_state[user_session_id]['ready_to_process'] = False
+					st.session_state[user_session_id]['ready_to_process'] = False
 
 			if CHECK_SIZE == True:
 					if corpus_size > MAX_BYTES:
@@ -397,27 +396,27 @@ def main():
 					st.markdown(f"""```
 					{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
 					""")
-					st.session_state['ready_to_process'] = True
+					st.session_state[user_session_id]['ready_to_process'] = True
 					
 			if CHECK_SIZE == False:
 				if len(corp_files) > 0 and len(dup_ids) == 0:
 					st.markdown(f"""```
 					{len(corp_files)} target corpus files ready to be processed! Use the button on the sidebar.
 					""")
-					st.session_state['ready_to_process'] = True	
+					st.session_state[user_session_id]['ready_to_process'] = True	
 
 			st.sidebar.markdown("### Models")
 			models = load_models()
 			selected_dict = st.sidebar.selectbox("Select a DocuScope model:", options=["Large Dictionary", "Common Dictionary"])
 			nlp = models[selected_dict]
-			st.session_state.model = selected_dict
+			st.session_state[user_session_id]['model'] = selected_dict
 		
 			with st.sidebar.expander("Which model do I choose?"):
 				st.markdown(_messages.message_models)		
 			
 			st.sidebar.markdown("---")
 				
-			if st.session_state['ready_to_process'] == True:
+			if st.session_state[user_session_id]['ready_to_process'] == True:
 				st.sidebar.markdown("### Process Target")
 				st.sidebar.markdown("Once you have selected your files, use the button to process your corpus.")
 				if st.sidebar.button("Process Corpus"):
@@ -430,27 +429,27 @@ def main():
 								corp, exceptions = _process.process_corpus(corp_files, nlp)
 						
 						if len(exceptions) > 0 and bool(corp) == False:
-							st.session_state.warning = 1
+							st.session_state[user_session_id]['warning'] = 1
 							st.experimental_rerun()
 						
 						elif len(exceptions) > 0 and bool(corp) == True:
-							st.session_state.warning = 4
-							st.session_state.exceptions = exceptions
+							st.session_state[user_session_id]['warning'] = 4
+							st.session_state[user_session_id]['exceptions'] = exceptions
 							#get features
 							tags_pos, tags_ds = _process.get_corpus_features(corp)
 							#assign session states
 							_handlers.save_corpus_temp(corp, 'target')
-							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds)
+							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds, user_session_id)
 							st.experimental_rerun()
 						
 						else:
 							st.success('Processing complete!')
-							st.session_state.warning = 0
+							st.session_state[user_session_id]['warning'] = 0
 							#get features
 							tags_pos, tags_ds = _process.get_corpus_features(corp)
 							#assign session states
 							_handlers.save_corpus_temp(corp, 'target')
-							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds)
+							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds, user_session_id)
 							st.experimental_rerun()
 				st.sidebar.markdown("---")
 				
