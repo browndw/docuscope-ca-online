@@ -24,6 +24,8 @@ import shutil
 import tempfile
 from importlib.machinery import SourceFileLoader
 
+import extra_streamlit_components as stx
+
 HERE = pathlib.Path(__file__).parents[1].resolve()
 TEMP_DIR = HERE.joinpath("_temp")
 CORPUS_DIR = HERE.joinpath("_corpora")
@@ -62,34 +64,32 @@ for module in import_params.keys():
 # Initialize session states.
 # For local file handling, generate a temp folder to be deleted on close.
 
-def generate_temp(states):
-	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
-	user_session_id = user_session.session_id
+def generate_temp(states, session_id):
+	if session_id not in st.session_state:
+		st.session_state[session_id] = {}
 	subdirs = [x[0] for x in os.walk(TEMP_DIR)]
-	DATA_DIR = [x for x in subdirs if x.endswith(user_session_id)]
+	DATA_DIR = [x for x in subdirs if x.endswith(session_id)]
 	if len(DATA_DIR) > 0:
 		DATA_DIR = TEMP_DIR.joinpath(DATA_DIR[0])
 	for key, value in states:
-		if key not in st.session_state:
-			setattr(st.session_state, key, value)
+		if key not in st.session_state[session_id]:
+			st.session_state[session_id][key] = value
 	try:
 		if os.path.exists(DATA_DIR) == True:
 			pass
 		else:
-			DATA_DIR = tempfile.mkdtemp(suffix = user_session_id, dir=str(TEMP_DIR))
+			DATA_DIR = tempfile.mkdtemp(suffix = session_id, dir=str(TEMP_DIR))
 			init_session(TEMP_DIR, DATA_DIR)
 			atexit.register(shutil.rmtree, DATA_DIR)
 	except:
-		DATA_DIR = tempfile.mkdtemp(suffix = user_session_id, dir=str(TEMP_DIR))
+		DATA_DIR = tempfile.mkdtemp(suffix = session_id, dir=str(TEMP_DIR))
 		init_session(TEMP_DIR, DATA_DIR)
 		atexit.register(shutil.rmtree, DATA_DIR)
 	
 
-def data_path():
-	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
-	user_session_id = user_session.session_id
+def data_path(session_id):
 	subdirs = [x[0] for x in os.walk(TEMP_DIR)]
-	DATA_DIR = [x for x in subdirs if x.endswith(user_session_id)]
+	DATA_DIR = [x for x in subdirs if x.endswith(session_id)]
 	if len(DATA_DIR) > 0:
 		DATA_DIR = TEMP_DIR.joinpath(DATA_DIR[0])
 	try:
@@ -102,8 +102,8 @@ def data_path():
 		update_session('data_dir', DATA_DIR)
 		return(DATA_DIR)
 
-def clear_temp():
-	DATA_DIR = data_path()
+def clear_temp(session_id):
+	DATA_DIR = data_path(session_id)
 	for filename in os.listdir(DATA_DIR):
 		file_path = os.path.join(DATA_DIR, filename)
 		try:
@@ -142,8 +142,8 @@ def init_session(tempdir, datadir):
 
 # Functions for managing session values.
 
-def load_session():
-	DATA_DIR = data_path()
+def load_session(session_id):
+	DATA_DIR = data_path(session_id)
 	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	try:
 		with open(session_path, 'rb') as file:
@@ -151,10 +151,10 @@ def load_session():
 		return(session)
 	except:
 		pass
-		#generate_temp(_states.STATES.items())
+		#generate_temp(_states.STATES.items(), user_session_id)
 	
-def reset_session():
-	DATA_DIR = data_path()
+def reset_session(session_id):
+	DATA_DIR = data_path(session_id)
 	session = {}
 	session['data_dir'] = DATA_DIR
 	session['target_path'] = None
@@ -178,8 +178,8 @@ def reset_session():
 	with open(file_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_session(key, value):
-	DATA_DIR = data_path()
+def update_session(key, value, session_id):
+	DATA_DIR = data_path(session_id)
 	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
@@ -189,8 +189,8 @@ def update_session(key, value):
 
 # Functions for storing and managing corpus metadata
 
-def init_metadata_target(corpus, model, tags_pos, tags_ds):
-	DATA_DIR = data_path()
+def init_metadata_target(corpus, model, tags_pos, tags_ds, session_id):
+	DATA_DIR = data_path(session_id)
 	temp_metadata_target = {}
 	temp_metadata_target['tokens'] = len(tags_pos)
 	temp_metadata_target['words'] = len([x for x in tags_pos if not x.startswith('Y')])
@@ -209,8 +209,8 @@ def init_metadata_target(corpus, model, tags_pos, tags_ds):
 	with open(file_path, 'wb') as file:
 		pickle.dump(temp_metadata_target, file)
 
-def init_metadata_reference(corpus, model, tags_pos, tags_ds):
-	DATA_DIR = data_path()
+def init_metadata_reference(corpus, model, tags_pos, tags_ds, session_id):
+	DATA_DIR = data_path(session_id)
 	temp_metadata_reference = {}
 	temp_metadata_reference['tokens'] = len(tags_pos)
 	temp_metadata_reference['words'] = len([x for x in tags_pos if not x.startswith('Y')])
@@ -229,16 +229,16 @@ def init_metadata_reference(corpus, model, tags_pos, tags_ds):
 	with open(file_path, 'wb') as file:
 		pickle.dump(temp_metadata_reference, file)
 
-def load_metadata(corpus_type):
-	DATA_DIR = data_path()
+def load_metadata(corpus_type, session_id):
+	DATA_DIR = data_path(session_id)
 	file_name = 'temp_metadata_' + corpus_type + '.pkl'
 	file_path = str(DATA_DIR.joinpath(file_name))
 	with open(file_path, 'rb') as file:
 		metadata = pickle.load(file)
 	return(metadata)
 
-def update_metadata(corpus_type, key, value):
-	DATA_DIR = data_path()
+def update_metadata(corpus_type, key, value, session_id):
+	DATA_DIR = data_path(session_id)
 	file_name = 'temp_metadata_' + corpus_type + '.pkl'
 	file_path = str(DATA_DIR.joinpath(file_name))
 	with open(file_path, 'rb') as file:
@@ -323,8 +323,8 @@ def find_saved_reference(target_model, target_path):
 
 # Functions for handling data tables
 
-def clear_table(table_id):
-	DATA_DIR = data_path()
+def clear_table(table_id, session_id):
+	DATA_DIR = data_path(session_id)
 	file_name = 'temp_' + table_id + '.pkl'
 	file_path = str(DATA_DIR.joinpath(file_name))
 	try:
@@ -333,8 +333,8 @@ def clear_table(table_id):
 	except:
 		pass
 
-def load_table(table_id):
-	DATA_DIR = data_path()
+def load_table(table_id, session_id):
+	DATA_DIR = data_path(session_id)
 	file_name = 'temp_' + table_id + '.pkl'
 	file_path = str(DATA_DIR.joinpath(file_name))
 	table = pd.read_pickle(file_path)  
