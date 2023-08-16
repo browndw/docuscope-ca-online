@@ -52,7 +52,10 @@ for module in import_params.keys():
 		context_module = __import__(context_module_name, fromlist=[object_name])
 		globals()[short_name] = getattr(context_module, object_name)
 
-_handlers.generate_temp(_states.STATES.items())
+user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+user_session_id = user_session.session_id
+
+_handlers.generate_temp(_states.STATES.items(), user_session_id)
 
 def index(application_options):
     if not sys.warnoptions:
