@@ -48,11 +48,14 @@ KEY_SORT = 9
 
 def main():
 	
-	session = _handlers.load_session()
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 	
 	if  bool(session['dtm']) == True:
 		
-		metadata_target = _handlers.load_metadata('target')
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 		
 		st.sidebar.markdown("### Tagset")
 		
@@ -65,18 +68,18 @@ def main():
 			if tag_radio_tokens == 'Parts-of-Speech':
 				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, horizontal=True)
 				if tag_type == 'General':
-					df = _handlers.load_table('dtm_simple')
+					df = _handlers.load_table('dtm_simple', user_session_id)
 				else:
-					df = _handlers.load_table('dtm_pos')
+					df = _handlers.load_table('dtm_pos', user_session_id)
 			else:
-				df = _handlers.load_table('dtm_ds')
+				df = _handlers.load_table('dtm_ds', user_session_id)
 				tag_type = None
 		
 		else:
 			if tag_radio_tokens == 'Parts-of-Speech':
-				df = _handlers.load_table('dtm_pos')
+				df = _handlers.load_table('dtm_pos', user_session_id)
 			else:
-				df = _handlers.load_table('dtm_ds')
+				df = _handlers.load_table('dtm_ds', user_session_id)
 	
 		st.dataframe(df)	
 		
@@ -89,7 +92,7 @@ def main():
 			box_vals = st.sidebar.multiselect("Select variables for plotting:", (cats))
 			if st.sidebar.button("Boxplots of Frequencies"):
 				#clear any pca data
-				_handlers.update_session('pca', dict())
+				_handlers.update_session('pca', dict(), user_session_id)
 
 				if len(box_vals) == 0:
 					st.markdown(_warnings.warning_18, unsafe_allow_html=True)
