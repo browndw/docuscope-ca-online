@@ -48,12 +48,15 @@ KEY_SORT = 4
 
 def main():
 
-	session = _handlers.load_session()
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 
 	if session.get('ngrams') == True:
 		
-		metadata_target = _handlers.load_metadata('target')
-		df = _handlers.load_table('ngrams')
+		metadata_target = _handlers.load_metadata('target', user_session_id)
+		df = _handlers.load_table('ngrams', user_session_id)
 	
 		st.markdown(_messages.message_target_info(metadata_target))
 			
@@ -111,15 +114,15 @@ def main():
 							""")
 	
 		if st.sidebar.button("Create a New Ngrams Table"):
-			_handlers.clear_table('ngrams')
-			_handlers.update_session('ngrams', False)
+			_handlers.clear_table('ngrams', user_session_id)
+			_handlers.update_session('ngrams', False, user_session_id)
 			st.experimental_rerun()
 		st.sidebar.markdown("---")			
 			
 	else:
 		
 		try:
-			metadata_target = _handlers.load_metadata('target')
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		except:
 			metadata_target = {}
 		
@@ -197,8 +200,8 @@ def main():
 			else:
 				with st.sidebar:
 					with st.spinner('Processing n-grams...'):
-						tp = _handlers.load_corpus_session('target', session)
-						metadata_target = _handlers.load_metadata('target')
+						tp = _handlers.load_corpus_session('target', session, user_session_id)
+						metadata_target = _handlers.load_metadata('target', user_session_id)
 						if from_anchor == 'Token':
 							ngram_df = _analysis.ngrams_by_token(tp, node_word, position, ngram_span, total, search, ts)
 							#cap size of dataframe
@@ -210,8 +213,8 @@ def main():
 				elif len(ngram_df.index) > 100000:
 					st.markdown(_warnings.warning_13, unsafe_allow_html=True)
 				else:
-					_handlers.save_table(ngram_df, 'ngrams')
-					_handlers.update_session('ngrams', True)
+					_handlers.save_table(ngram_df, 'ngrams', user_session_id)
+					_handlers.update_session('ngrams', True, user_session_id)
 					st.experimental_rerun()				
 				
 		st.sidebar.markdown("---")
