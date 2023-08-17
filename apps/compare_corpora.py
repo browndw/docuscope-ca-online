@@ -47,25 +47,28 @@ KEY_SORT = 5
 
 def main():
 	
-	session = _handlers.load_session()	
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 
 	if session.get('keyness_table') == True:
 	
-		_handlers.load_widget_state(pathlib.Path(__file__).stem)
-		metadata_target = _handlers.load_metadata('target')
-		metadata_reference = _handlers.load_metadata('reference')
+		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
+		metadata_reference = _handlers.load_metadata('reference', user_session_id)
 
 		st.sidebar.markdown("### Comparison")	
-		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), key = _handlers.persist("kt_radio1", pathlib.Path(__file__).stem), horizontal=True)
+		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), key = _handlers.persist("kt_radio1", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 		if table_radio == 'Tokens':
 			st.sidebar.markdown("---")
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio2", pathlib.Path(__file__).stem), horizontal=True)
+			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio2", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 			if tag_radio_tokens == 'Parts-of-Speech':
-				df = _handlers.load_table('kw_pos')
+				df = _handlers.load_table('kw_pos', user_session_id)
 			else:
-				df = _handlers.load_table('kw_ds')
+				df = _handlers.load_table('kw_ds', user_session_id)
 			
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -129,12 +132,12 @@ def main():
 	
 		else:
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio3", pathlib.Path(__file__).stem), horizontal=True)
+			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio3", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 			if tag_radio_tags == 'Parts-of-Speech':
-				df = _handlers.load_table('kt_pos')
+				df = _handlers.load_table('kt_pos', user_session_id)
 			else:
-				df = _handlers.load_table('kt_ds')
+				df = _handlers.load_table('kt_ds', user_session_id)
 	
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -233,40 +236,40 @@ def main():
 			else:
 				with st.sidebar:
 					with st.spinner('Generating keywords...'):
-						tp_ref = _handlers.load_corpus_session('reference', session)
-						metadata_reference = _handlers.load_metadata('reference')
+						tp_ref = _handlers.load_corpus_session('reference', session, user_session_id)
+						metadata_reference = _handlers.load_metadata('reference', user_session_id)
 						wc_ref_pos = ds.frequency_table(tp_ref, metadata_reference.get('words'))
 						wc_ref_ds  = ds.frequency_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
 						tc_ref_pos = ds.tags_table(tp_ref, metadata_reference.get('words'))
 						tc_ref_ds  = ds.tags_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
 						
 						if session.get('tags_table') == False:
-							tp = _handlers.load_corpus_session('target', session)
-							metadata_target = _handlers.load_metadata('target')
+							tp = _handlers.load_corpus_session('target', session, user_session_id)
+							metadata_target = _handlers.load_metadata('target', user_session_id)
 							tc_pos = ds.tags_table(tp, metadata_target.get('words'))
 							tc_ds  = ds.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
-							_handlers.save_table(tc_pos, 'tt_pos')
-							_handlers.save_table(tc_ds, 'tt_ds')
-							_handlers.update_session('tags_table', True)
+							_handlers.save_table(tc_pos, 'tt_pos', user_session_id)
+							_handlers.save_table(tc_ds, 'tt_ds', user_session_id)
+							_handlers.update_session('tags_table', True, user_session_id)
 						
 						if session.get('freq_table') == False:
-							tp = _handlers.load_corpus_session('target', session)
-							metadata_target = _handlers.load_metadata('target')
+							tp = _handlers.load_corpus_session('target', session, user_session_id)
+							metadata_target = _handlers.load_metadata('target', user_session_id)
 							wc_pos = ds.frequency_table(tp, metadata_target.get('words'))
 							wc_ds  = ds.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
-							_handlers.save_table(wc_pos, 'ft_pos')
-							_handlers.save_table(wc_ds, 'ft_ds')
-							_handlers.update_session('freq_table', True)
+							_handlers.save_table(wc_pos, 'ft_pos', user_session_id)
+							_handlers.save_table(wc_ds, 'ft_ds', user_session_id)
+							_handlers.update_session('freq_table', True, user_session_id)
 					
-						kw_pos = ds.keyness_table(_handlers.load_table('ft_pos'), wc_ref_pos)
-						kw_ds  = ds.keyness_table(_handlers.load_table('ft_ds'), wc_ref_ds)
-						kt_pos = ds.keyness_table(_handlers.load_table('tt_pos'), tc_ref_pos, tags_only=True)
-						kt_ds  = ds.keyness_table(_handlers.load_table('tt_ds'), tc_ref_ds, tags_only=True)
-						_handlers.save_table(kw_pos, 'kw_pos')
-						_handlers.save_table(kw_ds, 'kw_ds')
-						_handlers.save_table(kt_pos, 'kt_pos')
-						_handlers.save_table(kt_ds, 'kt_ds')
-						_handlers.update_session('keyness_table', True)
+						kw_pos = ds.keyness_table(_handlers.load_table('ft_pos', user_session_id), wc_ref_pos)
+						kw_ds  = ds.keyness_table(_handlers.load_table('ft_ds', user_session_id), wc_ref_ds,)
+						kt_pos = ds.keyness_table(_handlers.load_table('tt_pos', user_session_id), tc_ref_pos, tags_only=True)
+						kt_ds  = ds.keyness_table(_handlers.load_table('tt_ds', user_session_id), tc_ref_ds, tags_only=True)
+						_handlers.save_table(kw_pos, 'kw_pos', user_session_id)
+						_handlers.save_table(kw_ds, 'kw_ds', user_session_id)
+						_handlers.save_table(kt_pos, 'kt_pos', user_session_id)
+						_handlers.save_table(kt_ds, 'kt_ds', user_session_id)
+						_handlers.update_session('keyness_table', True, user_session_id)
 						st.success('Keywords generated!')
 						st.experimental_rerun()
 		
