@@ -24,8 +24,6 @@ import shutil
 import tempfile
 from importlib.machinery import SourceFileLoader
 
-import extra_streamlit_components as stx
-
 HERE = pathlib.Path(__file__).parents[1].resolve()
 TEMP_DIR = HERE.joinpath("_temp")
 CORPUS_DIR = HERE.joinpath("_corpora")
@@ -96,10 +94,10 @@ def data_path(session_id):
 		if os.path.exists(DATA_DIR) == True:
 			return(DATA_DIR)
 		else:
-			generate_temp()
+			generate_temp(session_id)
 	except:
-		generate_temp()
-		update_session('data_dir', DATA_DIR)
+		generate_temp(session_id)
+		update_session('data_dir', DATA_DIR, session_id)
 		return(DATA_DIR)
 
 def clear_temp(session_id):
@@ -150,8 +148,7 @@ def load_session(session_id):
 			session = pickle.load(file)
 		return(session)
 	except:
-		pass
-		#generate_temp(_states.STATES.items(), user_session_id)
+		generate_temp(_states.STATES.items(), user_session_id)
 	
 def reset_session(session_id):
 	DATA_DIR = data_path(session_id)
@@ -266,12 +263,12 @@ def load_corpus_path(file_path):
 	except:
 		pass
 
-def load_corpus_session(corpus_id, session_data):
+def load_corpus_session(corpus_id, session_data, session_id):
 	corpus = corpus_id + '_path'
 	corpus_path = str(session_data.get(corpus))
 	corpus_name = 'temp_' + corpus_id
 	if corpus_path == 'session':
-		corpus = st.session_state.data[corpus_name]
+		corpus = st.session_statesession_id[session_id]['data'][corpus_name]
 		return(corpus)
 	else:	
 		try:
@@ -279,10 +276,10 @@ def load_corpus_session(corpus_id, session_data):
 				corpus = pickle.load(file)
 			return(corpus)
 		except:
-			st.session_state.session[corpus_name] = None
+			st.session_state.session[session_id][corpus_name] = None
 
-def load_temp(corpus_type):
-	DATA_DIR = data_path()
+def load_temp(corpus_type, session_id):
+	DATA_DIR = data_path(session_id)
 	file_name = 'temp_' + corpus_type + '.gz'
 	file_path = str(DATA_DIR.joinpath(file_name))
 	with gzip.open(file_path, 'rb') as file:
@@ -296,12 +293,12 @@ def save_corpus(corpus, model_name: str, corpus_name: str):
 	with gzip.open(file_path, "wb") as file:
             pickle.dump(corpus, file)
 
-def save_corpus_temp(corpus, corpus_type: str):
-	DATA_DIR = data_path()
+def save_corpus_temp(corpus, corpus_type: str, session_id):
+	DATA_DIR = data_path(session_id)
 	file_name = 'temp_' + corpus_type + '.gz'
 	file_path = str(DATA_DIR.joinpath(file_name))
 	key = corpus_type + '_path'
-	update_session(key, file_path)
+	update_session(key, file_path, session_id)
 	with gzip.open(file_path, 'wb') as file:
 		pickle.dump(corpus, file)
 
@@ -340,16 +337,17 @@ def load_table(table_id, session_id):
 	table = pd.read_pickle(file_path)  
 	return(table)
 
-def save_table(table, table_id: str):
+def save_table(table, table_id: str, session_id):
 	file_name = 'temp_' + table_id + '.pkl'
-	DATA_DIR = data_path()
+	DATA_DIR = data_path(session_id)
 	file_path = str(DATA_DIR.joinpath(file_name))
 	table.to_pickle(file_path)
 
 # Functions for storing values associated with specific apps
 
-def update_collocations(node_word, stat_mode, to_left, to_right):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+def update_collocations(node_word, stat_mode, to_left, to_right, session_id):
+	DATA_DIR = data_path(session_id)
+	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
 	temp_coll = {}
@@ -361,8 +359,9 @@ def update_collocations(node_word, stat_mode, to_left, to_right):
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+def update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key, session_id):
+	DATA_DIR = data_path(session_id)
+	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
 	temp_doc = {}
@@ -377,8 +376,9 @@ def update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_dtm(sums_pos, sums_ds, units):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+def update_dtm(sums_pos, sums_ds, units, session_id):
+	DATA_DIR = data_path(session_id)
+	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
 	temp_dtm = {}
@@ -389,8 +389,9 @@ def update_dtm(sums_pos, sums_ds, units):
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_keyness_parts(tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs, tar_cats, ref_cats):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+def update_keyness_parts(tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs, tar_cats, ref_cats, session_id):
+	DATA_DIR = data_path(session_id)
+	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
 	temp_kp = {}
@@ -406,8 +407,9 @@ def update_keyness_parts(tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_pca(pca, contrib, variance, pca_idx):
-	session_path = str(TEMP_DIR.joinpath('session.pkl'))
+def update_pca(pca, contrib, variance, pca_idx, session_id):
+	DATA_DIR = data_path(session_id)
+	session_path = str(DATA_DIR.joinpath('session.pkl'))
 	with open(session_path, 'rb') as file:
 		session = pickle.load(file)
 	temp_pca = {}
@@ -419,15 +421,16 @@ def update_pca(pca, contrib, variance, pca_idx):
 	with open(session_path, 'wb') as file:
 		pickle.dump(session, file)
 
-def update_tags(html_state):
+def update_tags(html_state, session_id):
+	_TAGS = f"tags_{session_id}"
 	html_highlights = [' { background-color:#5fb7ca; }', ' { background-color:#e35be5; }', ' { background-color:#ffc701; }', ' { background-color:#fe5b05; }', ' { background-color:#cb7d60; }']
-	if 'html_str' not in st.session_state:
-		st.session_state['html_str'] = ''
-	if 'tags' in st.session_state:
-		tags = st.session_state['tags']
+	if 'html_str' not in st.session_state[session_id]:
+		st.session_state[session_id]['html_str'] = ''
+	if _TAGS in st.session_state:
+		tags = st.session_state[_TAGS]
 		if len(tags)>5:
 			tags = tags[:5]
-			st.session_state['tags'] = tags
+			st.session_state[_TAGS] = tags
 	else:
 		tags = []
 	tags = ['.' + x for x in tags]
@@ -435,59 +438,83 @@ def update_tags(html_state):
 	style_str = [''.join(x) for x in zip(tags, highlights)]
 	style_str = ''.join(style_str)
 	style_sheet_str = '<style>' + style_str + '</style>'
-	st.session_state['html_str'] = style_sheet_str + html_state
+	st.session_state[session_id]['html_str'] = style_sheet_str + html_state
 
 # Convenience function called by widgets
 
 def check_name(strg, search=re.compile(r'[^A-Za-z0-9_-]').search):
 	return not bool(search(strg))
 
-def clear_plots():
-	update_session('pca', dict())
-	if 'grpa' in st.session_state:
-		st.session_state['grpa'] = []
-	if 'grpb' in st.session_state:
-		st.session_state['grpb'] = []
+def clear_plots(session_id):
+	update_session('pca', dict(), session_id)
+	if 'grpa' in st.session_state[session_id]:
+		st.session_state[session_id]['grpa'] = []
+	if 'grpb' in st.session_state[session_id]:
+		st.session_state[session_id]['grpb'] = []
 
-def persist(key: str, app_name: str):
+def persist(key: str, app_name: str, session_id):
 	_PERSIST_STATE_KEY = f"{app_name}_PERSIST"
-	if _PERSIST_STATE_KEY not in st.session_state.keys():
-		st.session_state[_PERSIST_STATE_KEY] = {}
-		st.session_state[_PERSIST_STATE_KEY][key] = None
+	if _PERSIST_STATE_KEY not in st.session_state[session_id].keys():
+		st.session_state[session_id][_PERSIST_STATE_KEY] = {}
+		st.session_state[session_id][_PERSIST_STATE_KEY][key] = None
     
 	if key in st.session_state:
-		st.session_state[_PERSIST_STATE_KEY][key] = st.session_state[key]
+		st.session_state[session_id][_PERSIST_STATE_KEY][key] = st.session_state[key]
     	
 	return key
 	
-def load_widget_state(app_name: str):
+def load_widget_state(app_name: str, session_id):
 	_PERSIST_STATE_KEY = f"{app_name}_PERSIST"
 	"""Load persistent widget state."""
-	if _PERSIST_STATE_KEY in st.session_state:
-		for key in st.session_state[_PERSIST_STATE_KEY]:
-			if st.session_state[_PERSIST_STATE_KEY][key] is not None:
+	if _PERSIST_STATE_KEY in st.session_state[session_id]:
+		for key in st.session_state[session_id][_PERSIST_STATE_KEY]:
+			if st.session_state[session_id][_PERSIST_STATE_KEY][key] is not None:
 				if key not in st.session_state:
-					st.session_state[key] = st.session_state[_PERSIST_STATE_KEY][key]
+					st.session_state[key] = st.session_state[session_id][_PERSIST_STATE_KEY][key]
 
 #prevent categories from being chosen in both multiselect
-def update_grpa():
-	if len(list(set(st.session_state.grpa) & set(st.session_state.grpb))) > 0:
-		item = list(set(st.session_state.grpa) & set(st.session_state.grpb))
-		st.session_state.grpa = list(set(list(st.session_state.grpa))^set(item))
+def update_grpa(session_id):
+	_GRPA = f"grpa_{session_id}"
+	_GRPB = f"grpb_{session_id}"
+	if _GRPA not in st.session_state.keys():
+		st.session_state[_GRPA] = []
+	if _GRPB not in st.session_state.keys():
+		st.session_state[_GRPB] = []
+	if len(list(set(st.session_state[_GRPA]) & set(st.session_state[_GRPB]))) > 0:
+		item = list(set(st.session_state[_GRPA]) & set(st.session_state[_GRPB]))
+		st.session_state[_GRPA] = list(set(list(st.session_state[_GRPA]))^set(item))
 
-def update_grpb():
-	if len(list(set(st.session_state.grpa) & set(st.session_state.grpb))) > 0:
-		item = list(set(st.session_state.grpa) & set(st.session_state.grpb))
-		st.session_state.grpb = list(set(list(st.session_state.grpb))^set(item))
+def update_grpb(session_id):
+	_GRPA = f"grpa_{session_id}"
+	_GRPB = f"grpb_{session_id}"
+	if _GRPA not in st.session_state.keys():
+		st.session_state[_GRPA] = []
+	if _GRPB not in st.session_state.keys():
+		st.session_state[_GRPB] = []
+	if len(list(set(st.session_state[_GRPA]) & set(st.session_state[_GRPB]))) > 0:
+		item = list(set(st.session_state[_GRPA]) & set(st.session_state[_GRPB]))
+		st.session_state[_GRPB] = list(set(list(st.session_state[_GRPB]))^set(item))
 
 #prevent categories from being chosen in both multiselect
-def update_tar():
-	if len(list(set(st.session_state.tar) & set(st.session_state.ref))) > 0:
-		item = list(set(st.session_state.tar) & set(st.session_state.ref))
-		st.session_state.tar = list(set(list(st.session_state.tar))^set(item))
-
-def update_ref():
-	if len(list(set(st.session_state.tar) & set(st.session_state.ref))) > 0:
-		item = list(set(st.session_state.tar) & set(st.session_state.ref))
-		st.session_state.ref = list(set(list(st.session_state.ref))^set(item))
+def update_tar(session_id):
+	_TAR = f"tar_{session_id}"
+	_REF = f"ref_{session_id}"
+	if _TAR not in st.session_state.keys():
+		st.session_state[_TAR] = []
+	if _REF not in st.session_state.keys():
+		st.session_state[_REF] = []
+	if len(list(set(st.session_state[_TAR]) & set(st.session_state[_REF]))) > 0:
+		item = list(set(st.session_state[_TAR]) & set(st.session_state[_REF]))
+		st.session_state[_TAR] = list(set(list(st.session_state[_TAR]))^set(item))
+		
+def update_ref(session_id):
+	_REF = f"ref_{session_id}"
+	_TAR = f"tar_{session_id}"
+	if _TAR not in st.session_state.keys():
+		st.session_state[_TAR] = []
+	if _REF not in st.session_state.keys():
+		st.session_state[_REF] = []
+	if len(list(set(st.session_state[_TAR]) & set(st.session_state[_REF]))) > 0:
+		item = list(set(st.session_state[_TAR]) & set(st.session_state[_REF]))
+		st.session_state[_REF] = list(set(list(st.session_state[_REF]))^set(item))
 
