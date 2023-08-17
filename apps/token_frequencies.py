@@ -47,21 +47,24 @@ KEY_SORT = 2
 
 def main():
 
-	session = _handlers.load_session()	
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 
 	if session.get('freq_table') == True:
 	
-		_handlers.load_widget_state(pathlib.Path(__file__).stem)
-		metadata_target = _handlers.load_metadata('target')
+		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 						
 		st.sidebar.markdown("### Tagset")
 		
-		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("ft_radio", pathlib.Path(__file__).stem), horizontal=True)
+		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("ft_radio", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 
 		if tag_radio == 'Parts-of-Speech':			
-			df = _handlers.load_table('ft_pos')
+			df = _handlers.load_table('ft_pos', user_session_id)
 		if tag_radio == 'DocuScope':			
-			df = _handlers.load_table('ft_ds')
+			df = _handlers.load_table('ft_ds', user_session_id)
 	
 		st.markdown(_messages.message_target_info(metadata_target))
 			
@@ -126,13 +129,13 @@ def main():
 			else:
 				with st.sidebar:
 					with st.spinner('Processing frequencies...'):
-						tp = _handlers.load_corpus_session('target', session)
-						metadata_target = _handlers.load_metadata('target')
+						tp = _handlers.load_corpus_session('target', session, user_session_id)
+						metadata_target = _handlers.load_metadata('target', user_session_id)
 						wc_pos = ds.frequency_table(tp, metadata_target.get('words'))
 						wc_ds = ds.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
-					_handlers.save_table(wc_pos, 'ft_pos')
-					_handlers.save_table(wc_ds, 'ft_ds')
-					_handlers.update_session('freq_table', True)
+					_handlers.save_table(wc_pos, 'ft_pos', user_session_id)
+					_handlers.save_table(wc_ds, 'ft_ds', user_session_id)
+					_handlers.update_session('freq_table', True, user_session_id)
 					st.experimental_rerun()
 		
 		st.sidebar.markdown("---")
