@@ -48,11 +48,14 @@ KEY_SORT = 8
 
 def main():
 
-	session = _handlers.load_session()
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 	
 	if session.get('kwic') == True:
 		
-		df = _handlers.load_table('kwic')	
+		df = _handlers.load_table('kwic', user_session_id)	
 		
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
 		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
@@ -102,15 +105,15 @@ def main():
 		st.sidebar.markdown(_messages.message_reset_table)
 													
 		if st.sidebar.button("Create New KWIC Table"):
-				_handlers.clear_table('kwic')
-				_handlers.update_session('kwic', False)
+				_handlers.clear_table('kwic', user_session_id)
+				_handlers.update_session('kwic', False, user_session_id)
 				st.experimental_rerun()
 		st.sidebar.markdown("---")
 			
 	else:
 		
 		try:
-			metadata_target = _handlers.load_metadata('target')
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		except:
 			metadata_target = {}
 		
@@ -155,13 +158,13 @@ def main():
 			elif len(node_word) > 15:
 				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tp = _handlers.load_corpus_session('target', session)
+				tp = _handlers.load_corpus_session('target', session, user_session_id)
 				with st.sidebar:
 					with st.spinner('Processing KWIC...'):
 						kwic_df = _analysis.kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
 				if bool(isinstance(kwic_df, pd.DataFrame)) == True:
-					_handlers.save_table(kwic_df, 'kwic')
-					_handlers.update_session('kwic', True)
+					_handlers.save_table(kwic_df, 'kwic', user_session_id)
+					_handlers.update_session('kwic', True, user_session_id)
 					st.experimental_rerun()
 				else:
 					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
