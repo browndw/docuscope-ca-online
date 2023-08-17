@@ -47,24 +47,28 @@ KEY_SORT = 6
 
 def main():
 
-	session = _handlers.load_session()	
+	
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 
 	if bool(session['keyness_parts']) == True:
 	
-		_handlers.load_widget_state(pathlib.Path(__file__).stem)
-		metadata_target = _handlers.load_metadata('target')
+		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 
 		st.sidebar.markdown("### Comparison")	
-		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), key = _handlers.persist("cp_radio1", pathlib.Path(__file__).stem), horizontal=True)
+		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), key = _handlers.persist("cp_radio1", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 		if table_radio == 'Tokens':
 			st.sidebar.markdown("---")
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("cp_radio2", pathlib.Path(__file__).stem), horizontal=True)
+			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("cp_radio2", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 			if tag_radio_tokens == 'Parts-of-Speech':
-				df = _handlers.load_table('kw_pos_cp')
+				df = _handlers.load_table('kw_pos_cp', user_session_id)
 			else:
-				df = _handlers.load_table('kw_ds_cp')
+				df = _handlers.load_table('kw_ds_cp', user_session_id)
 	
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -131,23 +135,23 @@ def main():
 							Click the button to reset the keyness table.
 							""")			
 			if st.sidebar.button("Compare New Categories"):
-				_handlers.clear_table('kw_pos_cp')
-				_handlers.clear_table('kw_ds_cp')
-				_handlers.clear_table('kt_pos_cp')
-				_handlers.clear_table('kt_ds_cp')
-				_handlers.update_session('keyness_parts', dict())
+				_handlers.clear_table('kw_pos_cp', user_session_id)
+				_handlers.clear_table('kw_ds_cp', user_session_id)
+				_handlers.clear_table('kt_pos_cp', user_session_id)
+				_handlers.clear_table('kt_ds_cp', user_session_id)
+				_handlers.update_session('keyness_parts', dict(), user_session_id)
 				st.experimental_rerun()
 			st.sidebar.markdown("---")
 			
 		else:
 			
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("cp_radio3", pathlib.Path(__file__).stem), horizontal=True)
+			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("cp_radio3", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 			if tag_radio_tags == 'Parts-of-Speech':
-				df = _handlers.load_table('kt_pos_cp')
+				df = _handlers.load_table('kt_pos_cp', user_session_id)
 			else:
-				df = _handlers.load_table('kt_ds_cp')
+				df = _handlers.load_table('kt_ds_cp', user_session_id)
 	
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -233,11 +237,11 @@ def main():
 			st.sidebar.markdown("---")
 			st.sidebar.markdown(_messages.message_reset_table)			
 			if st.sidebar.button("Compare New Categories"):
-				_handlers.clear_table('kw_pos_cp')
-				_handlers.clear_table('kw_ds_cp')
-				_handlers.clear_table('kt_pos_cp')
-				_handlers.clear_table('kt_ds_cp')
-				_handlers.update_session('keyness_parts', dict())
+				_handlers.clear_table('kw_pos_cp', user_session_id)
+				_handlers.clear_table('kw_ds_cp', user_session_id)
+				_handlers.clear_table('kt_pos_cp', user_session_id)
+				_handlers.clear_table('kt_ds_cp', user_session_id)
+				_handlers.update_session('keyness_parts', dict(), user_session_id)
 				st.experimental_rerun()
 			st.sidebar.markdown("---")
 	
@@ -246,7 +250,7 @@ def main():
 		st.markdown(_messages.message_corpus_parts)
 		
 		try:
-			metadata_target = _handlers.load_metadata('target')
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		except:
 			metadata_target = {}
 		
@@ -255,13 +259,13 @@ def main():
 		
 		if session['has_meta'] == True:
 			st.sidebar.markdown('#### Target corpus categories:')
-			st.sidebar.multiselect("Select target categories:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_tar, key='tar')
+			st.session_state[user_session_id]['tar'] = st.sidebar.multiselect("Select target categories:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_tar(user_session_id), key=f"tar_{user_session_id}")
 		else:
 			st.sidebar.multiselect("Select reference categories:", (['No categories to select']), key='empty_tar')
 		
 		if session['has_meta'] == True:
 			st.sidebar.markdown('#### Reference corpus categories:')
-			st.sidebar.multiselect("Select reference categories:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_ref, key='ref')
+			st.session_state[user_session_id]['ref'] = st.sidebar.multiselect("Select reference categories:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_ref(user_session_id), key=f"ref_{user_session_id}")
 		else:
 			st.sidebar.multiselect("Select reference categories:", (['No categories to select']), key='empty_ref')
 		st.sidebar.markdown("---")
@@ -272,14 +276,14 @@ def main():
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			elif session['has_meta'] == False:
 				st.markdown(_warnings.warning_21, unsafe_allow_html=True)
-			elif len(list(st.session_state.tar)) == 0 or len(list(st.session_state.ref)) == 0:
+			elif len(list(st.session_state[user_session_id]['tar'])) == 0 or len(list(st.session_state[user_session_id]['ref'])) == 0:
 				st.markdown(_warnings.warning_22, unsafe_allow_html=True)
 			else:
 				with st.sidebar:
 					with st.spinner('Generating keywords...'):
-						tp = _handlers.load_corpus_session('target', session)
-						tar_list = [item + "_" for item in list(st.session_state.tar)]
-						ref_list = [item + "_" for item in list(st.session_state.ref)]
+						tp = _handlers.load_corpus_session('target', session, user_session_id)
+						tar_list = [item + "_" for item in list(st.session_state[user_session_id]['tar'])]
+						ref_list = [item + "_" for item in list(st.session_state[user_session_id]['ref'])]
 						
 						tar_docs = {key: value for key, value in tp.items() if key.startswith(tuple(tar_list))}
 						ref_docs = {key: value for key, value in tp.items() if key.startswith(tuple(ref_list))}
@@ -302,11 +306,11 @@ def main():
 						kt_pos_cp = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True)
 						kt_ds_cp = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True)
 					
-					_handlers.save_table(kw_pos_cp, 'kw_pos_cp')
-					_handlers.save_table(kw_ds_cp, 'kw_ds_cp')
-					_handlers.save_table(kt_pos_cp, 'kt_pos_cp')
-					_handlers.save_table(kt_ds_cp, 'kt_ds_cp')
-					_handlers.update_keyness_parts(tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs, st.session_state.tar, st.session_state.ref)
+					_handlers.save_table(kw_pos_cp, 'kw_pos_cp', user_session_id)
+					_handlers.save_table(kw_ds_cp, 'kw_ds_cp', user_session_id)
+					_handlers.save_table(kt_pos_cp, 'kt_pos_cp', user_session_id)
+					_handlers.save_table(kt_ds_cp, 'kt_ds_cp', user_session_id)
+					_handlers.update_keyness_parts(tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs, st.session_state[user_session_id]['tar'], st.session_state[user_session_id]['ref'], user_session_id)
 					
 					st.success('Keywords generated!')
 					st.experimental_rerun()
