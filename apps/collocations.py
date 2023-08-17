@@ -47,12 +47,15 @@ KEY_SORT = 7
 
 def main():
 
-	session = _handlers.load_session()	
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 
 	if bool(session['collocations']) == True:
 		
-		metadata_target = _handlers.load_metadata('target')
-		df = _handlers.load_table('collocations')
+		metadata_target = _handlers.load_metadata('target', user_session_id)
+		df = _handlers.load_table('collocations', user_session_id)
 		
 		col1, col2 = st.columns([1,1])
 		with col1:
@@ -110,15 +113,15 @@ def main():
 		st.sidebar.markdown(_messages.message_reset_table)
 		
 		if st.sidebar.button("Create New Collocations Table"):
-			_handlers.clear_table('collocations')
-			_handlers.update_session('collocations', dict())
+			_handlers.clear_table('collocations', user_session_id)
+			_handlers.update_session('collocations', dict(), user_session_id)
 			st.experimental_rerun()
 		st.sidebar.markdown("---")
 				
 	else:
 	
 		try:
-			metadata_target = _handlers.load_metadata('target')
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		except:
 			metadata_target = {}
 		
@@ -202,14 +205,14 @@ def main():
 			elif len(node_word) > 15:
 				st.markdown(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tp = _handlers.load_corpus_session('target', session)
-				metadata_target = _handlers.load_metadata('target')
+				tp = _handlers.load_corpus_session('target', session, user_session_id)
+				metadata_target = _handlers.load_metadata('target', user_session_id)
 				with st.sidebar:
 					with st.spinner('Processing collocates...'):
 						coll_df = _analysis.coll_table(tp, node_word=node_word, node_tag=node_tag, l_span=to_left, r_span=to_right, statistic=stat_mode, tag_ignore=ignore_tags, count_by=count_by)
 				if len(coll_df.index) > 0:
-					_handlers.save_table(coll_df, 'collocations')
-					_handlers.update_collocations(node_word, stat_mode, to_left, to_right)
+					_handlers.save_table(coll_df, 'collocations', user_session_id)
+					_handlers.update_collocations(node_word, stat_mode, to_left, to_right, user_session_id)
 					st.experimental_rerun()
 				else:
 					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
