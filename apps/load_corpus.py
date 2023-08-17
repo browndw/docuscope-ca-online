@@ -87,6 +87,12 @@ def main():
 	user_session_id = user_session.session_id
 
 	session = _handlers.load_session(user_session_id)
+	
+	st.write(st.session_state[user_session_id])
+	st.write(_handlers.data_path(user_session_id))
+	
+	#st.write(_handlers.load_metadata('target', user_session_id))
+
 				
 	if 'warning' not in st.session_state[user_session_id]:
 		st.session_state[user_session_id]['warning'] = 0
@@ -138,10 +144,10 @@ def main():
 					if st.button("Save Corpus"):
 						with st.spinner('Saving corpus...'):
 							if len(target_name) > 2 & len(target_name) < 15 and _handlers.check_name(target_name) == True:
-								corp = _handlers.load_temp('target')
+								corp = _handlers.load_temp('target', user_session_id)
 								tags_pos, tags_ds = _process.get_corpus_features(corp)
 								model = _process.check_model(tags_ds)
-								_handlers.save_corpus(corp, model, target_name)
+								_handlers.save_corpus(corp, model, target_name, user_session_id)
 								_handlers.update_session('is_saved', 'Yes', user_session_id)
 								st.success('Corpus saved!')
 								st.experimental_rerun()
@@ -286,7 +292,7 @@ def main():
 									#get features
 									tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
 									#assign session states
-									_handlers.save_corpus_temp(ref_corp, 'reference')
+									_handlers.save_corpus_temp(ref_corp, 'reference', user_session_id)
 									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds, user_session_id)
 									_handlers.update_session('has_reference', True, user_session_id)
 									st.experimental_rerun()
@@ -297,7 +303,7 @@ def main():
 									#get features
 									tags_pos, tags_ds = _process.get_corpus_features(ref_corp)
 									#assign session states
-									_handlers.save_corpus_temp(ref_corp, 'reference')
+									_handlers.save_corpus_temp(ref_corp, 'reference', user_session_id)
 									_handlers.init_metadata_reference(ref_corp, selected_dict, tags_pos, tags_ds, user_session_id)
 									_handlers.update_session('has_reference', True, user_session_id)
 									st.experimental_rerun()
@@ -317,8 +323,6 @@ def main():
 		
 	else:
 	
-		st.write(st.session_state[user_session_id])
-		st.write(_handlers.data_path())
 		st.markdown("###  :dart: Load or process a target corpus")
 
 		st.markdown(_messages.message_load)
@@ -438,7 +442,7 @@ def main():
 							#get features
 							tags_pos, tags_ds = _process.get_corpus_features(corp)
 							#assign session states
-							_handlers.save_corpus_temp(corp, 'target')
+							_handlers.save_corpus_temp(corp, 'target', user_session_id)
 							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds, user_session_id)
 							st.experimental_rerun()
 						
@@ -448,7 +452,7 @@ def main():
 							#get features
 							tags_pos, tags_ds = _process.get_corpus_features(corp)
 							#assign session states
-							_handlers.save_corpus_temp(corp, 'target')
+							_handlers.save_corpus_temp(corp, 'target', user_session_id)
 							_handlers.init_metadata_target(corp, selected_dict, tags_pos, tags_ds, user_session_id)
 							st.experimental_rerun()
 				st.sidebar.markdown("---")
