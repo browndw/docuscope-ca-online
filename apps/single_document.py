@@ -49,12 +49,15 @@ KEY_SORT = 10
 
 def main():
 
-	session = _handlers.load_session()	
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
 
 	if bool(session['doc']) == True:
 	
-		_handlers.load_widget_state(pathlib.Path(__file__).stem)
-		metadata_target = _handlers.load_metadata('target')
+		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 
 		st.sidebar.markdown("### Tagset")
 
@@ -63,36 +66,36 @@ def main():
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("sd_radio", pathlib.Path(__file__).stem), horizontal=True)
+		tag_radio = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("sd_radio", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 		if tag_radio == 'Parts-of-Speech':
 			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)
 			if tag_type == 'General':
-				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Noun', 'Verb', 'Adjective', 'Adverb', 'Pronoun', 'Preposition', 'Conjunction'], on_change = _handlers.update_tags(session['doc']['html_simple']), key='tags')
+				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Noun', 'Verb', 'Adjective', 'Adverb', 'Pronoun', 'Preposition', 'Conjunction'], on_change = _handlers.update_tags(session['doc']['html_simple'], user_session_id), key=f"tags_{user_session_id}")
 				tag_colors = hex_highlights[:len(tag_list)]
 				tag_html = zip(tag_colors, tag_list)
 				tag_html = list(map('">'.join, tag_html))
 				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 				tag_html = '; '.join(tag_html)
-				tag_loc = _handlers.load_table('doc_simple')
+				tag_loc = _handlers.load_table('doc_simple', user_session_id)
 				df = session['doc']['dc_simple']
 			else:
-				tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_pos'], on_change = _handlers.update_tags(session['doc']['html_pos']), key='tags')
+				tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_pos'], on_change = _handlers.update_tags(session['doc']['html_pos'], user_session_id), key=f"tags_{user_session_id}")
 				tag_colors = hex_highlights[:len(tag_list)]
 				tag_html = zip(tag_colors, tag_list)
 				tag_html = list(map('">'.join, tag_html))
 				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 				tag_html = '; '.join(tag_html)
-				tag_loc = _handlers.load_table('doc_pos')
+				tag_loc = _handlers.load_table('doc_pos', user_session_id)
 				df = session['doc']['dc_pos']
 		else:
-			tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_ds'], on_change = _handlers.update_tags(session['doc']['html_ds']), key='tags')
+			tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_ds'], on_change = _handlers.update_tags(session['doc']['html_ds'], user_session_id), key=f"tags_{user_session_id}")
 			tag_colors = hex_highlights[:len(tag_list)]
 			tag_html = zip(tag_colors, tag_list)
 			tag_html = list(map('">'.join, tag_html))
 			tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 			tag_html = '; '.join(tag_html)
-			tag_loc = _handlers.load_table('doc_ds')
+			tag_loc = _handlers.load_table('doc_ds', user_session_id)
 			df = session['doc']['dc_ds']
 		
 		if len(tag_list) == 5:
@@ -145,10 +148,10 @@ def main():
 					##### Tags:  {tag_html}
 					""", unsafe_allow_html=True)
 						
-		if 'html_str' not in st.session_state:
-			st.session_state['html_str'] = ''
+		if 'html_str' not in st.session_state[user_session_id]:
+			st.session_state[user_session_id]['html_str'] = ''
 		
-		st.components.v1.html(st.session_state.html_str, height=500, scrolling=True)
+		st.components.v1.html(st.session_state[user_session_id]['html_str'], height=500, scrolling=True)
 		
 		st.dataframe(df)
 		
@@ -158,7 +161,7 @@ def main():
 		if st.sidebar.button("Download"):
 			with st.sidebar:
 				with st.spinner('Creating download link...'):
-					doc_html = st.session_state.html_str.split('</style>')
+					doc_html = st.session_state[user_session_id]['html_str'].split('</style>')
 					style_sheet_str = doc_html[0] + '</style>'
 					html_str = doc_html[1]
 					doc_html = '<!DOCTYPE html><html><head>' + style_sheet_str + '</head><body>' + tag_html + '<br><br>' + html_str + '</body></html>'
@@ -194,12 +197,13 @@ def main():
 							Click the button to explore a new document.
 							""")
 		if st.sidebar.button("Select a new document"):
-			_handlers.clear_table('doc_simple')
-			_handlers.clear_table('doc_pos')
-			_handlers.clear_table('doc_ds')
-			_handlers.update_session('doc', dict())
-			if 'tags' in st.session_state:
-				del st.session_state['tags']
+			_TAGS = f"tags_{user_session_id}"
+			_handlers.clear_table('doc_simple', user_session_id)
+			_handlers.clear_table('doc_pos', user_session_id)
+			_handlers.clear_table('doc_ds', user_session_id)
+			_handlers.update_session('doc', dict(), user_session_id)
+			if _TAGS in st.session_state:
+				del st.session_state[_TAGS]
 			st.experimental_rerun()
 
 		st.sidebar.markdown("---")
@@ -209,7 +213,7 @@ def main():
 		st.markdown(_messages.message_single_document)
 		
 		try:
-			metadata_target = _handlers.load_metadata('target')
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		except:
 			metadata_target = {}
 		
@@ -225,7 +229,7 @@ def main():
 			if session.get('target_path') == None:
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			else:
-				tp = _handlers.load_corpus_session('target', session)
+				tp = _handlers.load_corpus_session('target', session, user_session_id)
 				doc_pos = ds.tag_ruler(tp, doc_key, count_by='pos')
 				doc_simple = _analysis.simplify_span(doc_pos)
 				doc_ds = ds.tag_ruler(tp, doc_key, count_by='ds')
@@ -240,11 +244,11 @@ def main():
 				html_simple = _analysis.html_simplify(html_pos)
 				html_ds = _analysis.html_build(tp, doc_key, count_by='ds')
 				
-				_handlers.save_table(doc_pos, 'doc_pos')
-				_handlers.save_table(doc_simple, 'doc_simple')
-				_handlers.save_table(doc_ds, 'doc_ds')
+				_handlers.save_table(doc_pos, 'doc_pos', user_session_id)
+				_handlers.save_table(doc_simple, 'doc_simple', user_session_id)
+				_handlers.save_table(doc_ds, 'doc_ds', user_session_id)
 
-				_handlers.update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key)
+				_handlers.update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key, user_session_id)
 				
 				st.experimental_rerun()
 
