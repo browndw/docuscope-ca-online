@@ -62,11 +62,11 @@ def main():
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, horizontal=True)
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots(user_session_id), horizontal=True)
 	
 		if session['dtm']['units'] == 'norm':
 			if tag_radio_tokens == 'Parts-of-Speech':
-				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, horizontal=True)
+				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots(user_session_id), horizontal=True)
 				if tag_type == 'General':
 					df = _handlers.load_table('dtm_simple', user_session_id)
 				else:
@@ -115,20 +115,20 @@ def main():
 				st.sidebar.markdown('### Add grouping variables')
 				st.sidebar.markdown("Select grouping variables from your metadata and click the button to generate boxplots of frequencies.")
 				st.sidebar.markdown('#### Group A')
-				st.sidebar.multiselect("Select categories for group A:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_grpa, key='grpa')
+				st.session_state[user_session_id]['grpa'] = st.sidebar.multiselect("Select categories for group A:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_grpa(user_session_id), key=f"grpa_{user_session_id}")
 				
 				st.sidebar.markdown('#### Group B')
-				st.sidebar.multiselect("Select categories for group B:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_grpb, key='grpb')
+				st.session_state[user_session_id]['grpb'] = st.sidebar.multiselect("Select categories for group B:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_grpb(user_session_id), key=f"grpb_{user_session_id}")
 				if st.sidebar.button("Boxplots of Frequencies by Group"):
 					#clear any pca data
-					_handlers.update_session('pca', dict())
+					_handlers.update_session('pca', dict(), user_session_id)
 
 					if len(box_vals) == 0:
 						st.markdown(_warnings.warning_19, unsafe_allow_html=True)
 					
 					elif len(box_vals) > 0:
-						grpa_list = [item + "_" for item in list(st.session_state.grpa)]
-						grpb_list = [item + "_" for item in list(st.session_state.grpb)]
+						grpa_list = [item + "_" for item in list(st.session_state[user_session_id]['grpa'])]
+						grpb_list = [item + "_" for item in list(st.session_state[user_session_id]['grpb'])]
 						if len(grpb_list) == 0 or len(grpa_list) == 0:
 							st.markdown(_warnings.warning_20, unsafe_allow_html=True)
 						
@@ -160,7 +160,7 @@ def main():
 	
 			if st.sidebar.button("Scatterplot of Frequencies"):
 				#clear any pca data
-				_handlers.update_session('pca', dict())
+				_handlers.update_session('pca', dict(), user_session_id)
 
 				df_plot = df.copy()
 				df_plot.index.name = 'doc_id'
@@ -190,7 +190,7 @@ def main():
 								""")
 		
 			if st.sidebar.button("PCA"):
-				_handlers.update_session('pca', dict())
+				_handlers.update_session('pca', dict(), user_session_id)
 				if session['has_meta'] == True:
 					grouping = metadata_target['doccats']
 				else:
@@ -198,10 +198,10 @@ def main():
 	
 				pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
 				if bool(session['pca']) == False:
-					_handlers.update_pca(pca_df, contrib_df, ve, 1)
+					_handlers.update_pca(pca_df, contrib_df, ve, 1, user_session_id)
 					st.experimental_rerun()
 				else:
-					_handlers.update_pca(pca_df, contrib_df, ve, 1)
+					_handlers.update_pca(pca_df, contrib_df, ve, 1, user_session_id)
 				
 			if bool(session['pca']) == True:
 				session['pca']['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
@@ -303,14 +303,14 @@ def main():
 		st.sidebar.markdown(_messages.message_reset_table)
 		
 		if st.sidebar.button("Create New DTM"):
-			if 'grpa' in st.session_state:
-				del st.session_state['grpa']
-			if 'grpb' in st.session_state:
-				del st.session_state['grpb']
-			_handlers.update_session('dtm', dict())
-			_handlers.update_session('pca', dict())
-			st.session_state.grpa = []
-			st.session_state.grpb = []
+			if 'grpa' in st.session_state[user_session_id]:
+				del st.session_state[user_session_id]['grpa']
+			if 'grpb' in st.session_state[user_session_id]:
+				del st.session_state[user_session_id]['grpb']
+			_handlers.update_session('dtm', dict(), user_session_id)
+			_handlers.update_session('pca', dict(), user_session_id)
+			st.session_state[user_session_id]['grpa'] = []
+			st.session_state[user_session_id]['grpb'] = []
 			st.experimental_rerun()
 		
 		st.sidebar.markdown("""---""") 
@@ -331,7 +331,7 @@ def main():
 			else:
 				with st.sidebar:
 					with st.spinner('Generating dtm for plotting...'):
-						tp = _handlers.load_corpus_session('target', session)
+						tp = _handlers.load_corpus_session('target', session, user_session_id)
 						dtm_pos = ds.tags_dtm(tp, count_by='pos')
 						dtm_pos.set_index('doc_id', inplace=True)
 						sums_pos = np.array(dtm_pos.sum(axis=1))
@@ -344,7 +344,7 @@ def main():
 							dtm_pos = _analysis.tf_proportions(dtm_pos, norm=True)
 							dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=True)
 							units = 'norm'
-							_handlers.save_table(dtm_simple, 'dtm_simple')
+							_handlers.save_table(dtm_simple, 'dtm_simple', user_session_id)
 	
 						elif dtm_type == 'Normalized' and scale == 'Yes':
 							dtm_pos = _analysis.tf_proportions(dtm_pos, norm=False, scale=True)
@@ -357,9 +357,9 @@ def main():
 							units = 'tfidf'
 
 					dtm_ds.drop('Untagged', axis=1, inplace=True, errors='ignore')
-					_handlers.save_table(dtm_pos, 'dtm_pos')
-					_handlers.save_table(dtm_ds, 'dtm_ds')
-					_handlers.update_dtm(sums_pos, sums_ds, units)
+					_handlers.save_table(dtm_pos, 'dtm_pos', user_session_id)
+					_handlers.save_table(dtm_ds, 'dtm_ds', user_session_id)
+					_handlers.update_dtm(sums_pos, sums_ds, units, user_session_id)
 					st.success('DTM generated!')
 					st.experimental_rerun()
 		
