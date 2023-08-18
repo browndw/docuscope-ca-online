@@ -87,12 +87,6 @@ def main():
 	user_session_id = user_session.session_id
 
 	session = _handlers.load_session(user_session_id)
-	
-	st.write(st.session_state[user_session_id])
-	st.write(_handlers.data_path(user_session_id))
-	
-	#st.write(_handlers.load_metadata('target', user_session_id))
-
 				
 	if 'warning' not in st.session_state[user_session_id]:
 		st.session_state[user_session_id]['warning'] = 0
