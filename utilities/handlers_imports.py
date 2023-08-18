@@ -83,7 +83,7 @@ def import_parameters(options: dict, packages_to_import):
 			elif package == 'analysis':
 				import_param['analysis_functions'] = ['_analysis', 'utilities']
 			elif ENABLE_SAVE == True and package == 'handlers':
-				import_param['handlers_local'] = ['_handlers', 'utilities']
+				import_param['handlers_server'] = ['_handlers', 'utilities']
 			elif ENABLE_SAVE == False and package == 'handlers':
 				import_param['handlers_server'] = ['_handlers', 'utilities']
 			elif ENABLE_DETECT == True and package == 'process':
