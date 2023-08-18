@@ -35,7 +35,7 @@ Also note that you activate/deactivate options from the `options.toml` file. How
 
 Video tutorials are available.
 
-(Introduction)[https://youtu.be/2fSF8RelN88]
+[Introduction](https://youtu.be/2fSF8RelN88)
 
 ## Elesevier Corpus
 
