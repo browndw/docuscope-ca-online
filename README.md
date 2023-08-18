@@ -23,6 +23,20 @@ With the application users can:
 6. explore single texts
 7. practice advanced plotting
 
+Note: The version that is available on streamlit Community Cloud does not consistently render tables from `st-aggrid`. You can explore and get idea of how the tool works, but if you want to process data, it recommended that you clone this repository, navigate to the directory and run:
+
+```
+streamlit run index.py
+```
+
+Also note that you can activate/deactivate options from the `options.toml` file. However, setting the `desktop_mode` to `True` will result in errors. The desktop version requires different packages and settings.
+
+## Tutorials
+
+Video tutorials are available.
+
+[Introduction](https://youtu.be/2fSF8RelN88)
+
 ## Elesevier Corpus
 
 For convenience, DocuScope CAC come with some pre-processed data. One of those was compiled specifically for the tool. It contains published academic articles, which were harvested from Elesevier open access. The entire dataset includes more than 40,000 articles. The data processed and saved for the tool have 20 randomly sampled articles from 20 disciplines.
