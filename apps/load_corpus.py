@@ -141,7 +141,7 @@ def main():
 								corp = _handlers.load_temp('target', user_session_id)
 								tags_pos, tags_ds = _process.get_corpus_features(corp)
 								model = _process.check_model(tags_ds)
-								_handlers.save_corpus(corp, model, target_name, user_session_id)
+								_handlers.save_corpus(corp, model, target_name)
 								_handlers.update_session('is_saved', 'Yes', user_session_id)
 								st.success('Corpus saved!')
 								st.experimental_rerun()
