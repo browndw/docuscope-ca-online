@@ -25,6 +25,7 @@ from importlib.machinery import SourceFileLoader
 
 
 HERE = pathlib.Path(__file__).parent.resolve()
+TEMP_DIR = HERE.joinpath("_temp")
 FAVICON = str(HERE.joinpath("_static/docuscope-favicon.ico"))
 TITLE_LOGO = str(HERE.joinpath("_static/docuscope-logo.png"))
 PL_LOGO = str(HERE.joinpath("_static/porpoise_badge.svg"))
@@ -60,6 +61,8 @@ _handlers.generate_temp(_states.STATES.items(), user_session_id)
 def index(application_options):
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
+
+    _handlers.cleanup_temp(TEMP_DIR, 1) 
     
     with open(PL_LOGO, encoding='utf-8', errors='ignore') as f:
         pl_logo_text = f.read()
