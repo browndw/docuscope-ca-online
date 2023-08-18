@@ -22,6 +22,7 @@ import re
 import secrets
 import shutil
 import tempfile
+import time
 from importlib.machinery import SourceFileLoader
 
 HERE = pathlib.Path(__file__).parents[1].resolve()
@@ -61,6 +62,24 @@ for module in import_params.keys():
 
 # Initialize session states.
 # For local file handling, generate a temp folder to be deleted on close.
+
+
+def cleanup_temp(tempdir, days):
+	now = time.time()
+	numdays = 86400*days
+	for r,d,f in os.walk(tempdir):
+		for dir in d:
+			timestamp = os.path.getmtime(os.path.join(r,dir))
+			if now-numdays > timestamp:
+				try:
+					print "removing ",os.path.join(r,dir)
+					shutil.rmtree(os.path.join(r,dir))
+				except Exception,e:
+					print e
+					pass
+				else: 
+					print "some message for success"
+
 
 def generate_temp(states, session_id):
 	if session_id not in st.session_state:
