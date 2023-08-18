@@ -29,7 +29,7 @@ Note: The version that is available on streamlit Community Cloud does not consis
 streamlit run index.py
 ```
 
-Also note that you activate/deactivate options from the `options.toml` file. However, setting the `desktop_mode` to `True` will result in errors. The desktop version requires different packages and settings.
+Also note that you can activate/deactivate options from the `options.toml` file. However, setting the `desktop_mode` to `True` will result in errors. The desktop version requires different packages and settings.
 
 ## Tutorials
 
