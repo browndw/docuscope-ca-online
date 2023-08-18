@@ -64,6 +64,7 @@ for module in import_params.keys():
 # For local file handling, generate a temp folder to be deleted on close.
 
 
+
 def cleanup_temp(tempdir, days):
 	now = time.time()
 	numdays = 86400*days
@@ -72,13 +73,11 @@ def cleanup_temp(tempdir, days):
 			timestamp = os.path.getmtime(os.path.join(r,dir))
 			if now-numdays > timestamp:
 				try:
-					print "removing ",os.path.join(r,dir)
 					shutil.rmtree(os.path.join(r,dir))
-				except Exception,e:
-					print e
+				except:
 					pass
 				else: 
-					print "some message for success"
+					pass
 
 
 def generate_temp(states, session_id):
@@ -113,11 +112,10 @@ def data_path(session_id):
 		if os.path.exists(DATA_DIR) == True:
 			return(DATA_DIR)
 		else:
-			generate_temp(session_id)
+			st.experimental_rerun()
 	except:
-		generate_temp(session_id)
-		update_session('data_dir', DATA_DIR, session_id)
-		return(DATA_DIR)
+		st.experimental_rerun()
+
 
 def clear_temp(session_id):
 	DATA_DIR = data_path(session_id)
