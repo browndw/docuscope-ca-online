@@ -50,7 +50,11 @@ KEY_SORT = 11
 
 def main():
 	
-	session = _handlers.load_session()
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
+	session = _handlers.load_session(user_session_id)
+
 	st.markdown(_messages.message_download_tagged)
 	
 	st.sidebar.markdown("### Tagset to embed")
@@ -68,7 +72,7 @@ def main():
 			with st.sidebar:
 				with st.spinner('Creating download link...'):
 					try:
-						tp = _handlers.load_corpus_session('target', session)
+						tp = _handlers.load_corpus_session('target', session, user_session_id)
 					except:
 						st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 					
