@@ -77,7 +77,7 @@ def main():
 				st.markdown(_messages.message_reference_parts(session['keyness_parts']))
 	
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
+			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=25) #Add pagination
 			gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 			gb.configure_column("Tag", filter="agTextColumnFilter")
 			gb.configure_column("LL", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
@@ -160,7 +160,7 @@ def main():
 				st.markdown(_messages.message_reference_parts(session['keyness_parts']))
 		
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
+			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=25) #Add pagination
 			gb.configure_column("Tag", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 			gb.configure_column("LL", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 			gb.configure_column("LR", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=3)

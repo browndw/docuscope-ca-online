@@ -61,7 +61,7 @@ def main():
 		st.markdown(_messages.message_target_info(metadata_target))
 			
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
+		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=25) #Add pagination
 		gb.configure_default_column(filter="agTextColumnFilter")
 		gb.configure_column("Token1", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 		gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
