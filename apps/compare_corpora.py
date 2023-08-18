@@ -99,7 +99,7 @@ def main():
 				update_mode='MODEL_CHANGED', 
 				columns_auto_size_mode='FIT_CONTENTS',
 				theme='alpine',
-				height=500, 
+				height=None, 
 				width='100%',
 				reload_data=False
 				)
@@ -167,7 +167,7 @@ def main():
 				update_mode='MODEL_CHANGED', 
 				columns_auto_size_mode='FIT_CONTENTS',
 				theme='alpine',
-				height=500, 
+				height=None, 
 				width='100%',
 				reload_data=False
 				)
