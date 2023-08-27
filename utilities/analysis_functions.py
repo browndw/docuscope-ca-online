@@ -73,7 +73,7 @@ def index_windows_around_matches(matches: np.ndarray, left: int, right: int,
         return [w[(w >= 0) & (w < len(matches))] for w in nested_ind]
 
 # https://github.com/WZBSocialScienceCenter/tmtoolkit/blob/master/tmtoolkit/tokenseq.py
-def pmi(x: np.ndarray, y: np.ndarray, xy: np.ndarray, n_total: Optional[int] = None, logfn: Callable = np.log,
+def pmi(x: np.ndarray, y: np.ndarray, xy: np.ndarray, n_total: Optional[int] = None, logfn: Callable = np.log2,
         k: int = 1, normalize: bool = False) -> np.ndarray:
     if not isinstance(k, int) or k < 1:
         raise ValueError('`k` must be a strictly positive integer')
