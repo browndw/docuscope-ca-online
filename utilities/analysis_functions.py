@@ -201,11 +201,10 @@ def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_t
             for i in range(len(idx)):
                 span_tokens = [t for t in tp[start_idx[i]:end_idx[i]]]
                 in_span.append(span_tokens)
-                merge_with_tags = []
+                merged_tokens = []
                 for i in range(0,len(in_span)):
                     if len(in_span[i]) == span:
-                        merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
-                    merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
+                        merged_tokens.append('_token_'.join(['_tag_'.join(x) for x in in_span[i]]))
             ngram_list.append(merged_tokens)
     # calculate ranges
     ngram_range = []
@@ -266,11 +265,10 @@ def ngrams_by_tag(tok, tag: str, tag_position, span, n_tokens, count_by='pos'):
             for i in range(len(idx)):
                 span_tokens = [t for t in tp[start_idx[i]:end_idx[i]]]
                 in_span.append(span_tokens)
-                merge_with_tags = []
+                merged_tokens = []
                 for i in range(0,len(in_span)):
                     if len(in_span[i]) == span:
-                        merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
-                    merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
+                        merged_tokens.append('_token_'.join(['_tag_'.join(x) for x in in_span[i]]))
             ngram_list.append(merged_tokens)
     # calculate ranges
     ngram_range = []
