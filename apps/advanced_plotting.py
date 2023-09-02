@@ -62,11 +62,11 @@ def main():
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots(user_session_id), horizontal=True)
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 	
 		if session['dtm']['units'] == 'norm':
 			if tag_radio_tokens == 'Parts-of-Speech':
-				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots(user_session_id), horizontal=True)
+				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 				if tag_type == 'General':
 					df = _handlers.load_table('dtm_simple', user_session_id)
 				else:
