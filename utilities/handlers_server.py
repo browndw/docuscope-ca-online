@@ -464,10 +464,12 @@ def check_name(strg, search=re.compile(r'[^A-Za-z0-9_-]').search):
 
 def clear_plots(session_id):
 	update_session('pca', dict(), session_id)
-	if 'grpa' in st.session_state[session_id]:
-		st.session_state[session_id]['grpa'] = []
-	if 'grpb' in st.session_state[session_id]:
-		st.session_state[session_id]['grpb'] = []
+	_GRPA = f"grpa_{session_id}"
+	_GRPB = f"grpb_{session_id}"
+	if _GRPA in st.session_state.keys():
+		st.session_state[_GRPA] = []
+	if _GRPB in st.session_state.keys():
+		st.session_state[_GRPB] = []
 
 def persist(key: str, app_name: str, session_id):
 	_PERSIST_STATE_KEY = f"{app_name}_PERSIST"

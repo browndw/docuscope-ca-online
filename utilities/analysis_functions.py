@@ -73,7 +73,7 @@ def index_windows_around_matches(matches: np.ndarray, left: int, right: int,
         return [w[(w >= 0) & (w < len(matches))] for w in nested_ind]
 
 # https://github.com/WZBSocialScienceCenter/tmtoolkit/blob/master/tmtoolkit/tokenseq.py
-def pmi(x: np.ndarray, y: np.ndarray, xy: np.ndarray, n_total: Optional[int] = None, logfn: Callable = np.log,
+def pmi(x: np.ndarray, y: np.ndarray, xy: np.ndarray, n_total: Optional[int] = None, logfn: Callable = np.log2,
         k: int = 1, normalize: bool = False) -> np.ndarray:
     if not isinstance(k, int) or k < 1:
         raise ValueError('`k` must be a strictly positive integer')
@@ -201,11 +201,10 @@ def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_t
             for i in range(len(idx)):
                 span_tokens = [t for t in tp[start_idx[i]:end_idx[i]]]
                 in_span.append(span_tokens)
-                merge_with_tags = []
+                merged_tokens = []
                 for i in range(0,len(in_span)):
                     if len(in_span[i]) == span:
-                        merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
-                    merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
+                        merged_tokens.append('_token_'.join(['_tag_'.join(x) for x in in_span[i]]))
             ngram_list.append(merged_tokens)
     # calculate ranges
     ngram_range = []
@@ -266,11 +265,10 @@ def ngrams_by_tag(tok, tag: str, tag_position, span, n_tokens, count_by='pos'):
             for i in range(len(idx)):
                 span_tokens = [t for t in tp[start_idx[i]:end_idx[i]]]
                 in_span.append(span_tokens)
-                merge_with_tags = []
+                merged_tokens = []
                 for i in range(0,len(in_span)):
                     if len(in_span[i]) == span:
-                        merge_with_tags.append(list('_tag_'.join(x) for x in in_span[i]))
-                    merged_tokens = ['_token_'.join(x) for x in merge_with_tags]
+                        merged_tokens.append('_token_'.join(['_tag_'.join(x) for x in in_span[i]]))
             ngram_list.append(merged_tokens)
     # calculate ranges
     ngram_range = []
