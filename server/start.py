@@ -1,4 +1,4 @@
-# Copyright (C) 2021 Cancer Care Associates
+# Copyright (C) 2024 David West Brown
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -14,17 +14,17 @@
 # pylint: disable = protected-access
 
 from docuscope._imports import streamlit as st
+from docuscope._imports import st_runtime
 
 from . import patches
-
 
 def main(args):
     start_streamlit_server(args.path, {})
 
 
 def start_streamlit_server(script_path, config):
-    st.bootstrap.load_config_options(flag_options=config)
+    st.web.bootstrap.load_config_options(flag_options=config)
     patches.apply_streamlit_server_patches()
 
-    st._is_running_with_streamlit = True
-    st.bootstrap.run(script_path, "", [], flag_options={})
+    st_runtime.exists()
+    st.web.bootstrap.run(script_path, args=[], flag_options={}, is_hello=False)
