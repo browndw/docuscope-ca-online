@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,34 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-from io import BytesIO
+import altair as alt
+import pandas as pd
 import pathlib
-from importlib.machinery import SourceFileLoader
+import polars as pl
+import st_aggrid
+import streamlit as st
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
-
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['categories', 'handlers', 'messages', 'states', 'warnings', 'altair', 'streamlit', 'docuscospacy', 'pandas', 'st_aggrid']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
+import categories as _categories
+import states as _states
+from utilities import analysis_functions as _analysis
+from utilities import handlers_database as _handlers
+from utilities import messages as _messages
+from utilities import warnings as _warnings
 
 CATEGORY = _categories.KEYNESS
 TITLE = "Compare Corpora"
@@ -50,25 +35,37 @@ def main():
 	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 	user_session_id = user_session.session_id
 
-	session = _handlers.load_session(user_session_id)
+	if user_session_id not in st.session_state:
+		st.session_state[user_session_id] = {}
+	try:
+		con = st.session_state[user_session_id]["ibis_conn"]
+	except:
+		con = _handlers.get_db_connection(user_session_id)
+		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
 
-	if session.get('keyness_table') == True:
+	try:
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+	except:
+		_handlers.init_session(con)
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+
+	if session.get('keyness_table')[0] == True:
 	
 		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
-		metadata_target = _handlers.load_metadata('target', user_session_id)
-		metadata_reference = _handlers.load_metadata('reference', user_session_id)
+		metadata_target = _handlers.load_metadata('target', con)
+		metadata_reference = _handlers.load_metadata('reference', con)
 
 		st.sidebar.markdown("### Comparison")	
 		table_radio = st.sidebar.radio("Select the keyness table to display:", ("Tokens", "Tags Only"), key = _handlers.persist("kt_radio1", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 		if table_radio == 'Tokens':
 			st.sidebar.markdown("---")
 			st.sidebar.markdown("### Tagset")
-			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio2", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
+			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio2", pathlib.Path(__file__).stem,  user_session_id), horizontal=True)
 	
 			if tag_radio_tokens == 'Parts-of-Speech':
-				df = _handlers.load_table('kw_pos', user_session_id)
+				df = con.table("kw_pos", database="target").to_pandas()
 			else:
-				df = _handlers.load_table('kw_ds', user_session_id)
+				df = con.table("kw_ds", database="target").to_pandas()
 			
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -77,7 +74,7 @@ def main():
 				st.markdown(_messages.message_reference_info(metadata_reference))	
 		
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=25) #Add pagination
+			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 			gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 			gb.configure_column("Tag", filter="agTextColumnFilter")
 			gb.configure_column("LL", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
@@ -85,8 +82,8 @@ def main():
 			gb.configure_column("PV", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=4)
 			gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 			gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
-			gb.configure_column("RF Ref", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
-			gb.configure_column("Range Ref", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
+			gb.configure_column("RF_Ref", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
+			gb.configure_column("Range_Ref", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range_Ref).toFixed(1)+'%'")
 			gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
 			gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
 			go = gb.build()
@@ -99,7 +96,7 @@ def main():
 				update_mode='MODEL_CHANGED', 
 				columns_auto_size_mode='FIT_CONTENTS',
 				theme='alpine',
-				height=None, 
+				height=500, 
 				width='100%',
 				reload_data=False
 				)
@@ -107,27 +104,31 @@ def main():
 			with st.expander("Column explanation"):
 				st.markdown(_messages.message_columns_keyness)
 				
-			selected = grid_response['selected_rows'] 
-			if selected:
-				st.write('Selected rows')
-				df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
-				st.dataframe(df)
+			selected = grid_response['selected_rows']
+
+			if selected is not None:
+				df = pd.DataFrame(selected)
+				n_selected = len(df.index)
+				st.markdown(f"""##### Selected rows:
+				
+				Number of selected tokens: {n_selected}
+				""")
 			
 			st.sidebar.markdown("---")
+
 			with st.sidebar.expander("Filtering and saving"):
 				st.markdown(_messages.message_filters)
-				
-			st.sidebar.markdown(_messages.message_download)
-			if st.sidebar.button("Download"):
-				with st.sidebar:
-					with st.spinner('Creating download link...'):
-						towrite = BytesIO()
-						downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-						towrite.seek(0)  # reset pointer
-						b64 = base64.b64encode(towrite.read()).decode()  # some strings
-						st.success('Link generated!')
-						linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
-						st.markdown(linko, unsafe_allow_html=True)
+
+			with st.sidebar:
+				st.markdown(_messages.message_download)
+				download_file = _handlers.convert_to_excel(df)
+
+				st.download_button(
+					label="Download to Excel",
+					data=download_file,
+					file_name="keywords_tokens.xlsx",
+						mime="application/vnd.ms-excel",
+						)
 			st.sidebar.markdown("---")
 	
 		else:
@@ -135,9 +136,9 @@ def main():
 			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio3", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 			if tag_radio_tags == 'Parts-of-Speech':
-				df = _handlers.load_table('kt_pos', user_session_id)
+				df = con.table("kt_pos", database="target").to_pandas()
 			else:
-				df = _handlers.load_table('kt_ds', user_session_id)
+				df = con.table("kt_ds", database="target").to_polars().filter(pl.col("Tag") != "Untagged").to_pandas()
 	
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -146,15 +147,15 @@ def main():
 				st.markdown(_messages.message_reference_info(metadata_reference))			
 		
 			gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=25) #Add pagination
+			gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 			gb.configure_column("Tag", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 			gb.configure_column("LL", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 			gb.configure_column("LR", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=3)
 			gb.configure_column("PV", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=4)
 			gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
 			gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
-			gb.configure_column("RF Ref", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
-			gb.configure_column("Range Ref", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
+			gb.configure_column("RF_Ref", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
+			gb.configure_column("Range_Ref", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range_Ref).toFixed(1)+'%'")
 			gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
 			gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
 			go = gb.build()
@@ -167,7 +168,7 @@ def main():
 				update_mode='MODEL_CHANGED', 
 				columns_auto_size_mode='FIT_CONTENTS',
 				theme='alpine',
-				height=None, 
+				height=500, 
 				width='100%',
 				reload_data=False
 				)
@@ -175,11 +176,16 @@ def main():
 			with st.expander("Column explanation"):
 				st.markdown(_messages.message_columns_keyness)
 		
-			selected = grid_response['selected_rows'] 
-			if selected:
-				st.write('Selected rows')
-				df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
-				st.dataframe(df)
+			selected = grid_response['selected_rows']
+
+			if selected is not None:
+				df = pd.DataFrame(selected)
+				n_selected = len(df.index)
+				st.markdown(f"""##### Selected rows:
+				
+				Number of selected tokens: {n_selected}
+				""")
+
 				
 			st.sidebar.markdown("---")
 			st.sidebar.markdown(_messages.message_generate_plot)
@@ -195,7 +201,7 @@ def main():
 				base = alt.Chart(df_plot, height={"step": 12}).mark_bar(size=10).encode(
 							x=alt.X('RF', title='Frequency (per 100 tokens)'),
 							y=alt.Y('Corpus:N', title=None, sort=order, axis=alt.Axis(labels=False, ticks=False)),
-							color=alt.Color('Corpus:N', sort=order),
+							color=alt.Color('Corpus:N', sort=order, scale=alt.Scale(scheme='category10')),
 							row=alt.Row('Tag', title=None, header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Mean', order='descending')),
 							tooltip=[
 								alt.Tooltip('Tag'),
@@ -204,22 +210,20 @@ def main():
 				
 				st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
 				st.altair_chart(base, use_container_width=True)
-			
-			st.sidebar.markdown("---")
+		
 			with st.sidebar.expander("Filtering and saving"):
 				st.markdown(_messages.message_filters)
 			
-			st.sidebar.markdown(_messages.message_download)
-			if st.sidebar.button("Download"):
-				with st.sidebar:
-					with st.spinner('Creating download link...'):
-						towrite = BytesIO()
-						downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-						towrite.seek(0)  # reset pointer
-						b64 = base64.b64encode(towrite.read()).decode()  # some strings
-						st.success('Link generated!')
-						linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_frequencies.xlsx">Download Excel file</a>'
-						st.markdown(linko, unsafe_allow_html=True)
+			with st.sidebar:
+				st.markdown(_messages.message_download)
+				download_file = _handlers.convert_to_excel(df)
+
+				st.download_button(
+					label="Download to Excel",
+					data=download_file,
+					file_name="keywords_tags.xlsx",
+						mime="application/vnd.ms-excel",
+						)
 			st.sidebar.markdown("---")
 	
 	else:
@@ -229,49 +233,41 @@ def main():
 		st.sidebar.markdown(_messages.message_generate_table)
 		
 		if st.sidebar.button("Keyness Table"):
-			if session.get('target_path') == None:
+			if session.get('has_target')[0] == False:
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
-			elif session.get('reference_path') == None:
+			elif session.get('has_reference')[0] == False:
 				st.markdown(_warnings.warning_17, unsafe_allow_html=True)
 			else:
 				with st.sidebar:
 					with st.spinner('Generating keywords...'):
-						tp_ref = _handlers.load_corpus_session('reference', session, user_session_id)
-						metadata_reference = _handlers.load_metadata('reference', user_session_id)
-						wc_ref_pos = ds.frequency_table(tp_ref, metadata_reference.get('words'))
-						wc_ref_ds  = ds.frequency_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
-						tc_ref_pos = ds.tags_table(tp_ref, metadata_reference.get('words'))
-						tc_ref_ds  = ds.tags_table(tp_ref, metadata_reference.get('tokens'), count_by='ds')
-						
-						if session.get('tags_table') == False:
-							tp = _handlers.load_corpus_session('target', session, user_session_id)
-							metadata_target = _handlers.load_metadata('target', user_session_id)
-							tc_pos = ds.tags_table(tp, metadata_target.get('words'))
-							tc_ds  = ds.tags_table(tp, metadata_target.get('tokens'), count_by='ds')
-							_handlers.save_table(tc_pos, 'tt_pos', user_session_id)
-							_handlers.save_table(tc_ds, 'tt_ds', user_session_id)
-							_handlers.update_session('tags_table', True, user_session_id)
-						
-						if session.get('freq_table') == False:
-							tp = _handlers.load_corpus_session('target', session, user_session_id)
-							metadata_target = _handlers.load_metadata('target', user_session_id)
-							wc_pos = ds.frequency_table(tp, metadata_target.get('words'))
-							wc_ds  = ds.frequency_table(tp, metadata_target.get('tokens'), count_by='ds')
-							_handlers.save_table(wc_pos, 'ft_pos', user_session_id)
-							_handlers.save_table(wc_ds, 'ft_ds', user_session_id)
-							_handlers.update_session('freq_table', True, user_session_id)
 					
-						kw_pos = ds.keyness_table(_handlers.load_table('ft_pos', user_session_id), wc_ref_pos)
-						kw_ds  = ds.keyness_table(_handlers.load_table('ft_ds', user_session_id), wc_ref_ds,)
-						kt_pos = ds.keyness_table(_handlers.load_table('tt_pos', user_session_id), tc_ref_pos, tags_only=True)
-						kt_ds  = ds.keyness_table(_handlers.load_table('tt_ds', user_session_id), tc_ref_ds, tags_only=True)
-						_handlers.save_table(kw_pos, 'kw_pos', user_session_id)
-						_handlers.save_table(kw_ds, 'kw_ds', user_session_id)
-						_handlers.save_table(kt_pos, 'kt_pos', user_session_id)
-						_handlers.save_table(kt_ds, 'kt_ds', user_session_id)
-						_handlers.update_session('keyness_table', True, user_session_id)
+						wc_tar_pos = con.table("ft_pos", database="target").to_pyarrow_batches(chunk_size=5000)
+						wc_tar_pos = pl.from_arrow(wc_tar_pos)
+						wc_tar_ds = con.table("ft_ds", database="target").to_pyarrow_batches(chunk_size=5000)
+						wc_tar_ds = pl.from_arrow(wc_tar_ds)
+						tc_tar_pos = con.table("tt_pos", database="target").to_polars()
+						tc_tar_ds = con.table("tt_ds", database="target").to_polars()
+
+						wc_ref_pos = con.table("ft_pos", database="reference").to_pyarrow_batches(chunk_size=5000)
+						wc_ref_pos = pl.from_arrow(wc_ref_pos)
+						wc_ref_ds = con.table("ft_ds", database="reference").to_pyarrow_batches(chunk_size=5000)
+						wc_ref_ds = pl.from_arrow(wc_ref_ds)
+						tc_ref_pos = con.table("tt_pos", database="reference").to_polars()
+						tc_ref_ds = con.table("tt_ds", database="reference").to_polars()
+						
+						kw_pos = _analysis.keyness_pl(wc_tar_pos, wc_ref_pos)
+						kw_ds  = _analysis.keyness_pl(wc_tar_ds, wc_ref_ds)
+						kt_pos = _analysis.keyness_pl(tc_tar_pos, tc_ref_pos, tags_only=True)
+						kt_ds  = _analysis.keyness_pl(tc_tar_ds, tc_ref_ds, tags_only=True)
+
+						con.create_table("kw_pos", obj=kw_pos, database="target", overwrite=True)
+						con.create_table("kw_ds", obj=kw_ds, database="target", overwrite=True)
+						con.create_table("kt_pos", obj=kt_pos, database="target", overwrite=True)
+						con.create_table("kt_ds", obj=kt_ds, database="target", overwrite=True)
+
+						_handlers.update_session('keyness_table', True, con)
 						st.success('Keywords generated!')
-						st.experimental_rerun()
+						st.rerun()
 		
 		st.sidebar.markdown("---")		
 

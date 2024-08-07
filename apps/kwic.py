@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-from io import BytesIO
-import pathlib
-from importlib.machinery import SourceFileLoader
+import pandas as pd
+import polars as pl
+import st_aggrid
+import streamlit as st
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
-
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'pandas', 'st_aggrid']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
-
+import categories as _categories
+import states as _states
+from utilities import analysis_functions as _analysis
+from utilities import handlers_database as _handlers
+from utilities import messages as _messages
+from utilities import warnings as _warnings
 
 CATEGORY = _categories.OTHER
 TITLE = "KWIC Tables"
@@ -51,14 +33,27 @@ def main():
 	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 	user_session_id = user_session.session_id
 
-	session = _handlers.load_session(user_session_id)
+	if user_session_id not in st.session_state:
+		st.session_state[user_session_id] = {}
+	try:
+		con = st.session_state[user_session_id]["ibis_conn"]
+	except:
+		con = _handlers.get_db_connection(user_session_id)
+		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
 	
-	if session.get('kwic') == True:
-		
-		df = _handlers.load_table('kwic', user_session_id)	
+	try:
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+	except:
+		_handlers.init_session(con)
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+	
+	if session.get('kwic')[0] == True:
+				
+		df = con.table("kwic", database="target").to_pyarrow_batches(chunk_size=5000)
+		df = pl.from_arrow(df).to_pandas()
 		
 		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=25) #Add pagination
+		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
 		gb.configure_default_column(filter="agTextColumnFilter")
 		gb.configure_column("Doc ID", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
 		gb.configure_column("Pre-Node", type="rightAligned")
@@ -74,46 +69,50 @@ def main():
 			update_mode='MODEL_CHANGED', 
 			columns_auto_size_mode='FIT_CONTENTS',
 			theme='alpine',
-			height=None, 
+			height=500, 
 			width='100%',
 			reload_data=False
 			)
 		
 		selected = grid_response['selected_rows'] 
-		if selected:
-			st.write('Selected rows')
-			df = pd.DataFrame(selected).drop('_selectedRowNodeInfo', axis=1)
-			st.dataframe(df)
+		if selected is not None:
+			df = pd.DataFrame(selected)
+			n_selected = len(df.index)
+			st.markdown(f"""##### Selected rows:
+			   
+			Number of selected tokens: {n_selected}
+			""")
 		
 		with st.sidebar.expander("Filtering and saving"):
 			st.markdown(_messages.message_filters)
 		
-		st.sidebar.markdown(_messages.message_download)
-		
-		if st.sidebar.button("Download"):
-			with st.sidebar:
-				with st.spinner('Creating download link...'):
-					towrite = BytesIO()
-					downloaded_file = df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-					towrite.seek(0)  # reset pointer
-					b64 = base64.b64encode(towrite.read()).decode()  # some strings
-					st.success('Link generated!')
-					linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="kwic.xlsx">Download Excel file</a>'
-					st.markdown(linko, unsafe_allow_html=True)
-		
+		with st.sidebar:
+			st.markdown(_messages.message_download)
+			download_file = _handlers.convert_to_excel(df)
+
+			st.download_button(
+    			label="Download to Excel",
+    			data=download_file,
+    			file_name="kwic.xlsx",
+   					 mime="application/vnd.ms-excel",
+					)
 		st.sidebar.markdown("---")
+		
 		st.sidebar.markdown(_messages.message_reset_table)
 													
 		if st.sidebar.button("Create New KWIC Table"):
-				_handlers.clear_table('kwic', user_session_id)
-				_handlers.update_session('kwic', False, user_session_id)
-				st.experimental_rerun()
+			try:
+				con.drop_table("kwic", database="target")
+			except:
+				pass
+			_handlers.update_session('kwic', False, con)
+			st.rerun()
 		st.sidebar.markdown("---")
 			
 	else:
 		
 		try:
-			metadata_target = _handlers.load_metadata('target', user_session_id)
+			metadata_target = _handlers.load_metadata('target')
 		except:
 			metadata_target = {}
 		
@@ -149,7 +148,7 @@ def main():
 		st.sidebar.markdown("---")
 		st.sidebar.markdown(_messages.message_generate_table)
 		if st.sidebar.button("KWIC"):
-			if session.get('target_path') == None:
+			if session.get('has_target')[0] == False:
 				st.write(_warnings.warning_11, unsafe_allow_html=True)
 			elif node_word == "":
 				st.write(_warnings.warning_14, unsafe_allow_html=True)
@@ -158,14 +157,16 @@ def main():
 			elif len(node_word) > 15:
 				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tp = _handlers.load_corpus_session('target', session, user_session_id)
+				tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
+				tok_pl = pl.from_arrow(tok_pl)
+				
 				with st.sidebar:
 					with st.spinner('Processing KWIC...'):
-						kwic_df = _analysis.kwic_st(tp, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
-				if bool(isinstance(kwic_df, pd.DataFrame)) == True:
-					_handlers.save_table(kwic_df, 'kwic', user_session_id)
-					_handlers.update_session('kwic', True, user_session_id)
-					st.experimental_rerun()
+						kwic_df = _analysis.kwic_pl(tok_pl, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
+				if kwic_df.is_empty() == False:
+					con.create_table("kwic", obj=kwic_df, database="target", overwrite=True)
+					_handlers.update_session('kwic', True, con)
+					st.rerun()
 				else:
 					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
 		st.sidebar.markdown("---")
