@@ -1,3 +1,4 @@
+
 section[data-testid="stSidebar"] div.stButton button {
     background-color: #DE350B;
     color: white;
@@ -10,6 +11,19 @@ section[data-testid="stSidebar"] div.stButton button:focus {
     background-color: #FFF0B3;
     color: black;
 }
+section[data-testid="stSidebar"] div.stDownloadButton button {
+    background-color: #DE350B;
+    color: white;
+}
+section[data-testid="stSidebar"] div.stDownloadButton button:hover {
+    background-color: #FFF0B3;
+    color: black;
+}
+section[data-testid="stSidebar"] div.stDownloadButton button:focus {
+    background-color: #FFF0B3;
+    color: black;
+}
+
 [data-testid="stHorizontalBlock"] div.stButton button:first-child { 
     color: black;
     background-color: #FFF0B3;
@@ -23,3 +37,12 @@ section[data-testid="stSidebar"] div.stButton button:focus {
   align-items: center;
   flex-direction: row;
 }
+
+.reportview-container {
+  margin-top: -2em;
+}
+
+#MainMenu {visibility: hidden;}
+.stDeployButton {display:none;}
+footer {visibility: hidden;}
+#stDecoration {display:none;}
