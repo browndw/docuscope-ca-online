@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,38 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pathlib
 import uuid
 from typing import Union
-from importlib.machinery import SourceFileLoader
 from . import session
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
-
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['streamlit']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
+import streamlit as st
 
 FileContent = Union[str, bytes]
-
 
 def download(name: str, content: FileContent):
     """Create a Streamlit download link to the given file content.

@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,79 +14,71 @@
 
 import base64
 import functools
-import os
+import json
 import pathlib
-import re
+import streamlit as st
 import sys
 import textwrap
-import time
 import warnings
-from importlib.machinery import SourceFileLoader
+
+import states as _states
+import utilities
+import apps as _stable_apps
+import categories as _categories
+from utilities import handlers_database as _handlers
+from utilities import content as _content
+from utilities import messages as _messages
+from _version import __version__
 
 
 HERE = pathlib.Path(__file__).parent.resolve()
-TEMP_DIR = HERE.joinpath("_temp")
 FAVICON = str(HERE.joinpath("_static/docuscope-favicon.ico"))
 TITLE_LOGO = str(HERE.joinpath("_static/docuscope-logo.png"))
 PL_LOGO = str(HERE.joinpath("_static/porpoise_badge.svg"))
 UG_LOGO = str(HERE.joinpath("_static/user_guide.svg"))
 STYLE = str(HERE.joinpath("css/style.css"))
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
-
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['apps', 'categories', 'content', 'handlers', 'states', 'utilities', 'streamlit']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
+SPACY_META = HERE.joinpath("models/en_docusco_spacy/meta.json")
 
 user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 user_session_id = user_session.session_id
 
-_handlers.generate_temp(_states.STATES.items(), user_session_id)
+if user_session_id not in st.session_state:
+    st.session_state[user_session_id] = {}
+
+con = _handlers.get_db_connection(user_session_id)
 
 def index(application_options):
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
 
-    _handlers.cleanup_temp(TEMP_DIR, 1) 
-    
     with open(PL_LOGO, encoding='utf-8', errors='ignore') as f:
         pl_logo_text = f.read()
     b64 = base64.b64encode(pl_logo_text.encode('utf-8')).decode("utf-8")
-    pl_html = r'<a href="https://github.com/browndw/corpus-tagger/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2023 David Brown, Suguru Ishizaki, David Kaufer' % b64
+    pl_html = r'<a href="https://github.com/browndw/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2024 David Brown, Suguru Ishizaki, David Kaufer' % b64
     
     st.markdown(pl_html, unsafe_allow_html=True)
 
     st.markdown(_content.get_img_with_header(TITLE_LOGO), unsafe_allow_html=True)
-        
-    st.markdown("---")
-    with open(UG_LOGO) as f:
-        ug_logo_text = f.read()
-    b64 = base64.b64encode(ug_logo_text.encode('utf-8')).decode("utf-8")
-    ug_html = r'<a href="https://docuscope.github.io/docuscope-cao.html"><img src="data:image/svg+xml;base64,%s"/></a>' % b64
     
-    st.markdown(ug_html, unsafe_allow_html=True)
+    with open(SPACY_META) as json_file:
+        json_data = json.load(json_file)
+    
+    model_name = json_data["name"]
+    model_version = json_data["version"]
+
+    st.markdown(_messages.message_version_info(__version__, model_name, model_version), unsafe_allow_html=True)
+         
+    st.markdown("---")
+    #with open(UG_LOGO) as f:
+        #ug_logo_text = f.read()
+    #b64 = base64.b64encode(ug_logo_text.encode('utf-8')).decode("utf-8")
+    #ug_html = r'<a href="https://docuscope.github.io/docuscope-cao.html"><img src="data:image/svg+xml;base64,%s"/></a>' % b64
+    
+    #st.markdown(ug_html, unsafe_allow_html=True)
     
     st.markdown(_content.message_landing)
-    
+
     _, central_header_column, _ = st.columns((1, 2, 1))
-    
-    #title_filter = central_header_column.text_input("Filter")
-    #pattern = re.compile(f".*{title_filter}.*", re.IGNORECASE)
 
     num_columns = len(_categories.APPLICATION_CATEGORIES_BY_COLUMN.keys())
     columns = st.columns(num_columns)
@@ -125,6 +117,7 @@ def index(application_options):
 def main():
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
+        
     session_state = utilities.session_state(app=_content.get_url_app())
 
     stable_apps = _content._get_apps_from_module(_stable_apps)
@@ -135,19 +128,9 @@ def main():
         for item in application_options.items()
     ]
 
-    try:
-        simple = application_options[session_state.app].SIMPLE
-    except (AttributeError, KeyError):
-        simple = False
-
-    if simple:
-        st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="centered")
-    else:
-        st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="wide")
-        _content.local_css(STYLE)
-
-    application_options = {**stable_apps}
-
+    st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="wide")
+    _content.local_css(STYLE)
+    
     if (
         session_state.app != "index"
         and not session_state.app in application_options.keys()
@@ -193,10 +176,9 @@ def main():
             docstring = textwrap.dedent(f"    {docstring}")
             st.write(docstring)
 
-        if not simple:
-            if st.sidebar.button("Return to All Tools"):
-                _content.swap_app("index")
-            st.sidebar.write("---")
+        if st.sidebar.button("Return to All Tools"):
+            _content.swap_app("index")
+        st.sidebar.write("---")
             
     if session_state.app == "index":
         application_function = functools.partial(

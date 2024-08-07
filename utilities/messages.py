@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,54 +16,62 @@
 # Some populate descriptive content from corpora or sub-corpora.
 # Others populate the results of statistical functions.
 
+
+def message_version_info(ds_version, model_name, model_version):
+	variance_info = f"""<p></p><span style="color:gray">
+	DocuScope CAC version: {ds_version}; spaCy model <a href="https://huggingface.co/browndw/en_docusco_spacy/" target="_blank">{model_name}</a> version: {model_version}
+	</span>
+	"""
+	return(variance_info)
+
 def message_target_info(target_metadata):
-	tokens = target_metadata.get('tokens')
-	words = target_metadata.get('words')
-	ndocs = target_metadata.get('ndocs')
+	tokens_pos = target_metadata.get('tokens_pos')[0]
+	tokens_ds = target_metadata.get('tokens_ds')[0]
+	ndocs = target_metadata.get('ndocs')[0]
 	target_info = f"""##### Target corpus information:
 	
-	Number of tokens in corpus: {tokens}\n    Number of word tokens in corpus: {words}\n    Number of documents in corpus: {ndocs}
+	Number of part-of-speech tokens in corpus: {tokens_pos}\n    Number of DocuScope tokens in corpus: {tokens_ds}\n    Number of documents in corpus: {ndocs}
 	"""
 	return(target_info)
 
 def message_reference_info(reference_metadata):
-	tokens = reference_metadata.get('tokens')
-	words = reference_metadata.get('words')
-	ndocs = reference_metadata.get('ndocs')
+	tokens_pos = reference_metadata.get('tokens_pos')[0]
+	tokens_ds = reference_metadata.get('tokens_ds')[0]
+	ndocs = reference_metadata.get('ndocs')[0]
 	reference_info = f"""##### Reference corpus information:
 	
-	Number of tokens in corpus: {tokens}\n    Number of word tokens in corpus: {words}\n    Number of documents in corpus: {ndocs}
+	Number of part-of-speech tokens in corpus: {tokens_pos}\n    Number of DocuScope tokens in corpus: {tokens_ds}\n    Number of documents in corpus: {ndocs}
 	"""
 	return(reference_info)
 
 def message_target_parts(keyness_parts):
-	t_cats = ', '.join(keyness_parts.get('tar_cats'))
-	tokens = keyness_parts.get('tar_tokens')
-	words = keyness_parts.get('tar_words')
-	ndocs = keyness_parts.get('tar_ndocs')
+	t_cats = keyness_parts[0]
+	tokens_pos = keyness_parts[2]
+	tokens_ds = keyness_parts[4]
+	ndocs = keyness_parts[6]
 	target_info = f"""##### Target corpus information:
 	
-	Document categories: {t_cats}\n    Number of tokens in corpus: {tokens}\n    Number of word tokens in corpus: {words}\n    Number of documents in corpus: {ndocs}
+	Document categories: {t_cats}\n    Part-of-speech tokens: {tokens_pos}\n    DocuScope tokens: {tokens_ds}\n    Documents: {ndocs}
 	"""
 	return(target_info)
 
 def message_reference_parts(keyness_parts):
-	r_cats = ', '.join(keyness_parts.get('ref_cats'))
-	tokens = keyness_parts.get('ref_tokens')
-	words = keyness_parts.get('ref_words')
-	ndocs = keyness_parts.get('ref_ndocs')
+	r_cats = keyness_parts[1]
+	tokens_pos = keyness_parts[3]
+	tokens_ds = keyness_parts[5]
+	ndocs = keyness_parts[7]
 	reference_info = f"""##### Reference corpus information:
 	
-	Document categories: {r_cats}\n    Number of tokens in corpus: {tokens}\n    Number of word tokens in corpus: {words}\n    Number of documents in corpus: {ndocs}
+	Document categories: {r_cats}\n    Part-of-speech tokens: {tokens_pos}\n    DocuScope tokens: {tokens_ds}\n    Documents: {ndocs}
 	"""
 	return(reference_info)
 
 def message_collocation_info(collocation_data):
-	am = str(collocation_data['stat']).upper()
-	span = str(collocation_data['span_l']) + 'L - ' + str(collocation_data['span_r']) + 'R'
+	mi = str(collocation_data[1]).upper()
+	span = collocation_data[2] + 'L - ' + collocation_data[3] + 'R'
 	coll_info = f"""##### Collocate information:
 	
-	Association measure: {am}\n    Span: {span}\n    Node word: {collocation_data['node']}
+	Association measure: {mi}\n    Span: {span}\n    Node word: {collocation_data[0]}
 	"""
 	return(coll_info)
 
@@ -109,14 +117,24 @@ def message_group_info(grp_a, grp_b):
 # Static messages that populates the main containers of the apps.
 
 message_load = """
-    * From this page you can **load a saved corpus** or **process a new one** by selecting the desired (**.txt**) files. You can also reset your target corpus or manage any corpora you have saved.
-    * Once you have loaded a target corpus, you can add a reference corpus for comparison. Also note that you can encode metadata into your filenames, which can used for further analysis. (See naming tips.)
+	* From this page you can **load a saved corpus** or **process a new one** by selecting the desired (**.txt**) files. You can also reset your target corpus or manage any corpora you have saved.
+	* Once you have loaded a target corpus, you can add a **reference corpus** for comparison. Also note that you can encode metadata into your filenames, which can used for further analysis. (See the **About new corpora** expander.)
 	"""
 
-message_load_target = """
-    * Use the widget to select the files you'd like process, either by browsing for them or dragging-and-dropping.
-    * Once you've selected your files, click the **UPLOAD** button and a processing button will appear in the sidebar.
-    * After processing, you will have the option to save your corpus to use for future analysis. This is not necessary, but may be useful if you plan to revisit the data.\n
+message_load_target_internal = """
+    :point_left: Select a saved corpus from the lists in the sidebar.\n
+    :exclamation:  Note that corpora are organized by model with which they were tagged.
+    """
+
+message_load_target_external = """
+    :point_down: Use the widget to select the corpus you'd like to load, either by browsing for them or dragging-and-dropping.\n
+    :trackball: Once you've selected your file, click the **UPLOAD** button and a processing button will appear in the sidebar.
+    """
+
+message_load_target_new = """
+    :point_down: Use the widget to select the files you'd like process, either by browsing for them or dragging-and-dropping.\n
+    :trackball: Once you've selected your files, click the **UPLOAD** button and a processing button will appear in the sidebar.\n
+    :file_folder: After processing, you will have the option to save your corpus to use for future analysis. This is not necessary, but may be useful if you plan to revisit the data.\n
     :exclamation: Don't forget to select your model from the sidebar if you are processing a new corpus.\n
     :exclamation: Be sure that all file names are unique.\n
     :alarm_clock: Processing times may vary, but you can expect the initial corpus processing to take roughly 1 minute for every 1 million words.
@@ -128,10 +146,6 @@ message_load_reference = """
     :exclamation: Your reference will be tagged with the same model as your target corpus.\n
     :exclamation: Be sure that all file names are unique and that they don't share names with your target corpus.\n
     :alarm_clock: Processing times may vary, but you can expect the initial corpus processing to take roughly 1 minute for every 1 million words.
-    """
-message_select_target = """
-    :point_left: Select a saved corpus from the lists in the sidebar.\n
-    :exclamation:  Note that corpora are organized by model with which they were tagged.
     """
 
 message_select_reference = """
@@ -145,11 +159,11 @@ message_tables = """
     """
 
 message_ngrams = """
-	:point_left: N-grams can be created using different options:\n
+	:point_down: N-grams/Clusters can be created using different options:\n
+	* You can generate a table of the most common 1-, 2-, 3-, and 4-grams\n
 	* You can input a word or string, specify whether that input should match a token completely or partially, and choose which tagset to return.
-	* Alternatively, you can select a tag (like **NN1** or **AcademicTerms**) as the basis for your n-grams.
-	* For either option, you must select the size of your n-grams (2-grams, 3-grams, or 4-grams) and the slot where your chosen word or tag should appear (on the left, in the middle, or on the right).\n
-	:warning: Generating n-grams can be computationally intensive if you have a large corpus and are basing your n-grams on a highly frequent word or tag like a determiner.
+	* Alternatively, you can select a tag (like **NN1** or **AcademicTerms**) as the basis for your clusters.
+	* For clusters, you must select their span and the slot where your chosen word or tag should appear (on the left, in the middle, or on the right).
 	"""
 
 message_collocations = """
@@ -173,13 +187,8 @@ message_keyness = """
 	"""
 
 message_plotting = """
-	:point_left: To use this page, first generate a **document term matrix**. From a DTM of **normalized frequencies**, you can:\n
-	* Create boxplots and scatterplots of frequencies.
-	* Group variables in boxplots if you have loaded metadata.
-	* Generate descriptive statistics.\n
-	:triangular_ruler: If you choose to **scale** frequencies or use **tf-idf**, you can:\n
-	* Carry out principal component analysis (**PCA**).
-	* Highlight groups in PCA scatterplots if you have loaded metadata.
+	:heavy_exclamation_mark: To use this page, you must first process a target corpus.\n
+	:heavy_plus_sign: You can also increase your plotting options by processing target corpus metadata.
 	"""
 
 message_corpus_parts = """
@@ -221,8 +230,7 @@ message_single_document = """
 
 message_download = """
 	### Download
-    \nClick the button to genenerate a download link.
-    You can use the checkboxes to download selected rows.
+    \nYou can use the checkboxes to download selected rows.
     With no rows selected, the entire table will be prepared for download.
     """
 
@@ -251,7 +259,7 @@ message_reset_table = """
 
 # Static messages that populate the expanders.
 
-message_saved_corpora = """
+message_internal_corpora = """
 	DocuScope CAC comes with some pre-processed corpus data to get you started.
 	There is a sub-sample of the [Michigan Corpus of Upper-Level Student Papers (MICUSP)](https://elicorpora.info/main).
 	The sub-sample contains 10 papers from 17 disciplines.
@@ -261,6 +269,15 @@ message_saved_corpora = """
 	You can see the metadata (as well as the full subject area names) on the [GitHub repository](https://github.com/browndw/corpus-tagger#elesevier-corpus).\n\n
 	If you are using the MICUSP data for academic work or for publication, [please cite it](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=U8wDvfIAAAAJ&citation_for_view=U8wDvfIAAAAJ:roLk4NBRz8UC).
 	"""
+
+message_external_corpora = """
+	An external corpus is one that has already been processed by DocuScope CAC and downloaded to your computer.
+	Most often, you would do this to save time. Processing is the most computationally intensive part of preparing the data.
+	But you also might do this to easily share your data with others.
+	Finally you might want to run you own experiments outside of the tool.
+	The corpus file is in a specialized format called **parquet**.
+	A parquet file can read into coding environments like Python and R using packages like **polars** and **arrow**.
+"""
 
 message_naming = """
     Files must be in a \*.txt format. If you are preparing files for the first time,

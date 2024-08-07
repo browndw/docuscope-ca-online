@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,37 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-from io import BytesIO
-import pathlib
-import re
-import zipfile
-from importlib.machinery import SourceFileLoader
+import polars as pl
+import streamlit as st
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
-
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'docuscospacy']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
-
+import categories as _categories
+import states as _states
+from utilities import handlers_database as _handlers
+from utilities import messages as _messages
 	
 CATEGORY = _categories.OTHER
 TITLE = "Download Tagged Files"
@@ -53,53 +29,44 @@ def main():
 	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 	user_session_id = user_session.session_id
 
-	session = _handlers.load_session(user_session_id)
+	if user_session_id not in st.session_state:
+		st.session_state[user_session_id] = {}
+	try:
+		con = st.session_state[user_session_id]["ibis_conn"]
+	except:
+		con = _handlers.get_db_connection(user_session_id)
+		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
+
+	try:
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+	except:
+		_handlers.init_session(con)
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
 
 	st.markdown(_messages.message_download_tagged)
 	
 	st.sidebar.markdown("### Tagset to embed")
-	tag_radio = st.sidebar.radio("Select tagset:", ("Parts-of-Speech", "DocuScope"), horizontal=True)
+	download_radio = st.sidebar.radio("Select tagset:", ("Parts-of-Speech", "DocuScope"), horizontal=True)
 
-	if tag_radio == 'Parts-of-Speech':
+	if download_radio == 'Parts-of-Speech':
 		tagset = 'pos'
 	else:
 		tagset = 'ds'
 
-	if st.sidebar.button("Download Tagged Files"):
-		if session.get('target_path') == None:
-			st.markdown(_warnings.warning_11, unsafe_allow_html=True)
-		else:
-			with st.sidebar:
-				with st.spinner('Creating download link...'):
-					try:
-						tp = _handlers.load_corpus_session('target', session, user_session_id)
-					except:
-						st.markdown(_warnings.warning_11, unsafe_allow_html=True)
-					
-					zip_buf = BytesIO()
-					with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as file_zip:
-						for key in tp.keys():
-							doc_id = re.sub(r'\.txt$', '', key)
-							df = ds.tag_ruler(tp, key, count_by=tagset)
-							df['Token'] = df['Token'].str.strip()
-							df['Token'] = df['Token'].str.replace(' ','_')
-							if tagset == 'ds':
-								df['Tag'] = df['Tag'].str.replace('Untagged','')
-							else:
-								df['Tag'] = df['Tag'].str.replace(r'^Y','')
-								df['Tag'] = df['Tag'].str.replace(r'^FU','')
-							df['Token'] = df['Token'] + '|' + df['Tag']
-							df['Token'] = df['Token'].str.replace(r'\|$', '')
-							doc = ' '.join(df['Token'])
-							file_zip.writestr(doc_id + "_tagged"+ ".txt", doc)
-		    				
-					zip_buf.seek(0)
-					#pass it to front end for download
-					b64 = base64.b64encode(zip_buf.read()).decode()
-					del zip_buf
-					st.success('Link generated!')
-					href = f'<a href=\"data:file/zip;base64,{b64}\" download="tagged_files.zip">Download tagged files</a>'
-					st.markdown(href, unsafe_allow_html=True)
+	if session.get('has_target')[0] == True:
+		tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
+		tok_pl = pl.from_arrow(tok_pl)
+
+		with st.sidebar:
+			download_file = _handlers.convert_to_zip(tok_pl, tagset)
+
+			st.download_button(
+    			label="Download to Zip",
+    			data=download_file,
+    			file_name="tagged_files.zip",
+   					 mime="application/zip",
+					)
+
 	
 	st.sidebar.markdown("---")
 

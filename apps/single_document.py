@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-from io import BytesIO
+import altair as alt
+import pandas as pd
 import pathlib
-from importlib.machinery import SourceFileLoader
+import polars as pl
+import streamlit as st
+import streamlit.components.v1 as components
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
+import categories as _categories
+import states as _states
+from utilities import analysis_functions as _analysis
+from utilities import handlers_database as _handlers
+from utilities import messages as _messages
+from utilities import warnings as _warnings
 
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'streamlit', 'altair', 'docx', 'docuscospacy', 'pandas']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
-    
 hex_highlights = ['#5fb7ca', '#e35be5', '#ffc701', '#fe5b05', '#cb7d60']
     
 CATEGORY = _categories.OTHER
@@ -52,12 +37,24 @@ def main():
 	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 	user_session_id = user_session.session_id
 
-	session = _handlers.load_session(user_session_id)
+	if user_session_id not in st.session_state:
+		st.session_state[user_session_id] = {}
+	try:
+		con = st.session_state[user_session_id]["ibis_conn"]
+	except:
+		con = _handlers.get_db_connection(user_session_id)
+		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
 
-	if bool(session['doc']) == True:
+	try:
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+	except:
+		_handlers.init_session(con)
+		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+
+	if session.get('doc')[0] == True:
 	
 		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
-		metadata_target = _handlers.load_metadata('target', user_session_id)
+		metadata_target = _handlers.load_metadata('target', con)
 
 		st.sidebar.markdown("### Tagset")
 
@@ -71,32 +68,56 @@ def main():
 		if tag_radio == 'Parts-of-Speech':
 			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)
 			if tag_type == 'General':
-				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Noun', 'Verb', 'Adjective', 'Adverb', 'Pronoun', 'Preposition', 'Conjunction'], on_change = _handlers.update_tags(session['doc']['html_simple'], user_session_id), key=f"tags_{user_session_id}")
+				tag_loc = con.table("doc_simple", database="target").to_polars()
+				html_simple = ''.join(tag_loc.get_column("Text").to_list())
+				doc_key = tag_loc.get_column("doc_id").unique().to_list()
+
+				tag_list = st.sidebar.multiselect('Select tags to highlight', ['Adjective', 'Adverb', 'Conjunction', 'NounCommon', 'NounOther', 'Preposition', 'Pronoun', 'VerbBe', 'VerbLex', 'VerbOther'], on_change = _handlers.update_tags(html_simple, user_session_id), key=f"tags_{user_session_id}")
 				tag_colors = hex_highlights[:len(tag_list)]
 				tag_html = zip(tag_colors, tag_list)
 				tag_html = list(map('">'.join, tag_html))
 				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 				tag_html = '; '.join(tag_html)
-				tag_loc = _handlers.load_table('doc_simple', user_session_id)
-				df = session['doc']['dc_simple']
+				df = (tag_loc
+					.filter(pl.col("Tag") != "Other")
+					.group_by("Tag").len("AF")
+					.with_columns(pl.col("AF").truediv(pl.sum("AF")).mul(100).alias("RF"))
+					.sort(["AF", "Tag"], descending=[True, False])
+					).to_pandas()
 			else:
-				tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_pos'], on_change = _handlers.update_tags(session['doc']['html_pos'], user_session_id), key=f"tags_{user_session_id}")
+				tag_loc = con.table("doc_pos", database="target").to_polars()
+				html_pos = ''.join(tag_loc.get_column("Text").to_list())
+				doc_key = tag_loc.get_column("doc_id").unique().to_list()
+				
+				tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target.get('tags_pos')[0]['tags'], on_change = _handlers.update_tags(html_pos, user_session_id), key=f"tags_{user_session_id}")
 				tag_colors = hex_highlights[:len(tag_list)]
 				tag_html = zip(tag_colors, tag_list)
 				tag_html = list(map('">'.join, tag_html))
 				tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 				tag_html = '; '.join(tag_html)
-				tag_loc = _handlers.load_table('doc_pos', user_session_id)
-				df = session['doc']['dc_pos']
+				df = (tag_loc
+					.filter(pl.col("Tag") != "Y")
+					.group_by("Tag").len("AF")
+					.with_columns(pl.col("AF").truediv(pl.sum("AF")).mul(100).alias("RF"))
+					.sort(["AF", "Tag"], descending=[True, False])
+					).to_pandas()
 		else:
-			tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target['tags_ds'], on_change = _handlers.update_tags(session['doc']['html_ds'], user_session_id), key=f"tags_{user_session_id}")
+			tag_loc = con.table("doc_ds", database="target").to_polars()
+			html_ds = ''.join(tag_loc.get_column("Text").to_list())
+			doc_key = tag_loc.get_column("doc_id").unique().to_list()[0]
+
+			tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target.get('tags_ds')[0]['tags'], on_change = _handlers.update_tags(html_ds, user_session_id), key=f"tags_{user_session_id}")
 			tag_colors = hex_highlights[:len(tag_list)]
 			tag_html = zip(tag_colors, tag_list)
 			tag_html = list(map('">'.join, tag_html))
 			tag_html = ['<span style="background-color: '+ item + '</span>' for item in tag_html]
 			tag_html = '; '.join(tag_html)
-			tag_loc = _handlers.load_table('doc_ds', user_session_id)
-			df = session['doc']['dc_ds']
+			df = (tag_loc
+				.filter(pl.col("Tag") != "Untagged")
+				.group_by("Tag").len("AF")
+				.with_columns(pl.col("AF").truediv(pl.sum("AF")).mul(100).alias("RF"))
+				.sort(["AF", "Tag"], descending=[True, False])
+				).to_pandas()
 		
 		if len(tag_list) == 5:
 			st.sidebar.markdown(':warning: You can hightlight a maximum of 5 tags.')
@@ -111,7 +132,7 @@ def main():
 					""")
 		
 		st.markdown(f"""
-					###  {session['doc']['doc_key']}
+					###  {doc_key[0]}
 					""")
 
 		if st.sidebar.button("Tag Density Plot"):
@@ -129,7 +150,7 @@ def main():
 				plot_colors = plot_colors.sort_values(by=['Tag'])
 				plot_colors = plot_colors['Color'].unique()
 				
-				df_plot = tag_loc.copy()
+				df_plot = tag_loc.to_pandas()
 				df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
 				df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
 				
@@ -151,44 +172,23 @@ def main():
 		if 'html_str' not in st.session_state[user_session_id]:
 			st.session_state[user_session_id]['html_str'] = ''
 		
-		st.components.v1.html(st.session_state[user_session_id]['html_str'], height=500, scrolling=True)
+		components.html(st.session_state[user_session_id]['html_str'], height=500, scrolling=True)
 		
-		st.dataframe(df)
+		st.dataframe(df, hide_index=True)
 		
 		st.sidebar.markdown("---")
-		st.sidebar.markdown(_messages.message_download_dtm)
-		
-		if st.sidebar.button("Download"):
-			with st.sidebar:
-				with st.spinner('Creating download link...'):
-					doc_html = st.session_state[user_session_id]['html_str'].split('</style>')
-					style_sheet_str = doc_html[0] + '</style>'
-					html_str = doc_html[1]
-					doc_html = '<!DOCTYPE html><html><head>' + style_sheet_str + '</head><body>' + tag_html + '<br><br>' + html_str + '</body></html>'
-					downloaded_file = docx.Document()
-					downloaded_file.add_heading(session['doc']['doc_key'])
-					downloaded_file.add_heading('Table of tag frequencies:', 3)
-					#add counts table
-					df['RF'] = df.RF.round(2)
-					t = downloaded_file.add_table(df.shape[0]+1, df.shape[1])
-					# add the header rows.
-					for j in range(df.shape[-1]):
-						t.cell(0,j).text = df.columns[j]
-					# add the rest of the data frame
-					for i in range(df.shape[0]):
-						for j in range(df.shape[-1]):
-							t.cell(i+1,j).text = str(df.values[i,j])
-					t.style = 'LightShading-Accent1'
-					downloaded_file.add_heading('Highlighted tags:', 3)
-					#add html
-					_analysis.add_alt_chunk(downloaded_file, doc_html)
-					towrite = BytesIO()
-					downloaded_file.save(towrite)
-					towrite.seek(0)  # reset pointer
-					b64 = base64.b64encode(towrite.read()).decode()
-					st.success('Link generated!')
-					linko= f'<a href="data:vnd.openxmlformats-officedocument.wordprocessingml.document;base64,{b64}" download="document_tags.docx">Download Word file</a>'
-					st.markdown(linko, unsafe_allow_html=True)
+		with st.sidebar:
+			download_file = _handlers.convert_to_word(st.session_state[user_session_id]['html_str'],
+											 tag_html,
+											 doc_key,
+											 df)
+
+			st.download_button(
+    			label="Download to Word",
+    			data=download_file,
+    			file_name="document_tags.docx",
+   					 mime="docx",
+					)
 		
 		st.sidebar.markdown("---")
 		
@@ -198,13 +198,22 @@ def main():
 							""")
 		if st.sidebar.button("Select a new document"):
 			_TAGS = f"tags_{user_session_id}"
-			_handlers.clear_table('doc_simple', user_session_id)
-			_handlers.clear_table('doc_pos', user_session_id)
-			_handlers.clear_table('doc_ds', user_session_id)
-			_handlers.update_session('doc', dict(), user_session_id)
+			try:
+				con.drop_table("doc_simple", database="target")
+			except:
+				pass
+			try:
+				con.drop_table("doc_pos", database="target")
+			except:
+				pass
+			try:
+				con.drop_table("doc_ds", database="target")
+			except:
+				pass
+			_handlers.update_session('doc', False, con)
 			if _TAGS in st.session_state:
 				del st.session_state[_TAGS]
-			st.experimental_rerun()
+			st.rerun()
 
 		st.sidebar.markdown("---")
 			
@@ -213,44 +222,33 @@ def main():
 		st.markdown(_messages.message_single_document)
 		
 		try:
-			metadata_target = _handlers.load_metadata('target', user_session_id)
+			metadata_target = _handlers.load_metadata('target', con)
 		except:
-			metadata_target = {}
+			pass
 		
 		st.sidebar.markdown("### Choose document")
 		st.sidebar.write("Use the menus to select the tags you would like to highlight.")		
 
-		if 'docids' in metadata_target.keys():
-			doc_key = st.sidebar.selectbox("Select document to view:", (sorted(metadata_target['docids'])))
+		if session.get('has_target')[0] == True:
+			doc_key = st.sidebar.selectbox("Select document to view:", (sorted(metadata_target.get('docids')[0]['ids'])))
 		else:
 			doc_key = st.sidebar.selectbox("Select document to view:", (['No documents to view']))
 
 		if st.sidebar.button("Process Document"):
-			if session.get('target_path') == None:
+			if session.get('has_target')[0] == False:
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			else:
-				tp = _handlers.load_corpus_session('target', session, user_session_id)
-				doc_pos = ds.tag_ruler(tp, doc_key, count_by='pos')
-				doc_simple = _analysis.simplify_span(doc_pos)
-				doc_ds = ds.tag_ruler(tp, doc_key, count_by='ds')
+				tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
+				tok_pl = pl.from_arrow(tok_pl)
 
-				doc_tokens = len(doc_pos.index)
-				doc_words = len(doc_pos[doc_pos.Tag != 'Y'])
-				dc_pos = _analysis.doc_counts(doc_pos, doc_words, count_by='pos')
-				dc_simple = _analysis.simplify_counts(dc_pos, doc_words)
-				dc_ds = _analysis.doc_counts(doc_ds, doc_tokens, count_by='ds')
-
-				html_pos = _analysis.html_build(tp, doc_key, count_by='pos')
-				html_simple = _analysis.html_simplify(html_pos)
-				html_ds = _analysis.html_build(tp, doc_key, count_by='ds')
+				doc_pos, doc_simple, doc_ds = _analysis.html_build_pl(tok_pl, doc_key)
 				
-				_handlers.save_table(doc_pos, 'doc_pos', user_session_id)
-				_handlers.save_table(doc_simple, 'doc_simple', user_session_id)
-				_handlers.save_table(doc_ds, 'doc_ds', user_session_id)
-
-				_handlers.update_doc(dc_pos, dc_simple, dc_ds, html_pos, html_simple, html_ds, doc_key, user_session_id)
+				con.create_table("doc_pos", obj=doc_pos, database="target", overwrite=True)
+				con.create_table("doc_simple", obj=doc_simple, database="target", overwrite=True)
+				con.create_table("doc_ds", obj=doc_ds, database="target", overwrite=True)
+				_handlers.update_session('doc', True, con)
 				
-				st.experimental_rerun()
+				st.rerun()
 
 if __name__ == "__main__":
     main()

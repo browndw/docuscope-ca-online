@@ -4,3 +4,7 @@ backgroundColor="#FFFFFF"
 secondaryBackgroundColor="#EBECF0"
 textColor="#262730"
 font="sans serif"
+
+[server]
+enableXsrfProtection = false
+enableCORS = false

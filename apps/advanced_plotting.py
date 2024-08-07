@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-from io import BytesIO
-import pathlib
-from importlib.machinery import SourceFileLoader
+import altair as alt
+import pandas as pd
+import polars as pl
+import streamlit as st
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
-
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['analysis', 'categories', 'handlers', 'messages', 'states', 'warnings', 'altair', 'streamlit', 'docuscospacy', 'numpy', 'pandas']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
-
+import categories as _categories
+import states as _states
+from utilities import analysis_functions as _analysis
+from utilities import handlers_database as _handlers
+from utilities import messages as _messages
+from utilities import warnings as _warnings
 
 CATEGORY = _categories.OTHER
 TITLE = "Advanced Plotting"
@@ -51,120 +33,267 @@ def main():
 	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 	user_session_id = user_session.session_id
 
-	session = _handlers.load_session(user_session_id)
+	if user_session_id not in st.session_state:
+		st.session_state[user_session_id] = {}
+	try:
+		con = st.session_state[user_session_id]["ibis_conn"]
+	except:
+		con = _handlers.get_db_connection(user_session_id)
+		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
+
+	session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+
+	try:
+		metadata_target = _handlers.load_metadata('target', con)
+	except:
+		pass
+
+	st.markdown(_messages.message_plotting)
+		
+	plot_type = st.radio("What kind of plot would you like to make?",
+					["Boxplot", "Scatterplot", "PCA"],
+					captions=[":package: Boxplots of normalized tag frequencies with grouping variables (if you've processed corpus metadata).",
+					":sparkles: Scatterplots of normalized tag frequencies with grouping variables (if you've processed corpus metadata).",
+					":triangular_ruler: Principal component analysis from scaled tag frequences with highlighting for groups (if you've processed corpus metadata)."], 
+					horizontal=False,
+					index=None)
+
 	
-	if  bool(session['dtm']) == True:
+	if  plot_type == "Boxplot"and session.get('has_target')[0] == True:
 		
-		metadata_target = _handlers.load_metadata('target', user_session_id)
-		
+		_handlers.update_session('pca', False, con)
 		st.sidebar.markdown("### Tagset")
 		
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
-	
-		if session['dtm']['units'] == 'norm':
-			if tag_radio_tokens == 'Parts-of-Speech':
-				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
-				if tag_type == 'General':
-					df = _handlers.load_table('dtm_simple', user_session_id)
-				else:
-					df = _handlers.load_table('dtm_pos', user_session_id)
-			else:
-				df = _handlers.load_table('dtm_ds', user_session_id)
-				tag_type = None
-		
-		else:
-			if tag_radio_tokens == 'Parts-of-Speech':
-				df = _handlers.load_table('dtm_pos', user_session_id)
-			else:
-				df = _handlers.load_table('dtm_ds', user_session_id)
-	
-		st.dataframe(df)	
-		
-		st.markdown("""---""")
-		
-		if session['dtm']['units'] == 'norm':
-			cats = list(df.columns)
-			st.sidebar.markdown("---")
-			st.sidebar.markdown("### Boxplots")
-			box_vals = st.sidebar.multiselect("Select variables for plotting:", (cats))
-			if st.sidebar.button("Boxplots of Frequencies"):
-				#clear any pca data
-				_handlers.update_session('pca', dict(), user_session_id)
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
 
-				if len(box_vals) == 0:
-					st.markdown(_warnings.warning_18, unsafe_allow_html=True)
-				
-				elif len(box_vals) > 0:
-					df_plot, stats, cols = _analysis.boxplots(df, box_vals, tag_radio_tokens, tag_type, grp_a = None, grp_b = None)
-						
-					base = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
-	    				x = alt.X('RF', title='Frequency (per 100 tokens)'),
-	    				y = alt.Y('Tag', sort=cols, title='')
-						)
-						
-					st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
-					st.altair_chart(base, use_container_width=True)
-					
-					st.markdown(_messages.message_stats_info(stats))				
+		if tag_radio_tokens == 'Parts-of-Speech':
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+			if tag_type == 'General':
+				df = con.table("dtm_pos", database="target").to_polars()
+				df = _analysis.dtm_simplify_pl(df)
+
+			elif tag_type == 'Specific':
+				df = con.table("dtm_pos", database="target").to_polars()
+		
+		elif tag_radio_tokens == 'DocuScope':
+			df = con.table("dtm_ds", database="target").to_polars()
+			tag_type = None
+		
+		st.sidebar.markdown("---")
+
+		st.markdown("""---""")
+
+		by_group = st.toggle("Plot using grouping variables.")
+		
+		if df.height == 0 or df is None:
+			cats = []
+		elif df.height > 0:
+			to_drop = ['doc_id','Other','FU','Untagged']
+			cats = sorted(list(df.drop([x for x in to_drop if x in df.columns]).columns))
+
+		if by_group:
+			if session['has_meta'][0] == False:
+				st.markdown(_warnings.warning_21, unsafe_allow_html=True)
 			
-			if session['has_meta'] == True:
+			else:
+				st.sidebar.markdown("### Variables")
+				box_vals = st.sidebar.multiselect("Select variables for plotting:", (cats))
+
 				st.sidebar.markdown("---")
-				st.sidebar.markdown('### Add grouping variables')
+				st.sidebar.markdown('### Grouping variables')
 				st.sidebar.markdown("Select grouping variables from your metadata and click the button to generate boxplots of frequencies.")
 				st.sidebar.markdown('#### Group A')
-				st.session_state[user_session_id]['grpa'] = st.sidebar.multiselect("Select categories for group A:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_grpa(user_session_id), key=f"grpa_{user_session_id}")
+				st.session_state[user_session_id]['grpa'] = st.sidebar.multiselect("Select categories for group A:", (sorted(set(metadata_target.get('doccats')[0]['cats']))), on_change = _handlers.update_grpa(user_session_id), key=f"grpa_{user_session_id}")
 				
 				st.sidebar.markdown('#### Group B')
-				st.session_state[user_session_id]['grpb'] = st.sidebar.multiselect("Select categories for group B:", (sorted(set(metadata_target['doccats']))), on_change = _handlers.update_grpb(user_session_id), key=f"grpb_{user_session_id}")
+				st.session_state[user_session_id]['grpb'] = st.sidebar.multiselect("Select categories for group B:", (sorted(set(metadata_target.get('doccats')[0]['cats']))), on_change = _handlers.update_grpb(user_session_id), key=f"grpb_{user_session_id}")
+				
 				if st.sidebar.button("Boxplots of Frequencies by Group"):
 					#clear any pca data
-					_handlers.update_session('pca', dict(), user_session_id)
+					#_handlers.update_session('pca', dict())
 
 					if len(box_vals) == 0:
 						st.markdown(_warnings.warning_19, unsafe_allow_html=True)
 					
 					elif len(box_vals) > 0:
-						grpa_list = [item + "_" for item in list(st.session_state[user_session_id]['grpa'])]
-						grpb_list = [item + "_" for item in list(st.session_state[user_session_id]['grpb'])]
+						grpa_list = list(st.session_state[user_session_id]['grpa'])
+						grpb_list = list(st.session_state[user_session_id]['grpb'])
+						
 						if len(grpb_list) == 0 or len(grpa_list) == 0:
 							st.markdown(_warnings.warning_20, unsafe_allow_html=True)
 						
 						else:
-							df_plot, stats = _analysis.boxplots(df, box_vals, tag_radio_tokens, tag_type, grp_a = grpa_list, grp_b = grpb_list)
+							df_plot = _analysis.dtm_weight_pl(df)
+							df_plot = _analysis.boxplots_pl(df_plot, box_vals, grp_a = grpa_list, grp_b = grpb_list)
 
-							plot = alt.Chart(df_plot).mark_boxplot(ticks=True).encode(
-			    				alt.X('RF', title='Frequency (per 100 tokens)'),
-			    				alt.Y('Group', title='', axis=alt.Axis(labels=False, ticks=False)),
-			    				alt.Color('Group'),
-			    					row=alt.Row('Tag', title='', header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Median', order='descending'))
+							plot = alt.Chart(df_plot.to_pandas()).mark_boxplot(ticks=True).encode(
+								alt.X('RF', title='Frequency (per 100 tokens)'),
+								alt.Y('Group', title='', axis=alt.Axis(labels=False, ticks=False)),
+								alt.Color('Group', scale=alt.Scale(scheme='category10')),
+									row=alt.Row('Tag', title='', header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Median', order='descending'))
 									).configure_facet(
 									spacing=10
 									).configure_view(
 									stroke=None
-								).configure_legend(orient='top')
+								).configure_legend(orient='top', direction='vertical')
 							
 							st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
-							st.altair_chart(plot, use_container_width=True)					
-							
-							st.markdown(_messages.message_group_info(grpa_list, grpb_list))
-							
-							st.markdown(_messages.message_stats_info(stats))
-								
-			st.sidebar.markdown("""---""") 
-			st.sidebar.markdown("### Scatterplots")
+							st.altair_chart(plot)
+
+							stats = (df_plot
+									.group_by(["Group", "Tag"])
+									.agg(
+										pl.len().alias("count"),
+										pl.col("RF").mean().alias("mean"),
+										pl.col("RF").median().alias("median"),
+										pl.col("RF").std().alias("std"),
+										pl.col("RF").min().alias("min"),
+										pl.col("RF").quantile(0.25).alias("25%"),
+										pl.col("RF").quantile(0.5).alias("50%"),
+										pl.col("RF").quantile(0.75).alias("75%"),
+										pl.col("RF").max().alias("max")
+										)
+									.sort(["Tag", "Group"])
+									)			
+														
+							st.markdown("##### Descriptive statistics:")
+							st.dataframe(stats, hide_index=True)
+
+				st.sidebar.markdown("---")
+		
+		else:
+			st.sidebar.markdown("### Variables")
+			box_vals = st.sidebar.multiselect("Select variables for plotting:", (cats))
+			if st.sidebar.button("Boxplots of Frequencies"):
+				#clear any pca data
+				#_handlers.update_session('pca', dict())
+
+				if len(box_vals) == 0:
+					st.markdown(_warnings.warning_18, unsafe_allow_html=True)
+				
+				elif len(box_vals) > 0:
+					df_plot = _analysis.dtm_weight_pl(df)
+					df_plot = _analysis.boxplots_pl(df_plot, box_vals, grp_a = None, grp_b = None)
+						
+					base = alt.Chart(df_plot.to_pandas()).mark_boxplot(ticks=True).encode(
+						alt.Color(scale=alt.Scale(scheme='category10')),
+						x = alt.X('RF', title='Frequency (per 100 tokens)'),
+						row=alt.Row('Tag', title='', header=alt.Header(orient='left', labelAngle=0, labelAlign='left'), sort=alt.SortField(field='Median', order='descending'))
+						).configure_facet(
+									spacing=10
+									).configure_view(
+									stroke=None
+								)
+						
+					st.markdown(_messages.message_disable_full, unsafe_allow_html=True)
+					st.altair_chart(base)
+
+					stats = (df_plot
+			  					.group_by(["Tag"])
+								.agg(
+									pl.len().alias("count"),
+									pl.col("RF").mean().alias("mean"),
+									pl.col("RF").median().alias("median"),
+									pl.col("RF").std().alias("std"),
+									pl.col("RF").min().alias("min"),
+									pl.col("RF").quantile(0.25).alias("25%"),
+									pl.col("RF").quantile(0.5).alias("50%"),
+									pl.col("RF").quantile(0.75).alias("75%"),
+									pl.col("RF").max().alias("max")
+									)
+								.sort("Tag")
+								)
+					
+					st.markdown("##### Descriptive statistics:")
+					st.dataframe(stats, hide_index=True)
+
+		st.sidebar.markdown("---")
+	
+	elif plot_type == "Scatterplot" and session.get('has_target')[0] == True:
+
+		_handlers.update_session('pca', False, con)		
+		st.sidebar.markdown("### Tagset")
+		
+		with st.sidebar.expander("About general tags"):
+			st.markdown(_messages.message_general_tags)		
+
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+		
+		if tag_radio_tokens == 'Parts-of-Speech':
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+			if tag_type == 'General':
+				df = con.table("dtm_pos", database="target").to_polars()
+				df = _analysis.dtm_simplify_pl(df)
+
+			elif tag_type == 'Specific':
+				df = con.table("dtm_pos", database="target").to_polars()
+		
+		elif tag_radio_tokens == 'DocuScope':
+			df = con.table("dtm_ds", database="target").to_polars()
+			tag_type = None
+		
+		st.sidebar.markdown("---")
+		
+		st.markdown("""---""")
+		by_group_highlight = st.toggle("Hightlight groups in scatterplots.")
+		
+		if df.height == 0 or df is None:
+			cats = []
+		elif df.height > 0:
+			to_drop = ['doc_id','Other','FU','Untagged']
+			cats = sorted(list(df.drop([x for x in to_drop if x in df.columns]).columns))
+
+		if by_group_highlight:
+			if session['has_meta'][0] == False:
+				st.markdown(_warnings.warning_21, unsafe_allow_html=True)
+			
+			else:
+				st.sidebar.markdown("### Variables")
+
+				xaxis = st.sidebar.selectbox("Select variable for the x-axis", (cats))
+				yaxis = st.sidebar.selectbox("Select variable for the y-axis", (cats))
+	
+				if st.sidebar.button("Scatterplot of Frequencies"):
+
+					df_plot = _analysis.dtm_weight_pl(df).with_columns(pl.selectors.numeric().mul(100))
+					df_plot = df_plot.with_columns(pl.col("doc_id").str.split_exact("_", 0).struct.rename_fields(["Group"]).alias("id")).unnest("id").to_pandas()
+
+					x_label = xaxis + ' ' + '(per 100 tokens)'
+					y_label = yaxis + ' ' + '(per 100 tokens)'
+
+					base = alt.Chart(df_plot).mark_circle(size=50, opacity=.75).encode(
+						alt.X(xaxis, title=x_label),
+						alt.Y(yaxis, title = y_label),
+						tooltip=['doc_id:N']
+					)
+
+					groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
+					# A dropdown filter
+					group_dropdown = alt.binding_select(options=groups)
+					group_select = alt.selection_single(fields=['Group'], bind=group_dropdown, name="Select")
+					group_color_condition = alt.condition(group_select,
+							alt.Color('Group:N', legend=None, scale=alt.Scale(range=['#133955'])),
+							alt.value('lightgray'))
+					
+					highlight_groups = base.add_selection(group_select).encode(color=group_color_condition)
+					st.altair_chart(highlight_groups)					
+									
+					cc_df, cc_r, cc_p = _analysis.correlation(df_plot, xaxis, yaxis)
+					
+					st.markdown(_messages.message_correlation_info(cc_df, cc_r, cc_p))
+
+				st.sidebar.markdown("---")
+		else:
+			st.sidebar.markdown("### Variables")
 			xaxis = st.sidebar.selectbox("Select variable for the x-axis", (cats))
 			yaxis = st.sidebar.selectbox("Select variable for the y-axis", (cats))
 	
 			if st.sidebar.button("Scatterplot of Frequencies"):
-				#clear any pca data
-				_handlers.update_session('pca', dict(), user_session_id)
 
-				df_plot = df.copy()
-				df_plot.index.name = 'doc_id'
-				df_plot.reset_index(inplace=True)
+				df_plot = _analysis.dtm_weight_pl(df).with_columns(pl.selectors.numeric().mul(100)).to_pandas()
 				
 				x_label = xaxis + ' ' + '(per 100 tokens)'
 				y_label = yaxis + ' ' + '(per 100 tokens)'
@@ -175,194 +304,115 @@ def main():
 	    			tooltip=['doc_id:N']
 				)
 				
-				st.altair_chart(base, use_container_width=True)
+				st.altair_chart(base)
 				
-				cc_df, cc_r, cc_p = _analysis.correlation(df, xaxis, yaxis)
+				cc_df, cc_r, cc_p = _analysis.correlation(df_plot, xaxis, yaxis)
 				
 				st.markdown(_messages.message_correlation_info(cc_df, cc_r, cc_p))
+			
+		st.sidebar.markdown("---")
 	
-		if session['dtm']['units'] != 'norm':
+	elif plot_type == "PCA" and session.get('has_target')[0] == True:
+
+		st.sidebar.markdown("### Tagset")
+		
+		with st.sidebar.expander("About general tags"):
+			st.markdown(_messages.message_general_tags)		
+
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+
+		if tag_radio_tokens == 'Parts-of-Speech':
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+			if tag_type == 'General':
+				df = con.table("dtm_pos", database="target").to_polars()
+				df = _analysis.dtm_simplify_pl(df)
+				df = _analysis.dtm_weight_pl(df, scheme="prop")
+				df = _analysis.dtm_weight_pl(df, scheme="scale").to_pandas()
+
+			elif tag_type == 'Specific':
+				df = con.table("dtm_pos", database="target").to_polars()
+				df = _analysis.dtm_weight_pl(df, scheme="prop")
+				df = _analysis.dtm_weight_pl(df, scheme="scale").to_pandas()
+		
+		elif tag_radio_tokens == 'DocuScope':
+			df = con.table("dtm_ds", database="target").to_polars()
+			df = _analysis.dtm_weight_pl(df, scheme="prop")
+			df = _analysis.dtm_weight_pl(df, scheme="scale").to_pandas()
+			tag_type = None
 
 			st.sidebar.markdown("""---""") 
 			st.sidebar.markdown("### Principal Component Analysis")
 			st.sidebar.markdown("""
 								Click the button to plot principal compenents.
 								""")
-		
-			if st.sidebar.button("PCA"):
-				_handlers.update_session('pca', dict(), user_session_id)
-				if session['has_meta'] == True:
-					grouping = metadata_target['doccats']
-				else:
-					grouping = []
-	
-				pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
-				if bool(session['pca']) == False:
-					_handlers.update_pca(pca_df, contrib_df, ve, 1, user_session_id)
-					st.experimental_rerun()
-				else:
-					_handlers.update_pca(pca_df, contrib_df, ve, 1, user_session_id)
-				
-			if bool(session['pca']) == True:
-				session['pca']['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
-				
-				cp_1, cp_2, pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2 = _analysis.update_pca_plot(session['pca'])
-				
-				base = alt.Chart(session['pca']['pca']).mark_circle(size=50, opacity=.75).encode(
-		    			alt.X(pca_x),
-		    			alt.Y(pca_y),
-		    			tooltip=['doc_id:N']
-		    			)
-		
-				#zero axes
-				line_y = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule().encode(y=alt.Y('y', title=pca_y))
-				line_x = alt.Chart(pd.DataFrame({'x': [0]})).mark_rule().encode(x=alt.X('x', title=pca_x))
-	
-				if session['has_meta'] == True:
-					groups = sorted(set(metadata_target['doccats']))
-					# A dropdown filter
-					group_dropdown = alt.binding_select(options=groups)
-					group_select = alt.selection_single(fields=['Group'], bind=group_dropdown, name="Select")
-					group_color_condition = alt.condition(group_select,
-	                      alt.Color('Group:N', legend=None, scale=alt.Scale(range=['#133955'])),
-	                      alt.value('lightgray'))
-	                
-					highlight_groups = base.add_selection(group_select).encode(color=group_color_condition)
-					st.altair_chart(highlight_groups + line_y + line_x, use_container_width = True)
-	
-				else:
-					st.altair_chart(base + line_y + line_x, use_container_width = True)
-				
-				st.markdown(_messages.message_variance_info(pca_x, pca_y, ve_1, ve_2))
-				
-				st.markdown(_messages.message_contribution_info(pca_x, pca_y, contrib_x, contrib_y))
-				
-				st.markdown("##### Variable contribution (by %) to principal component:")
-				
-				with st.expander("About variable contribution"):
-					st.markdown(_messages.message_variable_contrib)
+			
+		st.markdown("---")
 
-		
-				col1,col2 = st.columns(2)
-				col1.altair_chart(cp_1, use_container_width = True)
-				col2.altair_chart(cp_2, use_container_width = True)
-
-
-		st.sidebar.markdown("---")
-		st.sidebar.markdown(_messages.message_download_dtm)
-		
-		if session['dtm']['units'] == 'norm': 
-			de_norm = st.sidebar.radio('Do you want to de-normalize the frequencies prior to download?', ('No', 'Yes'), horizontal = True)
-	
-		if st.sidebar.button("Download"):
-			if de_norm == 'Yes' and tag_radio_tokens == 'Parts-of-Speech':
-				with st.sidebar:
-					with st.spinner('Creating download link...'):
-						output_df = df.copy()
-						output_df = output_df.multiply(session['dtm']['sums_pos'], axis=0)
-						output_df = output_df.divide(100, axis=0)
-						output_df.index.name = 'doc_id'
-						output_df.reset_index(inplace=True)
-						towrite = BytesIO()
-						downloaded_file = output_df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-						towrite.seek(0)  # reset pointer
-						b64 = base64.b64encode(towrite.read()).decode()  # some strings
-						st.success('Link generated!')
-						linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_dfm.xlsx">Download Excel file</a>'
-						st.markdown(linko, unsafe_allow_html=True)
-			elif de_norm == 'Yes' and tag_radio_tokens == 'DocuScope':
-				with st.sidebar:
-					with st.spinner('Creating download link...'):
-						output_df = df.copy()
-						output_df = output_df.multiply(session['dtm']['sums_ds'], axis=0)
-						output_df = output_df.divide(100, axis=0)
-						output_df.index.name = 'doc_id'
-						output_df.reset_index(inplace=True)
-						towrite = BytesIO()
-						downloaded_file = output_df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-						towrite.seek(0)  # reset pointer
-						b64 = base64.b64encode(towrite.read()).decode()  # some strings
-						st.success('Link generated!')
-						linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_dfm.xlsx">Download Excel file</a>'
-						st.markdown(linko, unsafe_allow_html=True)
+		if st.sidebar.button("PCA"):
+			_handlers.update_session('pca', False, con)
+			if session.get('has_meta')[0] == True:
+				grouping = metadata_target.get('doccats')[0]['cats']
 			else:
-				with st.sidebar:
-					with st.spinner('Creating download link...'):
-						output_df = df.copy()
-						output_df.index.name = 'doc_id'
-						output_df.reset_index(inplace=True)
-						towrite = BytesIO()
-						downloaded_file = output_df.to_excel(towrite, encoding='utf-8', index=False, header=True)
-						towrite.seek(0)  # reset pointer
-						b64 = base64.b64encode(towrite.read()).decode()  # some strings
-						st.success('Link generated!')
-						linko= f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="tag_dfm.xlsx">Download Excel file</a>'
-						st.markdown(linko, unsafe_allow_html=True)
-					
-		st.sidebar.markdown("""---""") 
-		st.sidebar.markdown(_messages.message_reset_table)
-		
-		if st.sidebar.button("Create New DTM"):
-			if 'grpa' in st.session_state[user_session_id]:
-				del st.session_state[user_session_id]['grpa']
-			if 'grpb' in st.session_state[user_session_id]:
-				del st.session_state[user_session_id]['grpb']
-			_handlers.update_session('dtm', dict(), user_session_id)
-			_handlers.update_session('pca', dict(), user_session_id)
-			st.session_state[user_session_id]['grpa'] = []
-			st.session_state[user_session_id]['grpb'] = []
-			st.experimental_rerun()
-		
-		st.sidebar.markdown("""---""") 
+				grouping = []
 
-	else:
-	
-		st.markdown(_messages.message_plotting)
-	
-		dtm_type = st.sidebar.radio("Select the type of DTM:", ("Normalized", "TF-IDF"), horizontal=True)
-		if dtm_type == 'Normalized':
-			scale = st.sidebar.radio("Do you want to scale the variables?", ("No", "Yes"), horizontal=True)
+			to_drop = ['Other','FU','Untagged']
+			df = df.drop([x for x in to_drop if x in df.columns], axis=1)
+			pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
+			
+			con.create_table("pca_df", obj=pca_df, database="target", overwrite=True)
+			con.create_table("contrib_df", obj=contrib_df, database="target", overwrite=True)
+			_handlers.update_metadata('target', 'variance', ve, con)
+			_handlers.update_session('pca', True, con)
+			st.rerun()	
+
+		if session.get('pca')[0] == True:
+			pca_df = con.table("pca_df", database="target").to_pandas()
+			contrib_df = con.table("contrib_df", database="target").to_pandas()
+			ve = metadata_target.get("variance")[0]['temp']
 		
-		st.sidebar.markdown("---")
-		st.sidebar.markdown(_messages.message_generate_table)
-		if st.sidebar.button("Document-Term Matrix"):
-			if session.get('target_path') == None:
-				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
+			st.session_state[user_session_id]['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))
+			
+			cp_1, cp_2, pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2 = _analysis.update_pca_plot(pca_df, contrib_df, ve, int(st.session_state[user_session_id]['pca_idx']))
+			
+			base = alt.Chart(pca_df).mark_circle(size=50, opacity=.75).encode(
+					alt.X(pca_x),
+					alt.Y(pca_y),
+					tooltip=['doc_id:N']
+					)
+
+			#zero axes
+			line_y = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule().encode(y=alt.Y('y', title=pca_y))
+			line_x = alt.Chart(pd.DataFrame({'x': [0]})).mark_rule().encode(x=alt.X('x', title=pca_x))
+
+			if session.get('has_meta')[0] == True:
+				groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
+				# A dropdown filter
+				group_dropdown = alt.binding_select(options=groups)
+				group_select = alt.selection_single(fields=['Group'], bind=group_dropdown, name="Select")
+				group_color_condition = alt.condition(group_select,
+						alt.Color('Group:N', legend=None, scale=alt.Scale(range=['#133955'])),
+						alt.value('lightgray'))
+				
+				highlight_groups = base.add_selection(group_select).encode(color=group_color_condition)
+				st.altair_chart(highlight_groups + line_y + line_x)
+
 			else:
-				with st.sidebar:
-					with st.spinner('Generating dtm for plotting...'):
-						tp = _handlers.load_corpus_session('target', session, user_session_id)
-						dtm_pos = ds.tags_dtm(tp, count_by='pos')
-						dtm_pos.set_index('doc_id', inplace=True)
-						sums_pos = np.array(dtm_pos.sum(axis=1))
-						dtm_ds = ds.tags_dtm(tp, count_by='ds')
-						dtm_ds.set_index('doc_id', inplace=True)
-						sums_ds = np.array(dtm_ds.sum(axis=1))
-						
-						if dtm_type == 'Normalized' and scale == 'No':
-							dtm_simple = _analysis.simplify_dtm(dtm_pos, sums_pos)					
-							dtm_pos = _analysis.tf_proportions(dtm_pos, norm=True)
-							dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=True)
-							units = 'norm'
-							_handlers.save_table(dtm_simple, 'dtm_simple', user_session_id)
-	
-						elif dtm_type == 'Normalized' and scale == 'Yes':
-							dtm_pos = _analysis.tf_proportions(dtm_pos, norm=False, scale=True)
-							dtm_ds  = _analysis.tf_proportions(dtm_ds, norm=False, scale=True)
-							units = 'scaled'
-	
-						else:
-							dtm_pos = _analysis.tfidf(dtm_pos)
-							dtm_ds = _analysis.tfidf(dtm_ds)
-							units = 'tfidf'
+				st.altair_chart(base + line_y + line_x)
+			
+			st.markdown(_messages.message_variance_info(pca_x, pca_y, ve_1, ve_2))
+			
+			st.markdown(_messages.message_contribution_info(pca_x, pca_y, contrib_x, contrib_y))
+			
+			st.markdown("##### Variable contribution (by %) to principal component:")
+			
+			with st.expander("About variable contribution"):
+				st.markdown(_messages.message_variable_contrib)
 
-					dtm_ds.drop('Untagged', axis=1, inplace=True, errors='ignore')
-					_handlers.save_table(dtm_pos, 'dtm_pos', user_session_id)
-					_handlers.save_table(dtm_ds, 'dtm_ds', user_session_id)
-					_handlers.update_dtm(sums_pos, sums_ds, units, user_session_id)
-					st.success('DTM generated!')
-					st.experimental_rerun()
-		
+
+			col1,col2 = st.columns(2)
+			col1.altair_chart(cp_1, use_container_width = True)
+			col2.altair_chart(cp_2, use_container_width = True)
+
 		st.sidebar.markdown("---")
 				
 if __name__ == "__main__":
