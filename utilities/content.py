@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,45 +16,28 @@ import base64
 import pathlib
 import os
 import time
-from importlib.machinery import SourceFileLoader
+
+import streamlit as st
+
+import utilities
 
 # set paths
 HERE = pathlib.Path(__file__).parents[1].resolve()
 OPTIONS = str(HERE.joinpath("options.toml"))
 IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
-
-modules = ['streamlit', 'utilities']
-import_params = _imports.import_parameters(_options, modules)
-
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
-	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
-
 message_landing = """
-	Welcome to **DocuScope Corpus Analaysis & Concordancer Online**.
+	Welcome to **DocuScope Corpus Analaysis & Concordancer**.
 	This suite of tools is designed to help those new to corpus analysis and NLP explore data, data visualization, and the computational analysis of text. 
 	It is also designed to allow users to easily toggle between **rhetorical tags** and more conventional **part-of-speech tags**.
-	Note that the online version is intended to process **small corpora** (< 2 million words). For larger datasets, a desktop version is available.
-	Users with more experience can also download and run the **streamlit** app locally using Python.
-	(Both the desktop and streamlit app can be accessed from the GitHub repository linked at the top of this page; all code is open source.) 
+	The application in available online and as a desktop application. The online version resitricts the amount of data that you can process at one time.
+	Both versions are open source and can be accessed from the GitHub repository linked at the top of this page.
 	To get started:
-	
-	:point_right: Prepare a corpus of **plain text files**. (The tool does not accept Word files, PDFs, etc.)
-	
-	:point_right: Use **Manage Corpus Data** to select and process your files.
-	
+        
+	:point_right: Use one of the pre-processed corpora or prepare a corpus of your own in **plain text files**. (The tool does not accept Word files, PDFs, etc.)
+        
+	:point_right: Use **Manage Corpus Data** to load the data you want to explore.
+        
 	:point_right: Refer to the **Help** documents for FAQs. For more detailed instructions, refer to the **User Guide** documentation linked above.
 	"""
 
@@ -75,7 +58,7 @@ def get_img_with_header(local_img_path):
 	    DocuScope
 	  </h2>
 	  <h2 style="color: #42526E; text-align:center">
-	    Corpus Analysis & Concordancer Online
+	    Corpus Analysis & Concordancer
 	  </h2>
 
 	</div>
@@ -94,12 +77,12 @@ nav_header = """
     
 def get_url_app():
     try:
-        return st.experimental_get_query_params()["app"][0]
+        return st.query_params["app"][0]
     except KeyError:
         return "index"
 
 def swap_app(app):
-    st.experimental_set_query_params(app=app)
+    st.query_params.app = app
 
     session_state = utilities.session_state()
     session_state.app = app
@@ -107,7 +90,7 @@ def swap_app(app):
     # Not sure why this is needed. The `set_query_params` doesn't
     # appear to work if a rerun is undergone immediately afterwards.
     time.sleep(0.01)
-    st.experimental_rerun()
+    st.rerun()
 
 def _application_sorting_key(application):
     return application[1].KEY_SORT

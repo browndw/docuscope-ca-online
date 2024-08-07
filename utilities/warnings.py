@@ -15,15 +15,32 @@
 # Messages that that correspond to values stored in session state warnings.
 # The default state (no warning) is 0.
 
-warning_1 = """
+_10_corrupt_files_target = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
 	&#128555; The files you selected could not be processed.
 	Be sure that they are <b>plain text</b> files, that they are encoded as <b>UTF-8</b>, and that most of text is in English.
 	For file preparation, we recommend that you use a plain text editor (and not an application like Word).
+    To clear this warning click the <b>UPLOAD TARGET</b> button.
 	</div>
 	"""
 
-def warning_2(duplicates):
+_11_corrupt_files_reference = """
+	<div style="background-color: #fddfd7; padding-left: 5px;">
+	&#128555; The files you selected could not be processed.
+	Be sure that they are <b>plain text</b> files, that they are encoded as <b>UTF-8</b>, and that most of text is in English.
+	For file preparation, we recommend that you use a plain text editor (and not an application like Word).
+    To clear this warning click the <b>UPLOAD REFERENCE</b> button.
+	</div>
+	"""
+
+_12_polars_format = """
+	<div style="background-color: #fddfd7; padding-left: 5px;">
+	&#128555; Your pre-processed corpus is not in the correct format.
+    You can try selecting a different file or processing your corpus from the original text files and saving it again.
+	</div>
+	"""
+
+def _20_corpus_duplicates(duplicates):
     dups = ', '.join(duplicates)
     html_code = f'''
 	<div style="background-color: #fddfd7; padding-left: 5px;">
@@ -31,27 +48,12 @@ def warning_2(duplicates):
 	Your corpus contains these <b>duplicate file names</b>:</p>
 	<p><b>{dups}</b></p>
 	Plese remove duplicates before processing.
+	To clear this warning click the <b>UPLOAD</b> button.
 	</div>
     '''
     return html_code
 
-warning_3 = """
-	<div style="background-color: #fddfd7; padding-left: 5px;">
-	&#128555; Your corpus is too large for online processing.
-	The online version of DocuScope Corpus Analysis & Concordancer accepts data up to roughly 3 million words.
-	If you'd like to process more data, try <a href="https://github.com/browndw/docuscope-cac">the desktop version of the tool</a>, which available for free.
-	</div>
-	"""
-
-def warning_4(exclusions):
-	exclusions = ', '.join(exclusions)
-	md = f"""##### The following documents were excluded from the corpus because they are improperly encoded:
-	
-	{exclusions}
-	"""
-	return(md)
-
-def warning_5(duplicates):
+def _21_reference_duplicates(duplicates):
     dups = ', '.join(duplicates)
     html_code = f'''
 	<div style="background-color: #fddfd7; padding-left: 5px;">
@@ -59,33 +61,43 @@ def warning_5(duplicates):
 	Files with these <b>names</b> were also submitted as part of your target corpus:</p>
 	<p><b>{dups}</b></p>
 	Plese remove files from your reference corpus before processing.
+	To clear this warning click the <b>UPLOAD REFERENCE</b> button.
 	</div>
     '''
     return html_code
 
-warning_6 = """
+_30_corpus_size = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
-	&#128555; The names in your target corpus and the names in the saved reference match.
-	If these are different data, change the names and try again. Otherwise choose a different reference corpus.
+	&#128555; Your corpus is too large for online processing.
+	The online version of DocuScope Corpus Analysis & Concordancer accepts data up to roughly 3 million words.
+	If you'd like to process more data, try <a href="https://github.com/browndw/docuscope-cac">the desktop version of the tool</a>, which available for free.
 	</div>
 	"""
 
-def warning_7(exclusions):
+def _40_excluded_files_target(exclusions):
 	exclusions = ', '.join(exclusions)
-	md = f"""##### The following documents were excluded from the corpus because they match names in the reference:
+	md = f"""##### The following documents were excluded from the target corpus:
+	
+	{exclusions}
+	"""
+	return(md)
+
+def _41_excluded_files_reference(exclusions):
+	exclusions = ', '.join(exclusions)
+	md = f"""##### The following documents were excluded from the reference corpus:
 	
 	{exclusions}
 	"""
 	return(md)
 
 
-warning_8 = """
+_50_categories_number = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
 	&#128555; Your data should contain at least 2 and no more than 20 categories. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.
 	</div>
 	"""
 
-warning_9 = """
+_51_categories_format = """
 	<div style="background-color: #fddfd7; padding-left: 5px;">
 	&#128555; Your categories don't seem to be formatted correctly. You can either proceed without assigning categories, or reset the corpus, fix your file names, and try again.
 	</div>

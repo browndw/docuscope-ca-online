@@ -1,4 +1,4 @@
-# Copyright (C) 2023 David West Brown
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,300 +12,760 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pathlib
-import re
-from collections import Counter
-from functools import partial
-from typing import Union, List, Callable, Optional
-from importlib.machinery import SourceFileLoader
+import altair as alt
+import numpy as np
+import pandas as pd
+import polars as pl
+import scipy
+from sklearn import decomposition
 
-# set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
+def subset_pl(tok_pl, select_ids: list):
+	token_subset = (
+		tok_pl
+		.with_columns(
+			pl.col("doc_id").str.split_exact("_", 0)
+			.struct.rename_fields(["cat_id"])
+			.alias("id")
+		)
+		.unnest("id")
+		.filter(pl.col("cat_id").is_in(select_ids))
+		.drop("cat_id")
+		)
+	return(token_subset)
 
-# import options
-_imports = SourceFileLoader("handlers_imports", IMPORTS).load_module()
-_options = _imports.import_options_general(OPTIONS)
+def frequency_tables_pl(tok_pl):
+	
+	def summarize_counts(df):
+			df = (
+				df
+				.pivot(index="Token", on="doc_id", values="len", aggregate_function="sum")
+				.with_columns(
+					pl.all().exclude("Token").cast(pl.UInt32, strict=True)
+				)
+				# calculate range
+				.with_columns(
+					pl.sum_horizontal(pl.selectors.numeric().is_not_null())
+					.alias("Range")
+				)
+				.with_columns(
+					pl.selectors.numeric().fill_null(strategy="zero")
+				)
+				# normalize over total documents in corpus
+				.with_columns(
+						pl.col("Range").truediv(pl.sum_horizontal(pl.selectors.numeric().exclude("Range").is_not_null())).mul(100)
+				)
+				# calculate absolute frequency
+				.with_columns(
+					pl.sum_horizontal(pl.selectors.numeric().exclude("Range"))
+					.alias("AF")
+				)
+				.sort("AF", descending = True)
+				.select(["Token", "AF", "Range"])
+				# calculate relative frequency
+				.with_columns(
+					pl.col("AF").truediv(pl.sum("AF")).mul(1000000)
+					.alias("RF")
+				)
+				# format data
+				.unnest("Token")
+				.select(["Token", "Tag", "AF", "RF", "Range"])
+				)
+			return(df)
+	
+	# format tokens and sum by doc_id
+	df_pos = (
+		tok_pl
+		.group_by(["doc_id", "pos_id", "pos_tag"], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+		)
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.filter(
+			pl.col("pos_tag") != "Y"
+		)
+		.rename({"pos_tag": "Tag"})
+		.rename({"token": "Token"})
+		.group_by(["doc_id", "Token", "Tag"]).len()
+		.with_columns(
+			pl.struct(["Token", "Tag"])
+		)
+		.select(pl.exclude("Tag"))
+		)
+	
+	df_pos = summarize_counts(df_pos).sort(["AF", "Token"], descending=[True, False])
+   
+	df_ds = (
+		tok_pl
+		.group_by(["doc_id", "ds_id", "ds_tag"], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+		)
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.filter(
+			~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
+		)
+		.rename({"ds_tag": "Tag"})
+		.rename({"token": "Token"})
+		.group_by(["doc_id", "Token", "Tag"]).len()
+		.with_columns(
+			pl.struct(["Token", "Tag"])
+		)
+		.select(pl.exclude("Tag"))
+		)
+	
+	df_ds = summarize_counts(df_ds).sort(["AF", "Token"], descending=[True, False])
 
-modules = ['altair', 'docx', 'numpy', 'docuscospacy', 'corpus_utils', 'pandas', 'scipy', 'sklearn', 'decomposition']
-import_params = _imports.import_parameters(_options, modules)
+	return(df_pos, df_ds)
+    
+def tag_tables_pl(tok_pl):
+	
+	def summarize_counts(df):
+			df = (
+				df
+				.pivot(index="Tag", on="doc_id", values="len", aggregate_function="sum")
+				.with_columns(
+					pl.all().exclude("Tag").cast(pl.UInt32, strict=True)
+				)
+				# calculate range
+				.with_columns(
+					Range=pl.sum_horizontal(pl.selectors.numeric().is_not_null())
+				)
+ 				.with_columns(
+					pl.selectors.numeric().fill_null(strategy="zero")
+				)
+				# normalize over total documents in corpus
+				.with_columns(
+						pl.col("Range").truediv(pl.sum_horizontal(pl.selectors.numeric().exclude("Range").is_not_null())).mul(100)
+				)
+				# calculate absolute frequency
+				.with_columns(
+					pl.sum_horizontal(pl.selectors.numeric().exclude("Range"))
+					.alias("AF")
+				)
+				.sort("AF", descending = True)
+				.select(["Tag", "AF", "Range"])
+				# calculate relative frequency
+				.with_columns(
+					pl.col("AF").truediv(pl.sum("AF")).mul(100)
+					.alias("RF")
+				)
+			  .select(["Tag", "AF", "RF", "Range"])
+				)
+			return(df)
+	
+	# format tokens and sum by doc_id
+	df_pos = (
+		tok_pl
+		.filter(pl.col("pos_tag") != "Y")
+		.group_by(["doc_id", "pos_id", "pos_tag"], maintain_order = True)
+		.first()
+		.group_by(["doc_id", "pos_tag"]).len()
+		.rename({"pos_tag": "Tag"})
+		)
+	
+	df_pos = summarize_counts(df_pos).sort(["AF", "Tag"], descending=[True, False])
+   
+	df_ds = (
+		tok_pl
+		.filter(~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged")))
+		.group_by(["doc_id", "ds_id", "ds_tag"], maintain_order = True)
+		.first()
+		.group_by(["doc_id", "ds_tag"]).len()
+		.rename({"ds_tag": "Tag"})
+		)
+	
+	df_ds = summarize_counts(df_ds).sort(["AF", "Tag"], descending=[True, False])
 
-for module in import_params.keys():
-	object_name = module
-	short_name = import_params[module][0]
-	context_module_name = import_params[module][1]
-	if not short_name:
-		short_name = object_name
-	if not context_module_name:
-		globals()[short_name] = __import__(object_name)
+	return(df_pos, df_ds)
+
+def dtm_pl(tok_pl):
+	
+	df_pos = (
+		tok_pl
+		.filter(pl.col("pos_tag") != "Y")
+		.group_by(["doc_id", "pos_id", "pos_tag"], maintain_order = True)
+		.first()
+		.group_by(["doc_id", "pos_tag"]).len()
+		.rename({"pos_tag": "tag"})
+		.with_columns(pl.col("len").sum().over('tag').alias('total'))
+		.sort(["total", "doc_id"], descending=[True, False])
+		.pivot(index="doc_id", on="tag", values="len", aggregate_function="sum")
+		.fill_null(strategy="zero")
+		)
+
+	df_ds = (
+		tok_pl
+		.filter(~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged")))
+		.group_by(["doc_id", "ds_id", "ds_tag"], maintain_order = True)
+		.first()
+		.group_by(["doc_id", "ds_tag"]).len()
+		.rename({"ds_tag": "tag"})
+		.with_columns(pl.col("len").sum().over('tag').alias('total'))
+		.sort(["total", "doc_id"], descending=[True, False])
+		.pivot(index="doc_id", on="tag", values="len", aggregate_function="sum")
+		.fill_null(strategy="zero")
+	)
+
+	return(df_pos, df_ds)
+
+def collocations_pl(tok_pl, node_word, preceding=4, following=4, statistic='pmi', count_by='pos', node_tag=None):
+
+	if count_by == 'pos':
+		grouping_tag = "pos_tag"
+		grouping_id = "pos_id"
+		expr_filter = pl.col("pos_tag") != "Y"
 	else:
-		context_module = __import__(context_module_name, fromlist=[object_name])
-		globals()[short_name] = getattr(context_module, object_name)
+		grouping_tag = "ds_tag"
+		grouping_id = "ds_id"
+		expr_filter = ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
 
+	if node_tag is None:
+		expr = pl.col("token") == node_word.lower()
+	else:
+		expr = (pl.col("token") == node_word.lower()) & (pl.col(grouping_tag).str.starts_with(node_tag))
 
-# https://github.com/WZBSocialScienceCenter/tmtoolkit/blob/master/tmtoolkit/tokenseq.py
-def index_windows_around_matches(matches: np.ndarray, left: int, right: int,
-                                 flatten: bool = False, remove_overlaps: bool = True) \
-        -> Union[List[List[int]], np.ndarray]:
-    if not isinstance(matches, np.ndarray) or matches.dtype != bool:
-        raise ValueError('`matches` must be a boolean NumPy array')
-    if not isinstance(left, int) or left < 0:
-        raise ValueError('`left` must be an integer >= 0')
-    if not isinstance(right, int) or right < 0:
-        raise ValueError('`right` must be an integer >= 0')
+	look_around_token = [
+		pl.col("token").shift(-i).alias(f"tok_lag_{i}") for i in range(-preceding, following + 1)
+	]
+	look_around_tag = [
+		pl.col(grouping_tag).shift(-i).alias(f"tag_lag_{i}") for i in range(-preceding, following + 1)
+	]
 
-    ind = np.where(matches)[0]
-    nested_ind = list(map(lambda x: np.arange(x - left, x + right + 1), ind))
+	total_df = (
+		tok_pl
+		.group_by(["doc_id", grouping_id, grouping_tag], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+			)
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.filter(expr_filter)
+		.group_by(["token", grouping_tag]).len(name="Freq_Total")
+		.rename({"token": "Token", grouping_tag: "Tag"})
+	)
 
-    if flatten:
-        if not nested_ind:
-            return np.array([], dtype=int)
+	token_total = sum(total_df.get_column("Freq_Total"))
+	
+	if node_tag is None:
+		node_freq = total_df.filter(pl.col("Token") == node_word).get_column("Freq_Total").sum()
+	else:
+		node_freq = total_df.filter((pl.col("Token") == node_word.lower()) & (pl.col("Tag").str.starts_with(node_tag))).get_column("Freq_Total").sum()
+			
+	if node_freq == 0:
+		coll_df = pl.DataFrame(schema=[("Token", pl.String), ("Tag", pl.String), ("Freq Span", pl.UInt32), ("Freq Total", pl.UInt32), ("MI", pl.Float64)])
+		return(coll_df)
 
-        window_ind = np.concatenate(nested_ind)
-        window_ind = window_ind[(window_ind >= 0) & (window_ind < len(matches))]
+	if statistic=='pmi':
+		mi_funct = pl.col("Freq_Span").truediv(token_total).log(base=2).sub(pl.col("Freq_Total").truediv(token_total).mul(node_freq).truediv(token_total).log(base=2))
+	if statistic=='npmi':
+		mi_funct = pl.col("Freq_Span").truediv(token_total).log(base=2).sub(pl.col("Freq_Total").truediv(token_total).mul(node_freq).truediv(token_total).log(base=2)).truediv(pl.col("Freq_Span").truediv(token_total).log(base=2).neg())
+	if statistic=='pmi2':
+		mi_funct = pl.col("Freq_Span").truediv(token_total).log(base=2).sub(pl.col("Freq_Total").truediv(token_total).mul(node_freq).truediv(token_total).log(base=2)).sub(pl.col("Freq_Span").truediv(token_total).log(base=2).mul(-1))
+	if statistic=='pmi3':
+		mi_funct = pl.col("Freq_Span").truediv(token_total).log(base=2).sub(pl.col("Freq_Total").truediv(token_total).mul(node_freq).truediv(token_total).log(base=2)).sub(pl.col("Freq_Span").truediv(token_total).log(base=2).mul(-2))
 
-        if remove_overlaps:
-            return np.sort(np.unique(window_ind))
-        else:
-            return window_ind
-    else:
-        return [w[(w >= 0) & (w < len(matches))] for w in nested_ind]
+	coll_df = (
+		tok_pl
+		.group_by(["doc_id", grouping_id, grouping_tag], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+			)
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.filter(
+			pl.col('token').str.contains("[a-z]")
+			)
+		.with_columns(
+			look_around_token + look_around_tag
+			)
+		.filter(expr)
+		#.drop(["tok_lag_0", "tag_lag_0"])
+		.group_by("doc_id")
+		.agg(
+			pl.concat_list([f"tok_lag_{i}" for i in range(-preceding, following + 1)]).alias("span_tok"),
+			pl.concat_list([f"tag_lag_{i}" for i in range(-preceding, following + 1)]).alias("span_tag")
+			)
+		.explode(["span_tok", "span_tag"])
+		.with_columns(
+				pre_node_tok=pl.col("span_tok").list.head(preceding),
+				pre_node_tag=pl.col("span_tag").list.head(preceding)
+			)
+		.with_columns(
+				post_node_tok=pl.col("span_tok").list.tail(following),
+				post_node_tag=pl.col("span_tag").list.tail(following)
+			)
+		.drop(["span_tok", "span_tag"])
+		.with_columns(
+			Token=pl.col("pre_node_tok").list.concat("post_node_tok"),
+			Tag=pl.col("pre_node_tag").list.concat("post_node_tag")
+			)
+		.select(["Token", "Tag"])
+		.explode(["Token", "Tag"])
+		.group_by(["Token", "Tag"]).len(name="Freq_Span")
+		.sort("Freq_Span")
+		.join(total_df, on=["Token", "Tag"])
+		.with_columns(
+			MI=mi_funct
+			)
+		.rename({"Freq_Span": "Freq Span", "Freq_Total": "Freq Total"})
+		.sort("MI", "Token", descending=[True, False])
+	)
+	
+	return(coll_df)
 
-# https://github.com/WZBSocialScienceCenter/tmtoolkit/blob/master/tmtoolkit/tokenseq.py
-def pmi(x: np.ndarray, y: np.ndarray, xy: np.ndarray, n_total: Optional[int] = None, logfn: Callable = np.log2,
-        k: int = 1, normalize: bool = False) -> np.ndarray:
-    if not isinstance(k, int) or k < 1:
-        raise ValueError('`k` must be a strictly positive integer')
+def keyness_pl(target_pl, reference_pl, correct=False, tags_only=False):
 
-    if k > 1 and normalize:
-        raise ValueError('normalization is only implemented for standard PMI with `k=1`')
+	total_target = target_pl.get_column("AF").sum()
+	total_reference = reference_pl.get_column("AF").sum()
+	total_tokens = total_target + total_reference
 
-    if n_total is not None:
-        if n_total < 1:
-            raise ValueError('`n_total` must be strictly positive')
-        x = x/n_total
-        y = y/n_total
-        xy = xy/n_total
+	if correct == False:
+		correction_tar = pl.col("AF")
+		correction_ref = pl.col("AF_Ref")
+	if correct == True:
+		correction_tar = pl.col("AF").sub(.5 * pl.col("AF").sub((pl.col("AF").add(pl.col("AF_Ref")).mul(total_target / total_tokens))).abs().truediv(pl.col("AF").sub((pl.col("AF").add(pl.col("AF_Ref")).mul(total_target / total_tokens)))))
+		correction_ref = pl.col("AF_Ref").add(.5 * pl.col("AF").sub((pl.col("AF").add(pl.col("AF_Ref")).mul(total_target / total_tokens))).abs().truediv(pl.col("AF").sub((pl.col("AF").add(pl.col("AF_Ref")).mul(total_target / total_tokens)))))
+	
+	if tags_only == False:
+		kw_df = target_pl.join(reference_pl, on=["Token", "Tag"], how="full", coalesce=True, suffix="_Ref").fill_null(strategy="zero")
+	if tags_only == True:
+		kw_df = target_pl.join(reference_pl, on="Tag", how="full", coalesce=True, suffix="_Ref").fill_null(strategy="zero")
 
-    pmi_val = logfn(xy) - logfn(x * y)
+	kw_df = (
+		kw_df
+		.with_columns(
+			pl.when(pl.col("AF").sub((pl.col("AF").add(pl.col("AF_Ref")).mul(total_target / total_tokens))).abs() > .25)
+			.then(correction_tar)
+			.otherwise(pl.col("AF"))
+			.alias("AF_Yates")
+			)
+		.with_columns(
+			pl.when(pl.col("AF").sub((pl.col("AF").add(pl.col("AF_Ref")).mul(total_target / total_tokens))).abs() > .25)
+			.then(correction_ref)
+			.otherwise(pl.col("AF_Ref"))
+			.alias("AF_Ref_Yates")
+			)
+		.with_columns(
+			pl.when(pl.col("AF_Yates") > 0)
+			.then(
+				pl.col("AF_Yates").mul(pl.col("AF_Yates").truediv(pl.col("AF_Yates").add(pl.col("AF_Ref")).mul(total_target / total_tokens)).log())
+			)
+			.otherwise(0)
+			.alias("L1")
+			)
+		.with_columns(
+			pl.when(pl.col("AF_Ref_Yates") > 0)
+			.then(
+				pl.col("AF_Ref_Yates").mul(pl.col("AF_Ref_Yates").truediv(pl.col("AF_Yates").add(pl.col("AF_Ref_Yates")).mul(total_reference / total_tokens)).log())
+			)
+			.otherwise(0)
+			.alias("L2")
+			)
+		.with_columns(
+			pl.when(pl.col("RF") > pl.col("RF_Ref"))
+			.then(
+				pl.col("L1").add(pl.col("L2")).mul(2).abs()
+			)
+			.otherwise(
+				pl.col("L1").add(pl.col("L2")).mul(2).abs().neg()
+			)
+			.alias("LL")
+		)
+		.with_columns(
+			pl.when(pl.col("AF_Ref") == 0)
+			.then(
+				pl.col("AF").truediv(total_target).truediv(.5 / total_reference).log(base=2)
+			)
+			.when(pl.col("AF") == 0)
+			.then(
+				pl.col("AF_Ref").truediv(total_reference).truediv(.5 / total_target).log(base=2).neg()
+			)
+			.otherwise(
+				pl.col("AF").truediv(total_target).truediv(pl.col("AF_Ref").truediv(total_reference)).log(base=2)
+			)
+			.alias("LR")
+		)
+		.with_columns(
+			pl.col("LL").abs().map_elements(lambda x: scipy.stats.distributions.chi2.sf(x, 1), return_dtype=pl.Float64)
+			.alias("PV")
+		)
+		.sort("LL", descending=True)
+	)
+	if tags_only == False:
+		return(kw_df.select(["Token", "Tag", "LL", "LR", "PV", "RF", "RF_Ref", "AF", "AF_Ref", "Range", "Range_Ref"]))
+		
+	if tags_only == True:
+		return(kw_df.select(["Tag", "LL", "LR", "PV", "RF", "RF_Ref", "AF", "AF_Ref", "Range", "Range_Ref"]))
+	
 
-    if k > 1:
-        return pmi_val - (1-k) * logfn(xy)
-    else:
-        if normalize:
-            return pmi_val / -logfn(xy)
-        else:
-            return pmi_val
+def ngrams_by_token_pl(tok_pl, node_word: str, node_position, span, search_type, count_by='pos'):
+	
+	if count_by == 'pos':
+		grouping_tag = "pos_tag"
+		grouping_id = "pos_id"
+		expr_filter = pl.col("pos_tag") != "Y"
+	else:
+		grouping_tag = "ds_tag"
+		grouping_id = "ds_id"
+		expr_filter = ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
+	
+	if search_type == "fixed":
+		expr = pl.col("token") == node_word.lower()
+	elif search_type == "starts_with":
+		expr = pl.col("token").str.starts_with(node_word.lower())
+	elif search_type == "ends_with":
+		expr = pl.col("token").str.ends_with(node_word.lower())
+	elif search_type == "contains":
+		expr = pl.col("token").str.contains(node_word.lower())
+	
+	preceding = node_position - 1
+	following = span - node_position
+	
+	look_around_token = [
+		pl.col("token").shift(-i).alias(f"tok_lag_{i}") for i in range(-preceding, following + 1)
+	]
+	look_around_tag = [
+		pl.col(grouping_tag).shift(-i).alias(f"tag_lag_{i}") for i in range(-preceding, following + 1)
+	]
 
-npmi = partial(pmi, k=1, normalize=True)
-pmi2 = partial(pmi, k=2, normalize=False)
-pmi3 = partial(pmi, k=3, normalize=False)
+	rename_tokens = [
+		 pl.col('ngram').struct.rename_fields([f'Token_{i + 1}' for i in range(span)])
+	]
+	rename_tags = [
+		 pl.col('tags').struct.rename_fields([f'Tag_{i + 1}' for i in range(span)])
+	]
+	
+	ngram_df = (
+		tok_pl
+		.group_by(["doc_id", grouping_id, grouping_tag], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+			)
+		.filter(expr_filter)
+		.with_columns(pl.col("token").len().alias("total"))
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.with_columns(
+			look_around_token + look_around_tag
+			)
+		.filter(expr)
+		.group_by("doc_id", "total")
+		.agg(
+			pl.concat_list([f"tok_lag_{i}" for i in range(-preceding, following + 1)]).alias("ngram"),
+			pl.concat_list([f"tag_lag_{i}" for i in range(-preceding, following + 1)]).alias("tags")
+			)
+		.explode(["ngram", "tags"])
+	)
 
-def coll_table(tok, node_word, l_span=4, r_span=4, statistic='pmi', count_by='pos', node_tag=None, tag_ignore=False):
-    tok = list(tok.values())
-    stats = {'pmi', 'npmi', 'pmi2', 'pmi3'}
-    if statistic not in stats:
-        raise ValueError("results: statistic must be one of %r." % stats)
-    if l_span < 0 or l_span > 9:
-        raise ValueError("Span must be < " + str(0) + " and > " + str(9))
-    if r_span < 0 or r_span > 9:
-        raise ValueError("Span must be < " + str(0) + " and > " + str(9))
-    if bool(tag_ignore) == True:
-        node_tag = None
-    if count_by == 'pos':
-        tc = corpus_utils._merge_tags(tok)
-    if count_by == 'ds':
-        tc = corpus_utils._merge_ds(tok)
-    in_span = []
-    for i in range(0,len(tc)):
-        tpf = tc[i]
-        # create a boolean vector for node word
-        if node_tag is None:
-            v = [t[0] == node_word for t in tpf]
-        else:
-            v = [t[0] == node_word and t[1].startswith(node_tag) for t in tpf]
-        if sum(v) > 0:
-            # get indices within window around the node
-            idx = list(index_windows_around_matches(np.array(v), left=l_span, right=r_span, flatten=False))
-            node_idx = [i for i, x in enumerate(v) if x == True]
-            # remove node word from collocates
-            coll_idx = [np.setdiff1d(idx[i], node_idx[i]) for i in range(len(idx))]
-            coll_idx = [x for xs in coll_idx for x in xs]
-            coll = [tpf[i] for i in coll_idx]
-        else:
-            coll = []
-        in_span.append(coll)
-    in_span = [x for xs in in_span for x in xs]
-    tc = [x for xs in tc for x in xs]
-    df_total = pd.DataFrame(tc, columns=['Token', 'Tag'])
-    if bool(tag_ignore) == True:
-        df_total = df_total.drop(columns=['Tag'])
-    if bool(tag_ignore) == True:
-        df_total = df_total.groupby(['Token']).value_counts().to_frame('Freq Total').reset_index()
-    else:
-        df_total = df_total.groupby(['Token','Tag']).value_counts().to_frame('Freq Total').reset_index()
-    df_span = pd.DataFrame(in_span, columns=['Token', 'Tag'])
-    if bool(tag_ignore) == True:
-        df_span = df_span.drop(columns=['Tag'])
-    if bool(tag_ignore) == True:
-        df_span = df_span.groupby(['Token']).value_counts().to_frame('Freq Span').reset_index()
-    else:
-        df_span = df_span.groupby(['Token','Tag']).value_counts().to_frame('Freq Span').reset_index()
-    if node_tag is None:
-        node_freq = sum(df_total[df_total['Token'] == node_word]['Freq Total'])
-    else:
-        node_freq = sum(df_total[(df_total['Token'] == node_word) & (df_total['Tag'].str.startswith(node_tag, na=False))]['Freq Total'])
-    if bool(tag_ignore) == True:
-        df = pd.merge(df_span, df_total, how='inner', on=['Token'])
-    else:
-        df = pd.merge(df_span, df_total, how='inner', on=['Token', 'Tag'])
-    if statistic=='pmi':
-        df['MI'] = pmi(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']), normalize=False)
-    if statistic=='npmi':
-        df['MI'] = pmi(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']), normalize=True)
-    if statistic=='pmi2':
-        df['MI'] = pmi2(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']))
-    if statistic=='pmi3':
-        df['MI'] = pmi3(node_freq, df['Freq Total'], df['Freq Span'], sum(df_total['Freq Total']))
-    df.sort_values(by=['MI', 'Token'], ascending=[False, True], inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return(df)
+	if ngram_df.height == 0:
+		return(ngram_df)
+	
+	else:
+		ngram_df = (
+		ngram_df
+		.with_columns(
+			pl.col(["ngram", "tags"]).list.to_struct()
+			)
+		.group_by(["doc_id", "total", "ngram", "tags"]).len().sort("len", descending=True)
+		.with_columns(
+			pl.struct(["ngram", "tags"])
+			)
+		.select(pl.exclude("tags"))
+		.pivot(index=["ngram", "total"], on="doc_id", values="len", aggregate_function="sum")
+		.with_columns(
+			pl.all().exclude("ngram").cast(pl.UInt32, strict=True)
+			)
+		# calculate range
+		.with_columns(
+			pl.sum_horizontal(pl.selectors.numeric().exclude("total").is_not_null())
+			.alias("Range")
+			)
+		.with_columns(
+			pl.selectors.numeric().fill_null(strategy="zero")
+			)
+		# normalize over total documents in corpus
+		.with_columns(
+			pl.col("Range").truediv(pl.sum_horizontal(pl.selectors.numeric().exclude(["Range", "total"]).is_not_null())).mul(100)
+			)
+		# calculate absolute frequency
+		.with_columns(
+			pl.sum_horizontal(pl.selectors.numeric().exclude(["Range", "total"]))
+			.alias("AF")
+			)
+		.sort("AF", descending = True)
+		# calculate relative frequency
+		.with_columns(
+			pl.col("AF").truediv(pl.col("total")).mul(1000000)
+			.alias("RF")
+			)
+		.select(["ngram", "AF", "RF", "Range"])
+		.unnest("ngram")
+		.with_columns(
+			rename_tokens + rename_tags
+			)
+		.unnest(["ngram", "tags"])
+		)
+		return ngram_df
 
-def ngrams_by_token(tok, node_word: str, node_position, span, n_tokens, search_type, count_by='pos'):
-    span_l = node_position - 1
-    span_r = span - span_l
-    tok = list(tok.values())
-    if count_by == 'pos':
-        tc = corpus_utils._merge_tags(tok)
-    if count_by == 'ds':
-        tc = corpus_utils._merge_ds(tok)
-    ngram_list = []
-    for i in range(0,len(tc)):
-        tp = tc[i]
-        tpf = [t[0] for t in tp]
-       # create a boolean vector for node word
-        if search_type == "fixed":
-            v = [t == node_word.lower() for t in tpf]
-        elif search_type == "starts_with":
-            v = [t.startswith(node_word.lower()) for t in tpf]
-        elif search_type == "ends_with":
-            v = [t.endswith(node_word.lower()) for t in tpf]
-        elif search_type == "contains":
-            v = [node_word.lower() in t.lower() for t in tpf]
-        if sum(v) > 0:
-            idx = list(index_windows_around_matches(np.array(v), left=span_l, right=span_r, flatten=False))
-            start_idx = [min(x) for x in idx]
-            end_idx = [max(x) for x in idx]
-            in_span = []
-            for i in range(len(idx)):
-                span_tokens = [t for t in tp[start_idx[i]:end_idx[i]]]
-                in_span.append(span_tokens)
-                merged_tokens = []
-                for i in range(0,len(in_span)):
-                    if len(in_span[i]) == span:
-                        merged_tokens.append('_token_'.join(['_tag_'.join(x) for x in in_span[i]]))
-            ngram_list.append(merged_tokens)
-    # calculate ranges
-    ngram_range = []
-    for i in range(0,len(ngram_list)):
-        ngram_range.append(list(set(ngram_list[i])))
-    ngram_range = [x for xs in ngram_range for x in xs]
-    ngram_range = Counter(ngram_range)
-    ngram_range = sorted(ngram_range.items(), key=lambda pair: pair[0], reverse=False)
-    # calculate counts
-    ngram_count = [x for xs in ngram_list for x in xs]
-    ngram_count = Counter(ngram_count)
-    ngram_count = sorted(ngram_count.items(), key=lambda pair: pair[0], reverse=False)
-    # build table
-    ngrams = [x[0] for x in ngram_count]
-    ngrams = [x.split('_token_') for x in ngrams]
-    ngrams = [sum([x[i].split('_tag_') for i in range(span)], []) for x in ngrams]
-    order = list(range(0, span*2, 2)) + list(range(1, span*2 + 1, 2))
-    for l in reversed(range(len(ngrams))):
-        ngrams[l] = [ngrams[l][j] for j in order]
-    ngrams = np.array(ngrams)
-    ngram_freq = np.array([x[1] for x in ngram_count])
-    ngram_prop = np.array(ngram_freq)/n_tokens*1000000
-    ngram_range = np.array([x[1] for x in ngram_range])/len(tok)*100
-    counts = list(zip(ngrams.tolist(), ngram_freq.tolist(), ngram_prop.tolist(), ngram_range.tolist()))
-    ngram_counts = list()
-    for x in counts:
-        tt = tuple()
-        for y in x:
-            if not type(y) == list:
-                tt += (y,)
-            else:
-                tt += (*y,)
-        ngram_counts.append(tt)
-    df = pd.DataFrame(ngram_counts, columns=['Token' + str(i) for i in range (1, span+1)] + ['Tag' + str(i) for i in range (1, span+1)] + ['AF', 'RF', 'Range'])
-    df.sort_values(by=['AF', 'Token1'], ascending=[False, True], inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return(df)
+def ngrams_by_tag_pl(tok_pl, tag: str, node_position, span, count_by='pos'):
+			
+	if count_by == 'pos':
+		grouping_tag = "pos_tag"
+		grouping_id = "pos_id"
+		expr = pl.col("pos_tag") == tag
+		expr_filter = pl.col("pos_tag") != "Y"
+	else:
+		grouping_tag = "ds_tag"
+		grouping_id = "ds_id"
+		expr = pl.col("ds_tag") == tag
+		expr_filter = ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
+	
+	preceding = node_position - 1
+	following = span - node_position
+	
+	look_around_token = [
+		pl.col("token").shift(-i).alias(f"tok_lag_{i}") for i in range(-preceding, following + 1)
+	]
+	look_around_tag = [
+		pl.col(grouping_tag).shift(-i).alias(f"tag_lag_{i}") for i in range(-preceding, following + 1)
+	]
 
-def ngrams_by_tag(tok, tag: str, tag_position, span, n_tokens, count_by='pos'):
-    span_l = tag_position - 1
-    span_r = span - span_l
-    tok = list(tok.values())
-    if count_by == 'pos':
-        tc = corpus_utils._merge_tags(tok)
-    if count_by == 'ds':
-        tc = corpus_utils._merge_ds(tok)
-    ngram_list = []
-    for i in range(0,len(tc)):
-        tp = tc[i]
-        tpf = [t[1] for t in tp]
-       # create a boolean vector for tag
-        v = [t == tag for t in tpf]
-        if sum(v) > 0:
-            idx = list(index_windows_around_matches(np.array(v), left=span_l, right=span_r, flatten=False))
-            start_idx = [min(x) for x in idx]
-            end_idx = [max(x) for x in idx]
-            in_span = []
-            for i in range(len(idx)):
-                span_tokens = [t for t in tp[start_idx[i]:end_idx[i]]]
-                in_span.append(span_tokens)
-                merged_tokens = []
-                for i in range(0,len(in_span)):
-                    if len(in_span[i]) == span:
-                        merged_tokens.append('_token_'.join(['_tag_'.join(x) for x in in_span[i]]))
-            ngram_list.append(merged_tokens)
-    # calculate ranges
-    ngram_range = []
-    for i in range(0,len(ngram_list)):
-        ngram_range.append(list(set(ngram_list[i])))
-    ngram_range = [x for xs in ngram_range for x in xs]
-    ngram_range = Counter(ngram_range)
-    ngram_range = sorted(ngram_range.items(), key=lambda pair: pair[0], reverse=False)
-    # calculate counts
-    ngram_count = [x for xs in ngram_list for x in xs]
-    ngram_count = Counter(ngram_count)
-    ngram_count = sorted(ngram_count.items(), key=lambda pair: pair[0], reverse=False)
-    # build table
-    ngrams = [x[0] for x in ngram_count]
-    ngrams = [x.split('_token_') for x in ngrams]
-    ngrams = [sum([x[i].split('_tag_') for i in range(span)], []) for x in ngrams]
-    order = list(range(0, span*2, 2)) + list(range(1, span*2 + 1, 2))
-    for l in reversed(range(len(ngrams))):
-        ngrams[l] = [ngrams[l][j] for j in order]
-    ngrams = np.array(ngrams)
-    ngram_freq = np.array([x[1] for x in ngram_count])
-    ngram_prop = np.array(ngram_freq)/n_tokens*1000000
-    ngram_range = np.array([x[1] for x in ngram_range])/len(tok)*100
-    counts = list(zip(ngrams.tolist(), ngram_freq.tolist(), ngram_prop.tolist(), ngram_range.tolist()))
-    ngram_counts = list()
-    for x in counts:
-        tt = tuple()
-        for y in x:
-            if not type(y) == list:
-                tt += (y,)
-            else:
-                tt += (*y,)
-        ngram_counts.append(tt)
-    df = pd.DataFrame(ngram_counts, columns=['Token' + str(i) for i in range (1, span+1)] + ['Tag' + str(i) for i in range (1, span+1)] + ['AF', 'RF', 'Range'])
-    df.sort_values(by=['AF', 'Token1'], ascending=[False, True], inplace=True)
-    df.reset_index(drop=True, inplace=True)
-    return(df)
+	rename_tokens = [
+		 pl.col('ngram').struct.rename_fields([f'Token_{i + 1}' for i in range(span)])
+	]
+	rename_tags = [
+		 pl.col('tags').struct.rename_fields([f'Tag_{i + 1}' for i in range(span)])
+	]
+	
+	ngram_df = (
+		tok_pl
+		.group_by(["doc_id", grouping_id, grouping_tag], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+			)
+		.filter(expr_filter)
+		.with_columns(pl.col("token").len().alias("total"))
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.with_columns(
+			look_around_token + look_around_tag
+			)
+		.filter(expr)
+		.group_by("doc_id", "total")
+		.agg(
+			pl.concat_list([f"tok_lag_{i}" for i in range(-preceding, following + 1)]).alias("ngram"),
+			pl.concat_list([f"tag_lag_{i}" for i in range(-preceding, following + 1)]).alias("tags")
+			)
+		.explode(["ngram", "tags"])
+	)
+
+	if ngram_df.height == 0:
+		return(ngram_df)
+	
+	else:
+		ngram_df = (
+		ngram_df
+		.with_columns(
+			pl.col(["ngram", "tags"]).list.to_struct()
+			)
+		.group_by(["doc_id", "total", "ngram", "tags"]).len().sort("len", descending=True)
+		.with_columns(
+			pl.struct(["ngram", "tags"])
+			)
+		.select(pl.exclude("tags"))
+		.pivot(index=["ngram", "total"], on="doc_id", values="len", aggregate_function="sum")
+		.with_columns(
+			pl.all().exclude("ngram").cast(pl.UInt32, strict=True)
+			)
+		# calculate range
+		.with_columns(
+			pl.sum_horizontal(pl.selectors.numeric().exclude("total").is_not_null())
+			.alias("Range")
+			)
+		.with_columns(
+			pl.selectors.numeric().fill_null(strategy="zero")
+			)
+		# normalize over total documents in corpus
+		.with_columns(
+			pl.col("Range").truediv(pl.sum_horizontal(pl.selectors.numeric().exclude(["Range", "total"]).is_not_null())).mul(100)
+			)
+		# calculate absolute frequency
+		.with_columns(
+			AF=pl.sum_horizontal(pl.selectors.numeric().exclude(["Range", "total"]))
+			)
+		.sort("AF", descending = True)
+		# calculate relative frequency
+		.with_columns(
+			pl.col("AF").truediv(pl.col("total")).mul(1000000)
+			.alias("RF")
+			)
+		.select(["ngram", "AF", "RF", "Range"])
+		.unnest("ngram")
+		.with_columns(
+			rename_tokens + rename_tags
+			)
+		.unnest(["ngram", "tags"])
+		)
+		return ngram_df
+
+def ngrams_pl(tok_pl, span, count_by='pos', min_frequency=10):
+	
+	if count_by == 'pos':
+		grouping_tag = "pos_tag"
+		grouping_id = "pos_id"
+		expr_filter = pl.col("pos_tag") != "Y"
+	else:
+		grouping_tag = "ds_tag"
+		grouping_id = "ds_id"
+		expr_filter = ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
+		
+	look_around_token = [
+		pl.col("token").shift(-i).alias(f"tok_lag_{i}") for i in range(span)
+    ]
+	look_around_tag = [
+		pl.col(grouping_tag).shift(-i).alias(f"tag_lag_{i}") for i in range(span)
+    ]
+
+	rename_tokens = [
+		 pl.col('ngram').struct.rename_fields([f'Token_{i + 1}' for i in range(span)])
+	]
+	rename_tags = [
+		 pl.col('tags').struct.rename_fields([f'Tag_{i + 1}' for i in range(span)])
+	]
+	
+	ngram_df = (
+		tok_pl
+		.group_by(["doc_id", grouping_id, grouping_tag], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+			)
+		.filter(expr_filter)
+		.with_columns(pl.col("token").len().alias("total"))
+		.with_columns(
+			pl.col("token").str.to_lowercase().str.strip_chars())
+		.with_columns(
+			look_around_token + look_around_tag
+			)
+		.group_by("doc_id", "total")
+		.agg(
+			pl.concat_list([f"tok_lag_{i}" for i in range(span)]).alias("ngram"),
+			pl.concat_list([f"tag_lag_{i}" for i in range(span)]).alias("tags")
+			)
+		.explode(["ngram", "tags"])
+		.with_columns(
+			pl.col(["ngram", "tags"]).list.to_struct()
+			)
+		.group_by(["doc_id", "total", "ngram", "tags"]).len().sort("len", descending=True)
+		.with_columns(
+			pl.struct(["ngram", "tags"])
+			)
+		.select(pl.exclude("tags"))
+		.pivot(index=["ngram", "total"], on="doc_id", values="len", aggregate_function="sum")
+		.with_columns(
+			pl.all().exclude("ngram").cast(pl.UInt32, strict=True)
+			)
+		# calculate range
+		.with_columns(
+			pl.sum_horizontal(pl.selectors.numeric().exclude("total").is_not_null())
+			.alias("Range")
+			)
+		.with_columns(
+			pl.selectors.numeric().fill_null(strategy="zero")
+			)
+		# normalize over total documents in corpus
+		.with_columns(
+				pl.col("Range").truediv(pl.sum_horizontal(pl.selectors.numeric().exclude(["Range", "total"]).is_not_null())).mul(100)
+			)
+		# calculate absolute frequency
+		.with_columns(
+			pl.sum_horizontal(pl.selectors.numeric().exclude(["Range", "total"]))
+			.alias("AF")
+			)
+		.sort("AF", descending = True)
+        # calculate relative frequency
+		.with_columns(
+			pl.col("AF").truediv(pl.col("total")).mul(1000000)
+			.alias("RF")
+			)
+		.select(["ngram", "AF", "RF", "Range"])
+		.unnest("ngram")
+		.with_columns(
+			rename_tokens + rename_tags
+			)
+		.unnest(["ngram", "tags"])
+		.sort(["AF", "Token_1", "Token_2"], descending=[True, False, False])
+		.filter(
+               pl.col('RF') >= min_frequency
+			)
+		)
+	
+	return ngram_df
+
+def kwic_pl(tok_pl, node_word: str, search_type="fixed", ignore_case=True):
+	
+	if search_type == "fixed" and ignore_case == True:
+		expr = pl.col("token").str.to_lowercase().str.strip_chars() == node_word.lower()
+	if search_type == "fixed" and ignore_case == False:
+		expr = pl.col("token").str.strip_chars() == node_word
+	elif search_type == "starts_with" and ignore_case == True:
+		expr = pl.col("token").str.to_lowercase().str.strip_chars().str.starts_with(node_word.lower())
+	elif search_type == "starts_with" and ignore_case == False:
+		expr = pl.col("token").str.strip_chars().str.starts_with(node_word)
+	elif search_type == "ends_with" and ignore_case == True:
+		expr = pl.col("token").str.to_lowercase().str.strip_chars().str.ends_with(node_word.lower())
+	elif search_type == "ends_with" and ignore_case == False:
+		expr = pl.col("token").str.ends_with(node_word)
+	elif search_type == "contains" and ignore_case == True:
+		expr = pl.col("token").str.to_lowercase().str.strip_chars().str.contains(node_word.lower())
+	elif search_type == "contains" and ignore_case == False:
+		expr = pl.col("token").str.strip_chars().str.contains(node_word)
+
+	
+	preceding = 7
+	following = 7
+	
+	look_around_token = [
+		pl.col("token").shift(-i).alias(f"tok_lag_{i}") for i in range(-preceding, following + 1)
+    ]
+	
+	kwic_df = (
+		tok_pl
+		.group_by(["doc_id", "pos_id"], maintain_order = True)
+		.agg(
+			pl.col("token").str.concat("")
+			)
+		.with_columns(
+			look_around_token
+			)
+		.filter(expr)
+		.group_by("doc_id")
+		.agg(
+			pl.concat_list([f"tok_lag_{i}" for i in range(-preceding, following + 1)]).alias("node")
+			)
+		.explode("node")
+		.with_columns(
+			pre_node=pl.col("node").list.head(7)
+		)
+		.with_columns(
+			post_node=pl.col("node").list.tail(7)
+		)
+		.with_columns(
+			pl.col("node").list.get(7)
+		)
+		.with_columns(
+			pl.col("pre_node").list.join("")
+		)
+		.with_columns(
+			pl.col("post_node").list.join("")
+		)
+		.select(["doc_id", "pre_node", "node", "post_node"])
+		.sort("doc_id")
+        .rename({"doc_id": "Doc ID", "pre_node": "Pre-Node", "node": "Node", "post_node": "Post-Node"})
+	)
+	
+	return kwic_df
 
 def split_corpus(tok, tar_list, ref_list):
 	tar_docs = {key: value for key, value in tok.items() if key.startswith(tuple(tar_list))}
@@ -333,163 +793,57 @@ def split_corpus(tok, tar_list, ref_list):
 	ref_words = len([x for x in ref_tags if not x.startswith('Y')])
 	return tar_docs, ref_docs, tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs
 
-def kwic_st(tok, node_word, search_type, ignore_case=True):
-	kwic = []
-	for i in range(0,len(tok)):
-		tpf = list(tok.values())[i]
-		doc_id = list(tok.keys())[i]
-		# create a boolean vector for node word
-		if bool(ignore_case) == True and search_type == "fixed":
-			v = [t[0].strip().lower() == node_word.lower() for t in tpf]
-		elif bool(ignore_case) == False and search_type == "fixed":
-			v = [t[0].strip() == node_word for t in tpf]
-		elif bool(ignore_case) == True and search_type == "starts_with":
-			v = [t[0].strip().lower().startswith(node_word.lower()) for t in tpf]
-		elif bool(ignore_case) == False and search_type == "starts_with":
-			v = [t[0].strip().startswith(node_word) for t in tpf]
-		elif bool(ignore_case) == True and search_type == "ends_with":
-			v = [t[0].strip().lower().endswith(node_word.lower()) for t in tpf]
-		elif bool(ignore_case) == False and search_type == "ends_with":
-			v = [t[0].strip().endswith(node_word) for t in tpf]
-		elif bool(ignore_case) == True and search_type == "contains":
-			v = [node_word.lower() in t[0].strip().lower() for t in tpf]
-		elif bool(ignore_case) == False and search_type == "contains":
-			v = [node_word in t[0].strip() for t in tpf]
+def dtm_weight_pl(dtm_pl, scheme="prop"):
+	if scheme == "prop":
+		expr = pl.selectors.numeric().truediv(pl.sum_horizontal(pl.selectors.numeric()))
+	if scheme == "scale":
+		expr = pl.selectors.numeric().sub(pl.selectors.numeric().mean()).truediv(pl.selectors.numeric().std())
+	if scheme == "tfidf":
+		expr = pl.selectors.numeric().mul(pl.col("doc_id").len().truediv(pl.selectors.numeric().gt(0).sum()).log10())
 
-		if sum(v) > 0:
-			# get indices within window around the node
-			idx = list(index_windows_around_matches(np.array(v), left=7, right=7, flatten=False))
-			node_idx = [i for i, x in enumerate(v) if x == True]
-			start_idx = [min(x) for x in idx]
-			end_idx = [max(x) for x in idx]
-			in_span = []
-			for i in range(len(node_idx)):
-				pre_node = "".join([t[0] for t in tpf[start_idx[i]:node_idx[i]]]).strip()
-				post_node = "".join([t[0] for t in tpf[node_idx[i]+1:end_idx[i]]]).strip()
-				node = tpf[node_idx[i]][0]
-				in_span.append((doc_id, pre_node, node, post_node))
-			kwic.append(in_span)
-	kwic = [x for xs in kwic for x in xs]
-	if len(kwic) > 0:
-		df = pd.DataFrame(kwic)
-		df.columns =['Doc ID', 'Pre-Node', 'Node', 'Post-Node']
-	else:
-		df = ''
-	return(df)
+	weighted_df = (
+		dtm_pl
+		.with_columns(
+			expr
+		)
+	)
+	return(weighted_df)
 
-# https://github.com/WZBSocialScienceCenter/tmtoolkit/blob/master/tmtoolkit/bow/bow_stats.py
-def doc_frequencies(dtm, min_val=1, proportions=0):
-    if dtm.ndim != 2:
-        raise ValueError('`dtm` must be a 2D array/matrix')
+def dtm_simplify_pl(dtm_pl):
+ simple_df = (
+	dtm_pl
+	.unpivot(pl.selectors.numeric(), index="doc_id")
+	.with_columns(
+		pl.col("variable")
+		.str.replace('^NN\S*$', '#NounCommon')
+		.str.replace('^VV\S*$', '#VerbLex')
+		.str.replace('^J\S*$', '#Adjective')
+		.str.replace('^R\S*$', '#Adverb')
+		.str.replace('^P\S*$', '#Pronoun')
+		.str.replace('^I\S*$', '#Preposition')
+		.str.replace('^C\S*$', '#Conjunction')
+		.str.replace('^N\S*$', '#NounOther')
+		.str.replace('^VB\S*$', '#VerbBe')
+		.str.replace('^V\S*$', '#VerbOther')
+	)
+	.with_columns(
+		pl.when(pl.col("variable").str.starts_with("#"))
+		.then(pl.col("variable"))
+		.otherwise(pl.col("variable").str.replace('^\S+$', '#Other'))
+		)
+	.with_columns(
+		pl.col("variable").str.replace("#", "")
+	)
+	.group_by(["doc_id", "variable"], maintain_order = True).sum()
+	.pivot(index="doc_id", on="variable", values="value")
+	)
+	
+ return(simple_df)
 
-    doc_freq = np.sum(dtm >= min_val, axis=0)
-
-    if doc_freq.ndim != 1:
-        doc_freq = doc_freq.A.flatten()
-
-    if proportions == 1:
-        return doc_freq / dtm.shape[0]
-    elif proportions == 2:
-        return np.log(doc_freq) - np.log(dtm.shape[0])
-    else:
-        return doc_freq
-
-def doc_lengths(dtm):
-    if dtm.ndim != 2:
-        raise ValueError('`dtm` must be a 2D array/matrix')
-
-    res = np.sum(dtm, axis=1)
-    if res.ndim != 1:
-        return res.A.flatten()
-    else:
-        return res
-
-def tf_proportions(dtm, norm=False, scale=False):
-
-    norm_factor = 1 / doc_lengths(dtm)[:, None]   # shape: Nx1
-
-    res = dtm * norm_factor
-    
-    if norm == True:
-        res *=100
-    else:
-        res
-    if scale == True:
-        scaled_res = res.select_dtypes(include='number').apply(scipy.stats.zscore)
-        res = pd.DataFrame(scaled_res, index=res.index, columns=res.columns)
-    else:
-        res
-    if isinstance(res, np.matrix):
-        return res.A
-    else:
-        return res
-
-def idf(dtm, smooth_log=1, smooth_df=1):
-    if dtm.ndim != 2 or 0 in dtm.shape:
-        raise ValueError('`dtm` must be a non-empty 2D array/matrix')
-
-    n_docs = dtm.shape[0]
-    df = doc_frequencies(dtm)
-
-    if smooth_log == smooth_df == 1:      # log1p is faster than the equivalent log(1 + x)
-        # log(1 + N/(1+df)) = log((1+df+N)/(1+df)) = log(1+df+N) - log(1+df) = log1p(df+N) - log1p(df)
-        return np.log1p(df + n_docs) - np.log1p(df)
-    else:
-        # with s = smooth_log and t = smooth_df
-        # log(s + N/(t+df)) = log((s(t+df)+N)/(t+df)) = log(s(t+df)+N) - log(t+df)
-        return np.log(smooth_log * (smooth_df + df) + n_docs) - np.log(smooth_df + df)
-
-def tfidf(dtm, tf_func=tf_proportions, idf_func=idf, **kwargs):
-    if dtm.ndim != 2 or 0 in dtm.shape:
-        raise ValueError('`dtm` must be a non-empty 2D array/matrix')
-
-    if idf_func is idf:
-        idf_opts = {}
-        if 'smooth_log' in kwargs:
-            idf_opts['smooth_log'] = kwargs.pop('smooth_log')
-        if 'smooth_df' in kwargs:
-            idf_opts['smooth_df'] = kwargs.pop('smooth_df')
-
-        idf_vec = idf_func(dtm, **idf_opts)
-    elif idf_func is idf_probabilistic and 'smooth' in kwargs:
-        idf_vec = idf_func(dtm, smooth=kwargs.pop('smooth'))
-    else:
-        idf_vec = idf_func(dtm)
-
-    tf_mat = tf_func(dtm, **kwargs)
-
-    return tf_mat * idf_vec
-
-def simplify_dtm(dtm, sums):
-	dtm_simple = dtm.copy()
-	dtm_simple.index.name = 'doc_id'
-	dtm_simple.reset_index(inplace=True)
-	#need index to maintain order
-	dtm_simple['doc_order'] = dtm_simple.index
-	dtm_simple = pd.melt(dtm_simple,id_vars=['doc_id', 'doc_order'],var_name='Tag', value_name='RF')
-	dtm_simple['Tag'].replace('^NN\S*$', '#Noun', regex=True, inplace=True)
-	dtm_simple['Tag'].replace('^VV\S*$', '#Verb', regex=True, inplace=True)
-	dtm_simple['Tag'].replace('^J\S*$', '#Adjective', regex=True, inplace=True)
-	dtm_simple['Tag'].replace('^R\S*$', '#Adverb', regex=True, inplace=True)
-	dtm_simple['Tag'].replace('^P\S*$', '#Pronoun', regex=True, inplace=True)
-	dtm_simple['Tag'].replace('^I\S*$', '#Preposition', regex=True, inplace=True)
-	dtm_simple['Tag'].replace('^C\S*$', '#Conjunction', regex=True, inplace=True)
-	dtm_simple = dtm_simple.loc[dtm_simple["Tag"].str.startswith('#', na=False)]
-	dtm_simple['Tag'].replace('^#', '', regex=True, inplace=True)
-	#sum tags
-	dtm_simple = dtm_simple.groupby(['doc_id', 'doc_order', 'Tag'], as_index=False)['RF'].sum()
-	dtm_simple.sort_values(by='doc_order', inplace=True, ignore_index=True)
-	dtm_simple = dtm_simple.pivot_table(index=['doc_order', 'doc_id'], columns='Tag', values='RF')
-	dtm_simple.reset_index(inplace=True)
-	dtm_simple.drop('doc_order', axis=1, inplace=True)
-	dtm_simple.set_index('doc_id', inplace=True)
-	dtm_simple = dtm_simple.divide(sums, axis=0)
-	dtm_simple *= 100
-	return(dtm_simple)
-
-def pca_contributions(df, doccats):
+def pca_contributions(dtm, doccats):
+	df = dtm.set_index('doc_id')
 	n = min(len(df.index), len(df.columns))
-	pca = sklearn.decomposition.PCA(n_components=n)
+	pca = decomposition.PCA(n_components=n)
 	pca_result = pca.fit_transform(df.values)
 	pca_df = pd.DataFrame(pca_result)
 	pca_df.columns = ['PC' + str(col + 1) for col in pca_df.columns]
@@ -497,7 +851,7 @@ def pca_contributions(df, doccats):
 	sdev = pca_df.std(ddof=0)
 	contrib = []
 	for i in range(0, len(sdev)):
-		coord = pca.components_[i] * sdev[i]
+		coord = pca.components_[i] * sdev.iloc[i]
 		polarity = np.divide(coord, abs(coord))
 		coord = np.square(coord)
 		coord = np.divide(coord, sum(coord))*100
@@ -512,11 +866,7 @@ def pca_contributions(df, doccats):
 	ve = np.array(pca.explained_variance_ratio_).tolist()
 	return pca_df, contrib_df, ve
 
-def update_pca_plot(pca: dict):
-	coord_data = pca['pca']
-	contrib_data = pca['contrib']
-	variance = pca['variance']
-	pca_idx = pca['pca_idx']
+def update_pca_plot(coord_data, contrib_data, variance, pca_idx):
 	pca_x = coord_data.columns[pca_idx - 1]
 	pca_y = coord_data.columns[pca_idx]
 	
@@ -581,134 +931,189 @@ def correlation(df, x, y):
 	cc_df = len(df.index) - 2
 	return cc_df, cc_r, cc_p
 
-def boxplots(df, box_vals, tag_set, tag_type = None, grp_a = None, grp_b = None):
+def boxplots_pl(dtm_pl, box_vals, grp_a = None, grp_b = None):
 
-	df_plot = df[box_vals]
-	
-	if grp_a is None and grp_b is None:
-		df_plot.index.name = 'doc_id'
-		df_plot.reset_index(inplace=True)
-	
-		stats = df_plot.describe().T
-		med = df_plot.median().rename("median")
-		stats = stats.join(med)
+	df_plot = (
+		dtm_pl
+		.unpivot(pl.selectors.numeric(), index="doc_id", variable_name="Tag", value_name="RF")
+		.with_columns(pl.col("RF").mul(100))
+		.filter(pl.col("Tag").is_in(box_vals))
+		.with_columns(
+			pl.col("doc_id").str.split_exact("_", 0)
+			.struct.rename_fields(["cat_id"])
+			.alias("id")
+			)
+		.unnest("id")
+	)
+
+	if grp_a is None and grp_b is None:	
+
+		df_plot = (df_plot
+			.drop("cat_id")
+			.with_columns(pl.median("RF").over("Tag").alias("Median"))
+			.sort(["Median", "Tag"], descending=[True, False])
+			)
+		return(df_plot)
 
 	if grp_a is not None and grp_b is not None:
-		df_plot.loc[df_plot.index.str.startswith(tuple(grp_a)), 'Group'] = 'Group A'
-		df_plot.loc[df_plot.index.str.startswith(tuple(grp_b)), 'Group'] = 'Group B'
-		df_plot = df_plot.dropna()							
-		df_plot.index.name = 'doc_id'
-		df_plot.reset_index(inplace=True)
+		grp_a_str = ", ".join(str(x) for x in grp_a)
+		grp_b_str = ", ".join(str(x) for x in grp_b)
+
+		df_plot = (df_plot
+			.with_columns(
+				pl.when(pl.col("cat_id").is_in(grp_a))
+				.then(pl.lit(grp_a_str))
+				.when(pl.col("cat_id").is_in(grp_b))
+				.then(pl.lit(grp_b_str))
+				.otherwise(pl.lit("Other"))
+				.alias("Group")
+			)
+			.drop("cat_id")
+			.filter(pl.col("Group") != "Other")
+			.with_columns(pl.median("RF").over("Group", "Tag").alias("Median"))
+			.sort(["Median", "Tag"], descending=[True, False])
+			)
+		return(df_plot)
 	
-		if tag_set == 'Parts-of-Speech' and tag_type == 'General':
-			stats = df_plot.groupby('Group').describe().unstack(1).reset_index().pivot(index=['Tag', 'Group'], values=0, columns='level_1')
-			med = df_plot.groupby('Group').median().unstack(1).reset_index()
-			med = med.rename(columns={med.columns[2]: 'median'})
-			med = med.sort_values(['Tag', 'Group'])
-		
-		else:
-			stats = df_plot.groupby('Group').describe().unstack(1).reset_index().pivot(index=['level_0', 'Group'], values=0, columns='level_1')
-			med = df_plot.groupby('Group').median().unstack(1).reset_index()
-			med = med.rename(columns={med.columns[2]: 'median'})
-			med = med.sort_values(['level_0', 'Group'])
-	
-		stats['median'] = med['median'].values
-	
-	stats = stats[['count', 'mean', 'median', 'std', 'min', '25%', '50%', '75%', 'max']]
-	stats = stats.to_string(header=True, index_names=False)
-	#preserve formatting for markdown
-	stats = 'Tag' + stats
-	stats = stats.replace('Tag   ', 'Tag')
-	stats = stats.replace('\n', '\n    ')
-		
-	if grp_a is not None and grp_b is not None:
-		df_plot = pd.melt(df_plot,id_vars=['doc_id', 'Group'],var_name='Tag', value_name='RF')
-		df_plot['Median'] = df_plot.groupby(['Tag', 'Group']).transform('median')
-		df_plot.sort_values(by=['Group', 'Median'], ascending=[False, True], inplace=True, ignore_index=True)
-		return df_plot, stats
+def scatterplots_pl(dtm_pl, axis_vals: list):
 
-	else:
-		df_plot = pd.melt(df_plot,id_vars=['doc_id'],var_name='Tag', value_name='RF')
-		df_plot['Median'] = df_plot.groupby(['Tag']).transform('median')
-		df_plot.sort_values(by='Median', inplace=True, ignore_index=True, ascending=False)
-		cols = df_plot['Tag'].drop_duplicates().tolist()
-		return df_plot, stats, cols
+	df_plot = (
+		dtm_pl
+		.unpivot(pl.selectors.numeric(), index="doc_id", variable_name="Tag", value_name="AF")
+		.with_columns(
+			pl.when(pl.col("Tag").is_in(axis_vals))
+			.then(pl.col("Tag"))
+			.otherwise(pl.lit("Other"))
+			.alias("Tag_Sort")
+		)
+		.with_columns(
+			pl.col("doc_id").str.split_exact("_", 0)
+			.struct.rename_fields(["cat_id"])
+			.alias("id")
+			)
+		.unnest("id")
+		.drop("cat_id", "Tag")
+		.group_by(["doc_id", "Group", "Tag_Sort"]).sum()
+		.with_columns(pl.col("AF").truediv(pl.sum("AF").over("doc_id")).mul(100).alias("RF"))
+		.filter(pl.col("Tag_Sort") != "Other")
+		.rename({"Tag_Sort": "Tag"})
+		.sort("doc_id", "Tag")
+		.pivot("Tag", index=["doc_id", "Group"], values="RF")
+	)
 
-def doc_counts(doc_span, n_tokens, count_by='pos'):
-    if count_by=='pos':
-        df = Counter(doc_span[doc_span.Tag != 'Y'].Tag)
-        df = pd.DataFrame.from_dict(df, orient='index').reset_index()
-        df = df.rename(columns={'index':'Tag', 0:'AF'})
-        df['RF'] = df.AF/n_tokens*100
-        df.sort_values(by=['AF', 'Tag'], ascending=[False, True], inplace=True)
-        df.reset_index(drop=True, inplace=True)
-    elif count_by=='ds':
-        df = Counter(doc_span.Tag)
-        df = pd.DataFrame.from_dict(df, orient='index').reset_index()
-        df = df.rename(columns={'index':'Tag', 0:'AF'})
-        df = df[df.Tag != 'Untagged']
-        df['RF'] = df.AF/n_tokens*100
-        df.sort_values(by=['AF', 'Tag'], ascending=[False, True], inplace=True)
-        df.reset_index(drop=True, inplace=True)
-    return(df)
+	return(df_plot)
 
-def simplify_counts(pos_counts, n_tokens):
-        df = pos_counts.drop('RF', axis=1)
-        df['Tag'].replace('^NN\S*$', '#Noun', regex=True, inplace=True)
-        df['Tag'].replace('^VV\S*$', '#Verb', regex=True, inplace=True)
-        df['Tag'].replace('^J\S*$', '#Adjective', regex=True, inplace=True)
-        df['Tag'].replace('^R\S*$', '#Adverb', regex=True, inplace=True)
-        df['Tag'].replace('^P\S*$', '#Pronoun', regex=True, inplace=True)
-        df['Tag'].replace('^I\S*$', '#Preposition', regex=True, inplace=True)
-        df['Tag'].replace('^C\S*$', '#Conjunction', regex=True, inplace=True)
-        df = df.loc[df["Tag"].str.startswith('#', na=False)]
-        df['Tag'].replace('^#', '', regex=True, inplace=True)
-        df = df.groupby(['Tag'], as_index=False)['AF'].sum()
-        df.sort_values(by='AF', inplace=True, ignore_index=True, ascending=False)
-        df.reset_index(inplace=True)
-        df['RF'] = df.AF/n_tokens*100
-        return(df)
-        
-def simplify_span(pos_span):
-        df = pos_span.copy()
-        df['Tag'].replace('^NN\S*$', 'Noun', regex=True, inplace=True)
-        df['Tag'].replace('^VV\S*$', 'Verb', regex=True, inplace=True)
-        df['Tag'].replace('^J\S*$', 'Adjective', regex=True, inplace=True)
-        df['Tag'].replace('^R\S*$', 'Adverb', regex=True, inplace=True)
-        df['Tag'].replace('^P\S*$', 'Pronoun', regex=True, inplace=True)
-        df['Tag'].replace('^I\S*$', 'Preposition', regex=True, inplace=True)
-        df['Tag'].replace('^C\S*$', 'Conjunction', regex=True, inplace=True)
-        return(df)
 
-def html_build(tok, key, count_by="tag"):
-    df = ds.tag_ruler(tok=tok, key=key, count_by=count_by)
-    df['ws'] = df['Token'].str.extract(r'(\s+)$')
-    df['Token'] = df['Token'].str.replace(r'(\s+)$', '')
-    df.Token[df['Tag'] != 'Untagged'] = df['Token'].str.replace(r'^(.*?)$', '\\1</span>')
-    df = df.iloc[:,[1,0,4]]
-    df.fillna('', inplace=True)
-    df.Tag[df['Tag'] != 'Untagged'] = df['Tag'].str.replace(r'^(.*?)$', '<span class="\\1">')
-    df.Tag[df['Tag'] == 'Untagged'] = df['Tag'].str.replace('Untagged', '')
-    df['Text'] = df['Tag'] + df['Token'] + df['ws']
-    doc = ''.join(df['Text'].tolist())
-    return(doc)
+def html_build_pl(tok_pl, doc_key):
+	html_pos = (
+		tok_pl
+		.filter(pl.col("doc_id") == doc_key)
+		.group_by(["pos_id", "pos_tag"], maintain_order = True)
+		.agg(pl.col("token").str.concat(""))
+		.with_columns(pl.col("token").str.extract("(\s)$")
+					.alias("ws"))
+		.with_columns(pl.col("token").str.strip_chars())
+		.with_columns(pl.col("token").str.len_chars()
+						.alias("tag_end"))
+		.with_columns(pl.col("tag_end").shift(1, fill_value=0)
+					.alias("tag_start"))
+		.with_columns(pl.col("tag_end").cum_sum())
+		.with_columns(pl.col("tag_start").cum_sum())
+		.with_columns(pl.col("ws").fill_null(""))
+		.with_columns(
+			pl.when(pl.col("pos_tag") != "Y")
+			.then(pl.concat_str(pl.col("token"), pl.lit("</span>")))
+			.otherwise(pl.col("token"))
+			.alias("token_html"))
+		.with_columns(
+			pl.when(pl.col("pos_tag") != "Y")
+			.then(pl.concat_str(pl.lit('<span class="'), pl.col("pos_tag"), pl.lit('">')))
+			.otherwise(pl.lit(""))
+			.alias("tag_html"))
+		.with_columns(pl.concat_str(pl.col("tag_html"), pl.col("token_html"), pl.col("ws")).alias("Text"))
+		.with_columns(pl.lit(doc_key).alias("doc_id"))
+		.rename({"pos_tag": "Tag"})
+		.select("doc_id", "token", "Tag", "tag_start", "tag_end", "Text")
+	)
 
-def html_simplify(html_str):
-    html_str = re.sub(r'span class="NN\S*">', 'span class="Noun">', html_str)
-    html_str = re.sub(r'span class="VV\S*">', 'span class="Verb">', html_str)
-    html_str = re.sub(r'span class="J\S*">', 'span class="Adjective">', html_str)
-    html_str = re.sub(r'span class="R\S*">', 'span class="Adverb">', html_str)
-    html_str = re.sub(r'span class="P\S*">', 'span class="Pronoun">', html_str)
-    html_str = re.sub(r'span class="I\S*">', 'span class="Preposition">', html_str)
-    html_str = re.sub(r'span class="C\S*">', 'span class="Conjunction">', html_str)
-    return(html_str)
+	html_simple = (
+		tok_pl
+		.filter(pl.col("doc_id") == doc_key)
+		.group_by(["pos_id", "pos_tag"], maintain_order = True)
+		.agg(pl.col("token").str.concat(""))
+		.with_columns(pl.col("pos_tag")
+		.str.replace('^NN\S*$', '#NounCommon')
+		.str.replace('^VV\S*$', '#VerbLex')
+		.str.replace('^J\S*$', '#Adjective')
+		.str.replace('^R\S*$', '#Adverb')
+		.str.replace('^P\S*$', '#Pronoun')
+		.str.replace('^I\S*$', '#Preposition')
+		.str.replace('^C\S*$', '#Conjunction')
+		.str.replace('^N\S*$', '#NounOther')
+		.str.replace('^VB\S*$', '#VerbBe')
+		.str.replace('^V\S*$', '#VerbOther'))
+		.with_columns(
+			pl.when(pl.col("pos_tag").str.starts_with("#"))
+			.then(pl.col("pos_tag"))
+			.otherwise(pl.col("pos_tag").str.replace('^\S+$', '#Other')))
+		.with_columns(pl.col("pos_tag").str.replace("#", ""))
+		.with_columns(pl.col("token").str.extract("(\s)$")
+					.alias("ws"))
+		.with_columns(pl.col("token").str.strip_chars())
+		.with_columns(pl.col("token").str.len_chars()
+						.alias("tag_end"))
+		.with_columns(pl.col("tag_end").shift(1, fill_value=0)
+					.alias("tag_start"))
+		.with_columns(pl.col("tag_end").cum_sum())
+		.with_columns(pl.col("tag_start").cum_sum())
+		.with_columns(pl.col("ws").fill_null(""))
+		.with_columns(
+			pl.when(pl.col("pos_tag") != "Other")
+			.then(pl.concat_str(pl.col("token"), pl.lit("</span>")))
+			.otherwise(pl.col("token"))
+			.alias("token_html"))
+		.with_columns(
+			pl.when(pl.col("pos_tag") != "Other")
+			.then(pl.concat_str(pl.lit('<span class="'), pl.col("pos_tag"), pl.lit('">')))
+			.otherwise(pl.lit(""))
+			.alias("tag_html"))
+		.with_columns(pl.concat_str(pl.col("tag_html"), pl.col("token_html"), pl.col("ws")).alias("Text"))
+		.with_columns(pl.lit(doc_key).alias("doc_id"))
+		.rename({"pos_tag": "Tag"})
+		.select("doc_id", "token", "Tag", "tag_start", "tag_end", "Text")
+	)
 
-def add_alt_chunk(doc: docx.Document, html: str):
-    package = doc.part.package
-    partname = package.next_partname('/word/altChunk%d.html')
-    alt_part = docx.opc.part.Part(partname, 'text/html', html.encode(), package)
-    r_id = doc.part.relate_to(alt_part, docx.opc.constants.RELATIONSHIP_TYPE.A_F_CHUNK)
-    alt_chunk = docx.oxml.OxmlElement('w:altChunk')
-    alt_chunk.set(docx.oxml.ns.qn('r:id'), r_id)
-    doc.element.body.sectPr.addprevious(alt_chunk)
+	html_ds = (
+		tok_pl
+		.filter(pl.col("doc_id") == doc_key)
+		.group_by(["ds_id", "ds_tag"], maintain_order = True)
+		.agg(pl.col("token").str.concat(""))
+		.with_columns(pl.col("token").str.extract("(\s)$")
+					.alias("ws"))
+		.with_columns(pl.col("token").str.strip_chars())
+		.with_columns(pl.col("token").str.len_chars()
+						.alias("tag_end"))
+		.with_columns(pl.col("tag_end").shift(1, fill_value=0)
+					.alias("tag_start"))
+		.with_columns(pl.col("tag_end").cum_sum())
+		.with_columns(pl.col("tag_start").cum_sum())
+		.with_columns(pl.col("ws").fill_null(""))
+		.with_columns(
+			pl.when(pl.col("ds_tag") != "Untagged")
+			.then(pl.concat_str(pl.col("token"), pl.lit("</span>")))
+			.otherwise(pl.col("token"))
+			.alias("token_html"))
+		.with_columns(
+			pl.when(pl.col("ds_tag") != "Untagged")
+			.then(pl.concat_str(pl.lit('<span class="'), pl.col("ds_tag"), pl.lit('">')))
+			.otherwise(pl.lit(""))
+			.alias("tag_html"))
+		.with_columns(pl.concat_str(pl.col("tag_html"), pl.col("token_html"), pl.col("ws")).alias("Text"))
+		.with_columns(pl.lit(doc_key).alias("doc_id"))
+		.rename({"ds_tag": "Tag"})
+		.select("doc_id", "token", "Tag", "tag_start", "tag_end", "Text")
+	)
+
+	return(html_pos, html_simple, html_ds)
+
     
