@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Cancer Care Associates
+# Copyright (C) 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,17 +17,16 @@ import importlib
 import pathlib
 import types
 
-from docuscope._imports import streamlit as st
-from docuscope._imports import watchdog
+import streamlit as st
+import watchdog
 
 from . import session as _session
-
 
 def rerun(session_id=None):
     if session_id is None:
         session_id = _session.get_session_id()
 
-    server = st.server.server.Server.get_current()
+    server = st.web.server.server.Server.get_current()
     session = server._get_session_info(  # pylint: disable = protected-access
         session_id
     ).session
@@ -35,7 +34,7 @@ def rerun(session_id=None):
     session.request_rerun()
 
 
-@st.cache()
+@st.cache_resource()
 def reload_and_rerun_on_module_changes(module: types.ModuleType, session_id):
     event_handler = watchdog.events.FileModifiedEvent(module.__file__)
 
@@ -84,7 +83,7 @@ def autoreload(modules):
         reload_and_rerun_on_module_changes(module, session_id)
 
 
-@st.cache(allow_output_mutation=True)
+@st.cache_resource()
 def mutable_file_contents_cache(path):
     with open(path) as f:
         data = f.read()
