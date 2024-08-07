@@ -1,6 +1,7 @@
 [global]
-check_size = true
-check_language = true
-enable_save = false
-desktop_mode = false
-max_bytes = 20000000
+check_size = false
+check_language = false
+enable_save = true
+desktop_mode = true
+max_bytes_text = 20000000
+max_bytes_polars = 150000000
