@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import altair as alt
+import ibis
 import pandas as pd
 import pathlib
 import polars as pl
@@ -63,9 +64,11 @@ def main():
 			tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("kt_radio2", pathlib.Path(__file__).stem,  user_session_id), horizontal=True)
 	
 			if tag_radio_tokens == 'Parts-of-Speech':
-				df = con.table("kw_pos", database="target").to_pandas()
+				df = con.table("kw_pos", database="target").to_pyarrow_batches(chunk_size=5000)
+				df = pl.from_arrow(df).to_pandas()
 			else:
-				df = con.table("kw_ds", database="target").to_pandas()
+				df = con.table("kw_ds", database="target").to_pyarrow_batches(chunk_size=5000)
+				df = pl.from_arrow(df).to_pandas()
 			
 			col1, col2 = st.columns([1,1])
 			with col1:
@@ -256,7 +259,9 @@ def main():
 						tc_ref_ds = con.table("tt_ds", database="reference").to_polars()
 						
 						kw_pos = _analysis.keyness_pl(wc_tar_pos, wc_ref_pos)
+						kw_pos = ibis.memtable(kw_pos)
 						kw_ds  = _analysis.keyness_pl(wc_tar_ds, wc_ref_ds)
+						kw_ds = ibis.memtable(kw_ds)
 						kt_pos = _analysis.keyness_pl(tc_tar_pos, tc_ref_pos, tags_only=True)
 						kt_ds  = _analysis.keyness_pl(tc_tar_ds, tc_ref_ds, tags_only=True)
 
