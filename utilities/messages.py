@@ -230,8 +230,7 @@ message_single_document = """
 
 message_download = """
 	### Download
-    \nYou can use the checkboxes to download selected rows.
-    With no rows selected, the entire table will be prepared for download.
+    \nClick the button to download your data.
     """
 
 message_download_dtm = """

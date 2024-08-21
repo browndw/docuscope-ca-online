@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pandas as pd
 import polars as pl
-import st_aggrid
 import streamlit as st
 
 import categories as _categories
@@ -53,59 +51,64 @@ def main():
 		metadata_target = _handlers.load_metadata('target', con)
 		
 		df = con.table("ngrams", database="target").to_pyarrow_batches(chunk_size=5000)
-		df = pl.from_arrow(df).to_pandas()
+		df = pl.from_arrow(df)
 	
 		st.markdown(_messages.message_target_info(metadata_target))
-			
-		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
-		gb.configure_default_column(filter="agTextColumnFilter")
-		gb.configure_column("Token_1", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
-		gb.configure_column("RF", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
-		gb.configure_column("Range", type=["numericColumn","numberColumnFilter"], valueFormatter="(data.Range).toFixed(1)+'%'")
-		gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
-		gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
-		go = gb.build()
 		
-		grid_response = st_aggrid.AgGrid(
-			df,
-			gridOptions=go,
-			enable_enterprise_modules = False,
-			data_return_mode='FILTERED_AND_SORTED', 
-			update_mode='MODEL_CHANGED', 
-			columns_auto_size_mode='FIT_CONTENTS',
-			theme='alpine',
-			height=500, 
-			width='100%',
-			reload_data=False
-			)
-			
-		with st.expander("Column explanation"):
-			st.markdown(_messages.message_columns_tokens)
-			
-		selected = grid_response['selected_rows']
-		
-		if selected is not None:
-			df = pd.DataFrame(selected)
-			n_selected = len(df.index)
-			st.markdown(f"""##### Selected rows:
-			   
-			Number of selected tokens: {n_selected}
-			""")
+		col1, col2 = st.columns(2)
 
-		with st.sidebar.expander("Filtering and saving"):
-			st.markdown(_messages.message_filters)
-		
-		with st.sidebar:
-			st.markdown(_messages.message_download)
-			download_file = _handlers.convert_to_excel(df)
+		with col1:
+			if df.height == 0 or df is None:
+				cats_1 = []
+			elif df.height > 0:
+				cats_1 = sorted(df.get_column("Tag_1").unique().to_list())
 
-			st.download_button(
-    			label="Download to Excel",
-    			data=download_file,
-    			file_name="ngrams.xlsx",
-   					 mime="application/vnd.ms-excel",
-					)
+			filter_tag_1 = st.multiselect("Select tags to filter in position 1:", (cats_1))
+			if len(filter_tag_1) > 0:
+				df = df.filter(pl.col("Tag_1").is_in(filter_tag_1))
+
+			if "Tag_3" in df.columns:
+				cats_3 = sorted(df.get_column("Tag_3").unique().to_list())
+				filter_tag_3 = st.multiselect("Select tags to filter in position 3:", (cats_3))
+				if len(filter_tag_3) > 0:
+					df = df.filter(pl.col("Tag_3").is_in(filter_tag_3))
+		
+		with col2:
+			if df.height == 0 or df is None:
+				cats_2 = []
+			elif df.height > 0:
+				cats_2 = sorted(df.get_column("Tag_2").unique().to_list())
+
+			filter_tag_2 = st.multiselect("Select tags to filter in position 2:", (cats_2))
+			if len(filter_tag_2) > 0:
+				df = df.filter(pl.col("Tag_2").is_in(filter_tag_2))
+
+			if "Tag_4" in df.columns:
+				cats_4 = sorted(df.get_column("Tag_4").unique().to_list())
+				filter_tag_4 = st.multiselect("Select tags to filter in position 4:", (cats_4))
+				if len(filter_tag_4) > 0:
+					df = df.filter(pl.col("Tag_4").is_in(filter_tag_4))
+
+
+		st.dataframe(df, hide_index=True, 
+				column_config={
+					"Range": st.column_config.NumberColumn(format="%.2f %%"),
+					"RF": st.column_config.NumberColumn(format="%.2f")}
+		)
+		
+		download_table = st.sidebar.toggle("Download to Excel?")
+		if download_table == True:
+			with st.sidebar:
+				st.sidebar.markdown(_messages.message_download)
+				download_file = _handlers.convert_to_excel(df.to_pandas())
+
+				st.download_button(
+					label="Download to Excel",
+					data=download_file,
+					file_name="ngrams.xlsx",
+						mime="application/vnd.ms-excel",
+						)
+
 		st.sidebar.markdown("---")
 
 		st.sidebar.markdown("### Generate new table")

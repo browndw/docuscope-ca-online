@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pandas as pd
 import polars as pl
-import st_aggrid
 import streamlit as st
 
 import categories as _categories
@@ -52,62 +50,41 @@ def main():
 		metadata_target = _handlers.load_metadata('target', con)
 
 		df = con.table("collocations", database="target").to_pyarrow_batches(chunk_size=5000)
-		df = pl.from_arrow(df).to_pandas()
+		df = pl.from_arrow(df)
 		
 		col1, col2 = st.columns([1,1])
 		with col1:
 			st.markdown(_messages.message_target_info(metadata_target))
 		with col2:
 			st.markdown(_messages.message_collocation_info(metadata_target.get('collocations')[0]['temp']))
-			
-		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
-		gb.configure_default_column(filter="agTextColumnFilter")
-		gb.configure_column("Token", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
-		gb.configure_column("MI", type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=3)
-		gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
-		gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
-		go = gb.build()
 	
-		grid_response = st_aggrid.AgGrid(
-			df,
-			gridOptions=go,
-			enable_enterprise_modules = False,
-			data_return_mode='FILTERED_AND_SORTED', 
-			update_mode='MODEL_CHANGED', 
-			columns_auto_size_mode='FIT_CONTENTS',
-			theme='alpine',
-			height=500, 
-			width='100%',
-			reload_data=False
-			)
-		
-		with st.expander("Column explanation"):
-			st.markdown(_messages.message_columns_collocations)
-	
-		selected = grid_response['selected_rows']
+		if df.height == 0 or df is None:
+			cats = []
+		elif df.height > 0:
+			cats = sorted(df.get_column("Tag").unique().to_list())
 
-		if selected is not None:
-			df = pd.DataFrame(selected)
-			n_selected = len(df.index)
-			st.markdown(f"""##### Selected rows:
-			   
-			Number of selected tokens: {n_selected}
-			""")
-		
-		with st.sidebar.expander("Filtering and saving"):
-			st.markdown(_messages.message_filters)
-		
-		with st.sidebar:
-			st.markdown(_messages.message_download)
-			download_file = _handlers.convert_to_excel(df)
+		filter_vals = st.multiselect("Select tags to filter:", (cats))
+		if len(filter_vals) > 0:
+			df = df.filter(pl.col("Tag").is_in(filter_vals))
 
-			st.download_button(
-    			label="Download to Excel",
-    			data=download_file,
-    			file_name="collocations.xlsx",
-   					 mime="application/vnd.ms-excel",
-					)
+		st.dataframe(df, hide_index=True, 
+				column_config={
+					"Range": st.column_config.NumberColumn(format="%.2f %%"),
+					"RF": st.column_config.NumberColumn(format="%.2f")}
+		)
+		
+		download_table = st.sidebar.toggle("Download to Excel?")
+		if download_table == True:
+			with st.sidebar:
+				st.markdown(_messages.message_download)
+				download_file = _handlers.convert_to_excel(df.to_pandas())
+
+				st.download_button(
+					label="Download to Excel",
+					data=download_file,
+					file_name="collocations.xlsx",
+						mime="application/vnd.ms-excel",
+						)
 		st.sidebar.markdown("---")
 
 		st.sidebar.markdown(_messages.message_reset_table)
