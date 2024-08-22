@@ -18,6 +18,7 @@ import pathlib
 import docx
 from docx.shared import RGBColor
 from docx.shared import Pt
+import glob
 import ibis
 from io import BytesIO
 import streamlit as st
@@ -194,37 +195,22 @@ def update_metadata(corpus_type, key, value, ibis_conn):
 # Functions for handling corpora
 
 def load_corpus_internal(db_path, ibis_conn, corpus_type='target'):
-	temp_name = "temp_" + corpus_type
-	try:
-		ibis_conn.attach(db_path, name=temp_name, read_only=True)
-		ds_tokens = ibis_conn.table("ds_tokens", database=(temp_name, "main")).to_pyarrow_batches(chunk_size=5000)
-		ds_tokens = pl.from_arrow(ds_tokens)
-		dtm_ds = ibis_conn.table("dtm_ds", database=(temp_name, "main")).to_polars()
-		dtm_pos = ibis_conn.table("dtm_pos", database=(temp_name, "main")).to_polars()
-		ft_ds = ibis_conn.table("ft_ds", database=(temp_name, "main")).to_pyarrow_batches(chunk_size=5000)
-		ft_ds = pl.from_arrow(ft_ds)
-		ft_pos = ibis_conn.table("ft_pos", database=(temp_name, "main")).to_pyarrow_batches(chunk_size=5000)
-		ft_pos = pl.from_arrow(ft_pos)
-		tt_ds = ibis_conn.table("tt_ds", database=(temp_name, "main")).to_polars()
-		tt_pos = ibis_conn.table("tt_pos", database=(temp_name, "main")).to_polars()
-	except:
-		pass
+	queries = []
+	table_names = []
+	for file in glob.glob(os.path.join(db_path, '*.parquet')):
+		q = pl.scan_parquet(file)
+		queries.append(q)
+		table_names.append(str(os.path.basename(file)).removesuffix(".parquet"))
+	dataframes = pl.collect_all(queries)
 	try:
 		ibis_conn.create_database(corpus_type)
 	except:
 		pass
-	try:
-		ibis_conn.create_table("ds_tokens", obj=ds_tokens, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("dtm_ds", obj=dtm_ds, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("dtm_pos", obj=dtm_pos, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("ft_ds", obj=ft_ds, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("ft_pos", obj=ft_pos, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("tt_ds", obj=tt_ds, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("tt_pos", obj=tt_pos, database=corpus_type, overwrite=True)
-	except:
-		pass
-
-		ibis_conn.detach(temp_name)
+	for i, element in enumerate(dataframes):
+		try:
+			ibis_conn.create_table(table_names[i], obj=dataframes[i], database=corpus_type, overwrite=True)
+		except:
+			pass
 
 def load_corpus_new(ds_tokens,
 					dtm_ds,
@@ -253,8 +239,8 @@ def load_corpus_new(ds_tokens,
 
 def find_saved(model_type: str):
 	SUB_DIR = CORPUS_DIR.joinpath(model_type)
-	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.duckdb'))
-	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
+	saved_paths = [ f.path for f in os.scandir(SUB_DIR) if f.is_dir() ]
+	saved_names = [ f.name for f in os.scandir(SUB_DIR) if f.is_dir() ]
 	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
 	return(saved_corpora)
 
@@ -267,8 +253,8 @@ def find_saved_reference(target_model, target_path):
 		corpus = "ELSEVIER"
 	model_type = ''.join(word[0] for word in target_model.lower().split())
 	SUB_DIR = CORPUS_DIR.joinpath(model_type)
-	saved_paths = list(pathlib.Path(SUB_DIR).glob('*.duckdb'))
-	saved_names = [os.path.splitext(os.path.basename(filename))[0] for filename in saved_paths]
+	saved_paths = [ f.path for f in os.scandir(SUB_DIR) if f.is_dir() ]
+	saved_names = [ f.name for f in os.scandir(SUB_DIR) if f.is_dir() ]
 	saved_corpora = {saved_names[i]: saved_paths[i] for i in range(len(saved_names))}
 	saved_ref = {key:val for key, val in saved_corpora.items() if corpus not in key}
 	return(saved_corpora, saved_ref)

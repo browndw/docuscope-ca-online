@@ -177,18 +177,21 @@ def main():
 		st.dataframe(df, hide_index=True)
 		
 		st.sidebar.markdown("---")
-		with st.sidebar:
-			download_file = _handlers.convert_to_word(st.session_state[user_session_id]['html_str'],
-											 tag_html,
-											 doc_key,
-											 df)
+		download_doc = st.sidebar.toggle("Download to Word?")
+		if download_doc == True:
+			st.sidebar.markdown(_messages.message_download)
+			with st.sidebar:
+				download_file = _handlers.convert_to_word(st.session_state[user_session_id]['html_str'],
+												tag_html,
+												doc_key,
+												df)
 
-			st.download_button(
-    			label="Download to Word",
-    			data=download_file,
-    			file_name="document_tags.docx",
-   					 mime="docx",
-					)
+				st.download_button(
+					label="Download to Word",
+					data=download_file,
+					file_name="document_tags.docx",
+						mime="docx",
+						)
 		
 		st.sidebar.markdown("---")
 		

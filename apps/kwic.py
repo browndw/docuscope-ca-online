@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pandas as pd
 import polars as pl
-import st_aggrid
 import streamlit as st
 
 import categories as _categories
@@ -50,52 +48,23 @@ def main():
 	if session.get('kwic')[0] == True:
 				
 		df = con.table("kwic", database="target").to_pyarrow_batches(chunk_size=5000)
-		df = pl.from_arrow(df).to_pandas()
-		
-		gb = st_aggrid.GridOptionsBuilder.from_dataframe(df)
-		gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100) #Add pagination
-		gb.configure_default_column(filter="agTextColumnFilter")
-		gb.configure_column("Doc ID", filter="agTextColumnFilter", headerCheckboxSelection = True, headerCheckboxSelectionFilteredOnly = True)
-		gb.configure_column("Pre-Node", type="rightAligned")
-		gb.configure_selection('multiple', use_checkbox=True, groupSelectsChildren="Group checkbox select children") #Enable multi-row selection
-		gb.configure_grid_options(sideBar = {"toolPanels": ['filters']})
-		go = gb.build()
-	
-		grid_response = st_aggrid.AgGrid(
-			df,
-			gridOptions=go,
-			enable_enterprise_modules = False,
-			data_return_mode='FILTERED_AND_SORTED', 
-			update_mode='MODEL_CHANGED', 
-			columns_auto_size_mode='FIT_CONTENTS',
-			theme='alpine',
-			height=500, 
-			width='100%',
-			reload_data=False
-			)
-		
-		selected = grid_response['selected_rows'] 
-		if selected is not None:
-			df = pd.DataFrame(selected)
-			n_selected = len(df.index)
-			st.markdown(f"""##### Selected rows:
-			   
-			Number of selected tokens: {n_selected}
-			""")
-		
-		with st.sidebar.expander("Filtering and saving"):
-			st.markdown(_messages.message_filters)
-		
-		with st.sidebar:
-			st.markdown(_messages.message_download)
-			download_file = _handlers.convert_to_excel(df)
+		df = pl.from_arrow(df)
 
-			st.download_button(
-    			label="Download to Excel",
-    			data=download_file,
-    			file_name="kwic.xlsx",
-   					 mime="application/vnd.ms-excel",
-					)
+		st.dataframe(df, hide_index=True)
+		
+		download_table = st.sidebar.toggle("Download to Excel?")
+		if download_table == True:		
+			with st.sidebar:
+				st.markdown(_messages.message_download)
+				download_file = _handlers.convert_to_excel(df.to_pandas())
+
+				st.download_button(
+					label="Download to Excel",
+					data=download_file,
+					file_name="kwic.xlsx",
+						mime="application/vnd.ms-excel",
+						)
+		
 		st.sidebar.markdown("---")
 		
 		st.sidebar.markdown(_messages.message_reset_table)

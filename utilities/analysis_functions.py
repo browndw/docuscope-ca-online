@@ -315,7 +315,7 @@ def collocations_pl(tok_pl, node_word, preceding=4, following=4, statistic='pmi'
 	
 	return(coll_df)
 
-def keyness_pl(target_pl, reference_pl, correct=False, tags_only=False):
+def keyness_pl(target_pl, reference_pl, correct=False, tags_only=False, threshold=.01):
 
 	total_target = target_pl.get_column("AF").sum()
 	total_reference = reference_pl.get_column("AF").sum()
@@ -392,6 +392,7 @@ def keyness_pl(target_pl, reference_pl, correct=False, tags_only=False):
 			.alias("PV")
 		)
 		.sort("LL", descending=True)
+		.filter(pl.col("PV") < threshold)
 	)
 	if tags_only == False:
 		return(kw_df.select(["Token", "Tag", "LL", "LR", "PV", "RF", "RF_Ref", "AF", "AF_Ref", "Range", "Range_Ref"]))
@@ -839,6 +840,63 @@ def dtm_simplify_pl(dtm_pl):
 	)
 	
  return(simple_df)
+
+def freq_simplify_pl(df_pl):
+ simple_df = (
+	df_pl
+	.with_columns(
+		pl.selectors.starts_with("Tag")
+		.str.replace('^NN\S*$', '#NounCommon')
+		.str.replace('^VV\S*$', '#VerbLex')
+		.str.replace('^J\S*$', '#Adjective')
+		.str.replace('^R\S*$', '#Adverb')
+		.str.replace('^P\S*$', '#Pronoun')
+		.str.replace('^I\S*$', '#Preposition')
+		.str.replace('^C\S*$', '#Conjunction')
+		.str.replace('^N\S*$', '#NounOther')
+		.str.replace('^VB\S*$', '#VerbBe')
+		.str.replace('^V\S*$', '#VerbOther')
+	)
+	.with_columns(
+		pl.when(pl.selectors.starts_with("Tag").str.starts_with("#"))
+		.then(pl.selectors.starts_with("Tag"))
+		.otherwise(pl.selectors.starts_with("Tag").str.replace('^\S+$', '#Other'))
+		)
+	.with_columns(
+		pl.selectors.starts_with("Tag").str.replace("#", "")
+	)
+	)
+	
+ return(simple_df)
+
+
+def tags_simplify_pl(dtm_pl):
+	simple_df = (
+		dtm_pl
+		.transpose(include_header=True, header_name="Tag", column_names="doc_id")
+		.with_columns(
+				pl.sum_horizontal(pl.selectors.numeric() > 0)
+				.alias("Range")
+		)
+	.with_columns(
+		pl.col("Range").truediv(pl.sum_horizontal(pl.selectors.numeric().exclude("Range").is_not_null())).mul(100)
+		)
+		# calculate absolute frequency
+		.with_columns(
+			pl.sum_horizontal(pl.selectors.numeric().exclude("Range"))
+			.alias("AF")
+		)
+		.sort("AF", descending = True)
+		.select(["Tag", "AF", "Range"])
+		# calculate relative frequency
+		.with_columns(
+			pl.col("AF").truediv(pl.sum("AF")).mul(100)
+			.alias("RF")
+		)
+		.select(["Tag", "AF", "RF", "Range"])
+		)
+	return(simple_df)
+
 
 def pca_contributions(dtm, doccats):
 	df = dtm.set_index('doc_id')
