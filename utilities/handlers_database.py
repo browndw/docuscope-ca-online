@@ -27,6 +27,8 @@ import polars as pl
 import zipfile
 import xlsxwriter
 
+from connections import IbisConnection
+
 HERE = pathlib.Path(__file__).parents[1].resolve()
 CORPUS_DIR = HERE.joinpath("_corpora")
 TEMP_DIR = HERE.joinpath("_temp")
@@ -45,14 +47,12 @@ IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 # Initialize session states.
 # For local file handling, generate a temp folder to be deleted on close.
 
+	
 def get_db_connection(session_id):
 	if session_id not in st.session_state:
 		st.session_state[session_id] = {}
 	if "ibis_conn" not in st.session_state[session_id]:
-		st.session_state[session_id]["ibis_conn"] = ibis.duckdb.connect(":memory:",
-																  memory_limit="25MB", 
-																  threads=4, 
-																  temp_directory=TEMP_DIR)
+		st.session_state[session_id]["ibis_conn"] = st.connection("duckdb", type=IbisConnection, temp_directory=TEMP_DIR)
 	
 	return st.session_state[session_id]["ibis_conn"]
 

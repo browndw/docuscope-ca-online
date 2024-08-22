@@ -485,7 +485,10 @@ def main():
 		st.sidebar.markdown('### Reset all tools and files:')
 		st.sidebar.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 		if st.sidebar.button("Reset Corpus"):
-			con.disconnect()
+			try:
+				con.disconnect()
+			except:
+				pass
 			st.session_state[user_session_id] = {}
 			con = _handlers.get_db_connection(user_session_id)
 			_handlers.generate_temp(_states.STATES.items(), user_session_id, con)

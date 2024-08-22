@@ -21,7 +21,6 @@ import sys
 import textwrap
 import warnings
 
-import states as _states
 import utilities
 import apps as _stable_apps
 import categories as _categories
@@ -38,6 +37,9 @@ PL_LOGO = str(HERE.joinpath("_static/porpoise_badge.svg"))
 UG_LOGO = str(HERE.joinpath("_static/user_guide.svg"))
 STYLE = str(HERE.joinpath("css/style.css"))
 SPACY_META = HERE.joinpath("models/en_docusco_spacy/meta.json")
+
+st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="wide")
+_content.local_css(STYLE)
 
 user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 user_session_id = user_session.session_id
@@ -117,7 +119,7 @@ def index(application_options):
 def main():
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
-        
+
     session_state = utilities.session_state(app=_content.get_url_app())
 
     stable_apps = _content._get_apps_from_module(_stable_apps)
@@ -127,9 +129,6 @@ def main():
         item
         for item in application_options.items()
     ]
-
-    st.set_page_config(page_title="DocuScope CAC", page_icon=FAVICON, layout="wide")
-    _content.local_css(STYLE)
     
     if (
         session_state.app != "index"

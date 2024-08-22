@@ -56,7 +56,7 @@ def get_session(session_id: str = None):
     session_info = st.runtime.get_instance()._session_mgr.get_active_session_info(session_id)
 
     if session_info is None:
-        raise ValueError("No session info found")
+        pass
 
     report_session = session_info.session
 
