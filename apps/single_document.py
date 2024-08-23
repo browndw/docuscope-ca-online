@@ -40,21 +40,15 @@ def main():
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-
-	try:
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-	except:
-		_handlers.init_session(con)
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 
 	if session.get('doc')[0] == True:
 	
 		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 
 		st.sidebar.markdown("### Tagset")
 
@@ -68,7 +62,7 @@ def main():
 		if tag_radio == 'Parts-of-Speech':
 			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)
 			if tag_type == 'General':
-				tag_loc = con.table("doc_simple", database="target").to_polars()
+				tag_loc = st.session_state[user_session_id]["target"]["doc_simple"]
 				html_simple = ''.join(tag_loc.get_column("Text").to_list())
 				doc_key = tag_loc.get_column("doc_id").unique().to_list()
 
@@ -85,7 +79,7 @@ def main():
 					.sort(["AF", "Tag"], descending=[True, False])
 					).to_pandas()
 			else:
-				tag_loc = con.table("doc_pos", database="target").to_polars()
+				tag_loc = st.session_state[user_session_id]["target"]["doc_pos"]
 				html_pos = ''.join(tag_loc.get_column("Text").to_list())
 				doc_key = tag_loc.get_column("doc_id").unique().to_list()
 				
@@ -102,9 +96,9 @@ def main():
 					.sort(["AF", "Tag"], descending=[True, False])
 					).to_pandas()
 		else:
-			tag_loc = con.table("doc_ds", database="target").to_polars()
+			tag_loc = st.session_state[user_session_id]["target"]["doc_ds"]
 			html_ds = ''.join(tag_loc.get_column("Text").to_list())
-			doc_key = tag_loc.get_column("doc_id").unique().to_list()[0]
+			doc_key = tag_loc.get_column("doc_id").unique().to_list()
 
 			tag_list = st.sidebar.multiselect('Select tags to highlight', metadata_target.get('tags_ds')[0]['tags'], on_change = _handlers.update_tags(html_ds, user_session_id), key=f"tags_{user_session_id}")
 			tag_colors = hex_highlights[:len(tag_list)]
@@ -201,19 +195,16 @@ def main():
 							""")
 		if st.sidebar.button("Select a new document"):
 			_TAGS = f"tags_{user_session_id}"
-			try:
-				con.drop_table("doc_simple", database="target")
-			except:
-				pass
-			try:
-				con.drop_table("doc_pos", database="target")
-			except:
-				pass
-			try:
-				con.drop_table("doc_ds", database="target")
-			except:
-				pass
-			_handlers.update_session('doc', False, con)
+			if "doc_pos" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["doc_pos"] = {}
+			st.session_state[user_session_id]["target"]["doc_pos"] = {}
+			if "doc_simple" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["doc_simple"] = {}
+			st.session_state[user_session_id]["target"]["doc_simple"] = {}
+			if "doc_ds" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["doc_ds"] = {}
+			st.session_state[user_session_id]["target"]["doc_ds"] = {}
+			_handlers.update_session('doc', False, user_session_id)
 			if _TAGS in st.session_state:
 				del st.session_state[_TAGS]
 			st.rerun()
@@ -225,7 +216,7 @@ def main():
 		st.markdown(_messages.message_single_document)
 		
 		try:
-			metadata_target = _handlers.load_metadata('target', con)
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		except:
 			pass
 		
@@ -241,15 +232,20 @@ def main():
 			if session.get('has_target')[0] == False:
 				st.markdown(_warnings.warning_11, unsafe_allow_html=True)
 			else:
-				tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-				tok_pl = pl.from_arrow(tok_pl)
+				tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
 
 				doc_pos, doc_simple, doc_ds = _analysis.html_build_pl(tok_pl, doc_key)
 				
-				con.create_table("doc_pos", obj=doc_pos, database="target", overwrite=True)
-				con.create_table("doc_simple", obj=doc_simple, database="target", overwrite=True)
-				con.create_table("doc_ds", obj=doc_ds, database="target", overwrite=True)
-				_handlers.update_session('doc', True, con)
+				if "doc_pos" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["doc_pos"] = {}
+				st.session_state[user_session_id]["target"]["doc_pos"] = doc_pos
+				if "doc_simple" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["doc_simple"] = {}
+				st.session_state[user_session_id]["target"]["doc_simple"] = doc_simple
+				if "doc_ds" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["doc_ds"] = {}
+				st.session_state[user_session_id]["target"]["doc_ds"] = doc_ds
+				_handlers.update_session('doc', True, user_session_id)
 				
 				st.rerun()
 

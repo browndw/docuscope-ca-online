@@ -18,16 +18,16 @@ import pathlib
 import docx
 from docx.shared import RGBColor
 from docx.shared import Pt
+import gzip
 import glob
-import ibis
 from io import BytesIO
+import pickle
 import streamlit as st
 import pandas as pd
 import polars as pl
+import random
 import zipfile
 import xlsxwriter
-
-from connections import IbisConnection
 
 HERE = pathlib.Path(__file__).parents[1].resolve()
 CORPUS_DIR = HERE.joinpath("_corpora")
@@ -47,30 +47,15 @@ IMPORTS = str(HERE.joinpath("utilities/handlers_imports.py"))
 # Initialize session states.
 # For local file handling, generate a temp folder to be deleted on close.
 
-	
-def get_db_connection(session_id):
-	if session_id not in st.session_state:
-		st.session_state[session_id] = {}
-	if "ibis_conn" not in st.session_state[session_id]:
-		st.session_state[session_id]["ibis_conn"] = st.connection("duckdb", type=IbisConnection, temp_directory=TEMP_DIR)
-	
-	return st.session_state[session_id]["ibis_conn"]
 
-def generate_temp(states, session_id, ibis_conn):
+def generate_temp(states, session_id):
 	if session_id not in st.session_state:
 		st.session_state[session_id] = {}
 	for key, value in states:
 		if key not in st.session_state[session_id]:
 			st.session_state[session_id][key] = value
-	try:
-		if 'session' in ibis_conn.list_tables() == True:
-			pass
-		else:
-			init_session(ibis_conn)
-	except:
-		pass
 
-def init_session(ibis_conn):
+def init_session(session_id):
 	session = {}
 	session['has_target'] = False
 	session['target_db'] = ''
@@ -89,30 +74,21 @@ def init_session(ibis_conn):
 	session['doc'] = False
 
 	df = pl.from_dict(session)
-	ibis_conn.create_table("session", obj=df, overwrite=True)
+	st.session_state[session_id]["session"] = df
 
 # Functions for managing session values.
 
-def load_session(ibis_conn):
-	try:
-		session = ibis_conn.table("session").to_polars()
-		session = session.to_dict(as_series=False)
-		return(session)
-	except:
-		pass
-
-def update_session(key, value, ibis_conn):
-	session = ibis_conn.table("session").to_polars()
+def update_session(key, value, session_id):
+	session = st.session_state[session_id]["session"]
 	session = session.to_dict(as_series=False)
 	session[key] = value
 	df = pl.from_dict(session)
-	ibis_conn.create_table("session", obj=df, overwrite=True)
+	st.session_state[session_id]["session"] = df
 
 # Functions for storing and managing corpus metadata
 
-def init_metadata_target(ibis_conn):
-	df = ibis_conn.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-	df = pl.from_arrow(df)
+def init_metadata_target(session_id):
+	df = st.session_state[session_id]["target"]["ds_tokens"]
 	tags_to_check = df.get_column("ds_tag").to_list()
 	tags = ['Actors', 'Organization', 'Planning', 'Sentiment', 'Signposting', 'Stance']
 	if any(tag in item for item in tags_to_check for tag in tags):
@@ -139,11 +115,10 @@ def init_metadata_target(ibis_conn):
 	temp_metadata_target['variance'] = {'temp': ''}
 
 	df = pl.from_dict(temp_metadata_target, strict=False)
-	ibis_conn.create_table("metadata_target", obj=df, overwrite=True)
+	st.session_state[session_id]["metadata_target"] = df
 
-def init_metadata_reference(ibis_conn):
-	df = ibis_conn.table("ds_tokens", database="reference").to_pyarrow_batches(chunk_size=5000)
-	df = pl.from_arrow(df)
+def init_metadata_reference(session_id):
+	df = st.session_state[session_id]["reference"]["ds_tokens"]
 	tags_to_check = df.get_column("ds_tag").to_list()
 	tags = ['Actors', 'Organization', 'Planning', 'Sentiment', 'Signposting', 'Stance']
 	if any(tag in item for item in tags_to_check for tag in tags):
@@ -167,17 +142,17 @@ def init_metadata_reference(ibis_conn):
 	temp_metadata_reference['tags_pos'] = {'tags': sorted(tags_pos)}
 
 	df = pl.from_dict(temp_metadata_reference, strict=False)
-	ibis_conn.create_table("metadata_reference", obj=df, overwrite=True)
+	st.session_state[session_id]["metadata_reference"] = df
 
-def load_metadata(corpus_type, ibis_conn):
+def load_metadata(corpus_type, session_id):
 	table_name = "metadata_" + corpus_type
-	metadata = ibis_conn.table(table_name).to_polars()
+	metadata = st.session_state[session_id][table_name]
 	metadata = metadata.to_dict(as_series=False)
 	return(metadata)
 
-def update_metadata(corpus_type, key, value, ibis_conn):
+def update_metadata(corpus_type, key, value, session_id):
 	table_name = "metadata_" + corpus_type
-	metadata = ibis_conn.table(table_name).to_polars()
+	metadata = st.session_state[session_id][table_name]
 	metadata = metadata.to_dict(as_series=False)
 	if key == "doccats":
 		metadata['doccats'] = {'cats': [value]}
@@ -190,27 +165,36 @@ def update_metadata(corpus_type, key, value, ibis_conn):
 	else:
 		metadata[key] = value
 	df = pl.from_dict(metadata, strict=False)
-	ibis_conn.create_table(table_name, obj=df, overwrite=True)
+	st.session_state[session_id][table_name] = df
 
 # Functions for handling corpora
 
-def load_corpus_internal(db_path, ibis_conn, corpus_type='target'):
-	queries = []
-	table_names = []
-	for file in glob.glob(os.path.join(db_path, '*.parquet')):
-		q = pl.scan_parquet(file)
-		queries.append(q)
-		table_names.append(str(os.path.basename(file)).removesuffix(".parquet"))
-	dataframes = pl.collect_all(queries)
-	try:
-		ibis_conn.create_database(corpus_type)
-	except:
-		pass
-	for i, element in enumerate(dataframes):
+def load_corpus_internal(db_path, session_id, corpus_type='target'):
+	if corpus_type not in st.session_state[session_id]:
+		st.session_state[session_id][corpus_type] = {}
+	files_list = glob.glob(os.path.join(db_path, '*.gz'))
+	random.shuffle(files_list)
+	data = {}
+	for file in files_list:
 		try:
-			ibis_conn.create_table(table_names[i], obj=dataframes[i], database=corpus_type, overwrite=True)
+			with gzip.open(file, 'rb') as f:
+				data[str(os.path.basename(file)).removesuffix(".gz")] = pickle.load(f)
 		except:
-			pass
+			pass	
+	if len(data) != 7:
+		random.shuffle(files_list)
+		data = {}
+		for file in files_list:
+			try:
+				with gzip.open(file, 'rb') as f:
+					data[str(os.path.basename(file)).removesuffix(".gz")] = pickle.load(f)
+			except:
+				pass	
+	else:
+		for key, value in data.items():
+			if key not in st.session_state[session_id][corpus_type]:
+				st.session_state[session_id][corpus_type][key] = {}
+			st.session_state[session_id][corpus_type][key] = value
 
 def load_corpus_new(ds_tokens,
 					dtm_ds,
@@ -219,23 +203,32 @@ def load_corpus_new(ds_tokens,
 					ft_pos,
 					tt_ds,
 					tt_pos,
-					ibis_conn, 
+					session_id, 
 					corpus_type='target'):
 
-	try:
-		ibis_conn.create_database(corpus_type)
-	except:
-		pass
-	try:
-		ibis_conn.create_table("ds_tokens", obj=ds_tokens, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("dtm_ds", obj=dtm_ds, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("dtm_pos", obj=dtm_pos, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("ft_ds", obj=ft_ds, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("ft_pos", obj=ft_pos, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("tt_ds", obj=tt_ds, database=corpus_type, overwrite=True)
-		ibis_conn.create_table("tt_pos", obj=tt_pos, database=corpus_type, overwrite=True)
-	except:
-		pass
+	if corpus_type not in st.session_state[session_id]:
+		st.session_state[session_id][corpus_type] = {}
+	if "ds_tokens" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["ds_tokens"] = {}
+	st.session_state[session_id][corpus_type]["ds_tokens"] = ds_tokens
+	if "dtm_ds" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["dtm_ds"] = {}
+	st.session_state[session_id][corpus_type]["dtm_ds"] = dtm_ds
+	if "dtm_pos" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["dtm_pos"] = {}
+	st.session_state[session_id][corpus_type]["dtm_pos"] = dtm_pos
+	if "ft_ds" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["ft_ds"] = {}
+	st.session_state[session_id][corpus_type]["ft_ds"] = ft_ds	
+	if "ft_pos" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["ft_pos"] = {}
+	st.session_state[session_id][corpus_type]["ft_pos"] = ft_pos	
+	if "tt_ds" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["tt_ds"] = {}
+	st.session_state[session_id][corpus_type]["tt_ds"] = tt_ds	
+	if "tt_pos" not in st.session_state[session_id][corpus_type]:
+		st.session_state[session_id][corpus_type]["tt_pos"] = {}
+	st.session_state[session_id][corpus_type]["tt_pos"] = tt_pos
 
 def find_saved(model_type: str):
 	SUB_DIR = CORPUS_DIR.joinpath(model_type)
@@ -320,16 +313,16 @@ def convert_to_word(html_string, tag_html, doc_key, tag_counts):
 	processed_data = output.getvalue()
 	return processed_data
 
-def convert_corpus_to_zip(ibis_conn, corpus_type, file_type="parquet"):
+def convert_corpus_to_zip(session_id, corpus_type, file_type="parquet"):
 	zip_buf = BytesIO()
 	with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as file_zip:
-		for table in ibis_conn.list_tables(database=corpus_type):
-			_df = ibis_conn.table(table, database=corpus_type).to_pyarrow_batches(chunk_size=5000)
+		for table in st.session_state[session_id][corpus_type]:
+			_df = st.session_state[session_id][corpus_type][table]
 			if file_type == "parquet":
-				_df = pl.from_arrow(_df).to_pandas().to_parquet()
+				_df = _df.to_pandas().to_parquet()
 				file_zip.writestr(table + ".parquet", _df)
 			else:
-				_df = pl.from_arrow(_df).to_pandas().to_csv()
+				_df = _df.to_pandas().to_csv()
 				file_zip.writestr(table + ".csv", _df)
 	processed_data = zip_buf.getvalue()
 	return(processed_data)
@@ -394,8 +387,8 @@ def update_tags(html_state, session_id):
 
 # Convenience function called by widgets
 
-def clear_plots(session_id, ibis_conn):
-	update_session('pca', False, ibis_conn)
+def clear_plots(session_id):
+	update_session('pca', False, session_id)
 	_GRPA = f"grpa_{session_id}"
 	_GRPB = f"grpb_{session_id}"
 	if _GRPA in st.session_state.keys():
