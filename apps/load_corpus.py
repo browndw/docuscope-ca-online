@@ -69,25 +69,21 @@ def main():
 
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
+	
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-	try:
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-	except:
-		_handlers.init_session(con)
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 			
 	if 'warning' not in st.session_state[user_session_id]:
 		st.session_state[user_session_id]['warning'] = 0
-	
+
 	if session.get('has_target')[0] == True:
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = st.session_state[user_session_id]['metadata_target'].to_dict()
 
 		if session.get('has_reference')[0] == True:
-			metadata_reference = _handlers.load_metadata('reference', con)
+			metadata_reference = st.session_state[user_session_id]['metadata_reference'].to_dict()
 		
 		st.markdown(_messages.message_target_info(metadata_target))
 				
@@ -110,8 +106,8 @@ def main():
 					with st.spinner('Processing metadata...'):
 						doc_cats = _process.get_doc_cats(metadata_target.get('docids')[0]['ids'])
 						if len(set(doc_cats)) > 1 and len(set(doc_cats)) < 21:
-							_handlers.update_metadata('target', 'doccats', doc_cats, con)
-							_handlers.update_session('has_meta', True, con)
+							_handlers.update_metadata('target', 'doccats', doc_cats, user_session_id)
+							_handlers.update_session('has_meta', True, user_session_id)
 							st.success('Processing complete!')
 							st.rerun()
 						elif len(doc_cats) != 0:
@@ -121,7 +117,7 @@ def main():
 			st.sidebar.markdown("---")
 				
 		if session.get('has_reference')[0] == True:
-			metadata_reference = _handlers.load_metadata('reference', con)
+			metadata_reference = _handlers.load_metadata('reference', user_session_id)
 			
 			st.markdown(_messages.message_reference_info(metadata_reference))
 			
@@ -155,10 +151,10 @@ def main():
 					to_load = st.sidebar.selectbox('Select a saved corpus to load:', (sorted(saved_ref)))			
 					if st.sidebar.button("Load Saved Corpus"):
 						corp_path = saved_corpora.get(to_load)
-						_handlers.load_corpus_internal(corp_path, con, corpus_type="reference")
-						_handlers.init_metadata_reference(con)
-						_handlers.update_session('reference_db', str(corp_path), con)
-						_handlers.update_session('has_reference', True, con)
+						_handlers.load_corpus_internal(corp_path, user_session_id, corpus_type="reference")
+						_handlers.init_metadata_reference(user_session_id)
+						_handlers.update_session('reference_db', str(corp_path), user_session_id)
+						_handlers.update_session('has_reference', True, user_session_id)
 						st.rerun()
 					st.sidebar.markdown("---")
 
@@ -230,11 +226,11 @@ def main():
 								ft_pos,
 								tt_ds,
 								tt_pos,
-								con,
+								user_session_id,
 								'reference'
 								)
-							_handlers.init_metadata_reference(con)
-							_handlers.update_session('has_reference', True, con)
+							_handlers.init_metadata_reference(user_session_id)
+							_handlers.update_session('has_reference', True, user_session_id)
 							st.sidebar.markdown("---")
 							st.rerun()
 					
@@ -339,11 +335,11 @@ def main():
 										ft_pos,
 										tt_ds,
 										tt_pos,
-										con,
+										user_session_id,
 										'reference'
 										)
-									_handlers.init_metadata_reference(con)
-									_handlers.update_session('has_reference', True, con)
+									_handlers.init_metadata_reference(user_session_id)
+									_handlers.update_session('has_reference', True, user_session_id)
 									st.rerun()
 								
 								else:
@@ -363,11 +359,11 @@ def main():
 										ft_pos,
 										tt_ds,
 										tt_pos,
-										con,
+										user_session_id,
 										'reference'
 										)
-									_handlers.init_metadata_reference(con)
-									_handlers.update_session('has_reference', True, con)
+									_handlers.init_metadata_reference(user_session_id)
+									_handlers.update_session('has_reference', True, user_session_id)
 									st.rerun()
 						
 						st.sidebar.markdown("---")
@@ -386,8 +382,7 @@ def main():
 				   					"This is the option you want if you're planning to explore your data outside of the tool, in coding enviroments like R or Python. The data include the token file, frequency tables, and document-term-matrices."])
 				
 				if data_select == "Corpus file only":
-					download_file = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-					download_file = pl.from_arrow(download_file).to_pandas().to_parquet()
+					download_file = st.session_state[user_session_id]["target"]["ds_tokens"].to_pandas().to_parquet()
 					
 					st.markdown("---")
 					st.markdown("#### Click the button to download your corpus file.")
@@ -404,7 +399,7 @@ def main():
 
 					if format_select == "CSV":
 
-						download_file = _handlers.convert_corpus_to_zip(con, 'target', file_type='csv')
+						download_file = _handlers.convert_corpus_to_zip(user_session_id, 'target', file_type='csv')
 
 						st.markdown("---")
 						st.markdown("#### Click the button to download your corpus files.")
@@ -417,7 +412,7 @@ def main():
 					
 					if format_select == "PARQUET":
 
-						download_file = _handlers.convert_corpus_to_zip(con, 'target')
+						download_file = st.session_state[user_session_id]["target"]["ds_tokens"].to_pandas().to_parquet()
 
 						st.markdown("---")
 						st.markdown("#### Click the button to download your corpus files.")
@@ -439,8 +434,7 @@ def main():
 										"This is the option you want if you're planning to explore your data outside of the tool, in coding enviroments like R or Python. The data include the token file, frequency tables, and document-term-matrices."])
 					
 					if data_select == "Corpus file only":
-						download_file = con.table("ds_tokens", database="reference").to_pyarrow_batches(chunk_size=5000)
-						download_file = pl.from_arrow(download_file).to_pandas().to_parquet()
+						download_file = st.session_state[user_session_id]["target"]["ds_tokens"]
 						
 						st.markdown("---")
 						st.markdown("#### Click the button to download your corpus file.")
@@ -485,13 +479,9 @@ def main():
 		st.sidebar.markdown('### Reset all tools and files:')
 		st.sidebar.markdown(":warning: Using the **reset** button will cause all files, tables, and plots to be cleared.")
 		if st.sidebar.button("Reset Corpus"):
-			try:
-				con.disconnect()
-			except:
-				pass
 			st.session_state[user_session_id] = {}
-			con = _handlers.get_db_connection(user_session_id)
-			_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
+			_handlers.generate_temp(_states.STATES.items(), user_session_id)
+			_handlers.init_session(user_session_id)
 			st.rerun()
 		st.sidebar.markdown("""---""")
 		
@@ -537,10 +527,10 @@ def main():
 				to_load = st.sidebar.selectbox('Select a saved corpus to load:', (sorted(saved_corpora)))	
 			if st.sidebar.button("Load Saved Corpus"):
 				corp_path = saved_corpora.get(to_load)
-				_handlers.load_corpus_internal(corp_path, con)
-				_handlers.init_metadata_target(con)
-				_handlers.update_session('target_db', str(corp_path), con)
-				_handlers.update_session('has_target', True, con)
+				_handlers.load_corpus_internal(corp_path, user_session_id)
+				_handlers.init_metadata_target(user_session_id)
+				_handlers.update_session('target_db', str(corp_path), user_session_id)
+				_handlers.update_session('has_target', True, user_session_id)
 				st.rerun()
 			st.sidebar.markdown("---")
 
@@ -608,11 +598,11 @@ def main():
 						ft_pos,
 						tt_ds,
 						tt_pos,
-						con,
+						user_session_id,
 						'target'
 						)
-					_handlers.init_metadata_target(con)
-					_handlers.update_session('has_target', True, con)
+					_handlers.init_metadata_target(user_session_id)
+					_handlers.update_session('has_target', True, user_session_id)
 					st.sidebar.markdown("---")
 					st.rerun()
 					
@@ -713,11 +703,11 @@ def main():
 								ft_pos,
 								tt_ds,
 								tt_pos,
-								con,
+								user_session_id,
 								'target'
 								)
-							_handlers.init_metadata_target(con)
-							_handlers.update_session('has_target', True, con)
+							_handlers.init_metadata_target(user_session_id)
+							_handlers.update_session('has_target', True, user_session_id)
 							st.rerun()
 						
 						else:
@@ -737,11 +727,11 @@ def main():
 								ft_pos,
 								tt_ds,
 								tt_pos,
-								con,
+								user_session_id,
 								'target'
 								)
-							_handlers.init_metadata_target(con)
-							_handlers.update_session('has_target', True, con)
+							_handlers.init_metadata_target(user_session_id)
+							_handlers.update_session('has_target', True, user_session_id)
 							st.rerun()
 				
 				st.sidebar.markdown("---")

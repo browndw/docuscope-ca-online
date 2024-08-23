@@ -37,17 +37,15 @@ def main():
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-
-	session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 
 	if session.get('keyness_parts')[0] == True:
 	
 		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 
 		col1, col2 = st.columns([1,1])
 		with col1:
@@ -66,15 +64,12 @@ def main():
 			if tag_radio_tokens == 'Parts-of-Speech':
 				tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)			
 				if tag_type == 'General':
-					df = con.table("kw_pos_cp", database="target").to_pyarrow_batches(chunk_size=5000)
-					df = pl.from_arrow(df)
+					df = st.session_state[user_session_id]["target"]["kw_pos_cp"]
 					df = _analysis.freq_simplify_pl(df)
 				else:
-					df = con.table("kw_pos_cp", database="target").to_pyarrow_batches(chunk_size=5000)
-					df = pl.from_arrow(df)
+					df = st.session_state[user_session_id]["target"]["kw_pos_cp"]
 			else:			
-				df = con.table("kw_ds_cp", database="target").to_pyarrow_batches(chunk_size=5000)
-				df = pl.from_arrow(df)
+				df = st.session_state[user_session_id]["target"]["kw_ds_cp"]
 		
 			if df.height == 0 or df is None:
 				cats = []
@@ -118,14 +113,19 @@ def main():
 							Click the button to reset the keyness table.
 							""")			
 			if st.sidebar.button("Compare New Categories"):
-				try:
-					con.drop_table("kw_pos_cp", database="target")
-					con.drop_table("kw_ds_cp", database="target")
-					con.drop_table("kt_pos_cp", database="target")
-					con.drop_table("kt_ds_cp", database="target")
-				except:
-					pass
-				_handlers.update_session('keyness_parts', False, con)
+				if "kw_pos_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
+				st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
+				if "kw_ds_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
+				st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
+				if "kt_pos_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
+				st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
+				if "kt_ds_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
+				st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
+				_handlers.update_session('keyness_parts', False, user_session_id)
 				st.rerun()
 			st.sidebar.markdown("---")
 			
@@ -135,11 +135,10 @@ def main():
 			tag_radio_tags = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), key = _handlers.persist("cp_radio3", pathlib.Path(__file__).stem, user_session_id), horizontal=True)
 	
 			if tag_radio_tags == 'Parts-of-Speech':
-				df = con.table("kt_pos_cp", database="target").to_pyarrow_batches(chunk_size=5000)
-				df = pl.from_arrow(df).filter(pl.col("Tag") != "FU")
+				df = st.session_state[user_session_id]["target"]["kt_pos_cp"].filter(pl.col("Tag") != "FU")
+				
 			else:
-				df = con.table("kt_ds_cp", database="target").to_pyarrow_batches(chunk_size=5000)
-				df = pl.from_arrow(df).filter(pl.col("Tag") != "Untagged")
+				df = st.session_state[user_session_id]["target"]["kt_ds_cp"].filter(pl.col("Tag") != "Untagged")
 	
 			if df.height == 0 or df is None:
 				cats = []
@@ -205,14 +204,19 @@ def main():
 			
 			st.sidebar.markdown(_messages.message_reset_table)			
 			if st.sidebar.button("Compare New Categories"):
-				try:
-					con.drop_table("kw_pos_cp", database="target")
-					con.drop_table("kw_ds_cp", database="target")
-					con.drop_table("kt_pos_cp", database="target")
-					con.drop_table("kt_ds_cp", database="target")
-				except:
-					pass
-				_handlers.update_session('keyness_parts', False, con)
+				if "kw_pos_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
+				st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
+				if "kw_ds_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
+				st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
+				if "kt_pos_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
+				st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
+				if "kt_ds_cp" not in st.session_state[user_session_id]["target"]:
+					st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
+				st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
+				_handlers.update_session('keyness_parts', False, user_session_id)
 				st.rerun()
 			st.sidebar.markdown("---")
 	
@@ -224,14 +228,14 @@ def main():
 		st.sidebar.markdown("After **target** and **reference** categories have been selected, click the button to generate a keyness table.")
 		
 		if session.get('has_meta')[0] == True:
-			metadata_target = _handlers.load_metadata('target', con)
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 			st.sidebar.markdown('#### Target corpus categories:')
 			st.session_state[user_session_id]['tar'] = st.sidebar.multiselect("Select target categories:", (sorted(set(metadata_target.get('doccats')[0]['cats']))), _handlers.update_tar(user_session_id), key=f"tar_{user_session_id}")
 		else:
 			st.sidebar.multiselect("Select reference categories:", (['No categories to select']), key='empty_tar')
 		
 		if session.get('has_meta')[0] == True:
-			metadata_target = _handlers.load_metadata('target', con)
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 			st.sidebar.markdown('#### Reference corpus categories:')
 			st.session_state[user_session_id]['ref'] = st.sidebar.multiselect("Select reference categories:", (sorted(set(metadata_target.get('doccats')[0]['cats']))), _handlers.update_ref(user_session_id), key=f"ref_{user_session_id}")
 		else:
@@ -253,8 +257,7 @@ def main():
 						tar_list = list(st.session_state[user_session_id]['tar'])
 						ref_list = list(st.session_state[user_session_id]['ref'])
 
-						tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-						tok_pl = pl.from_arrow(tok_pl)
+						tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
 
 						tar_pl = _analysis.subset_pl(tok_pl, tar_list)
 						ref_pl = _analysis.subset_pl(tok_pl, ref_list)
@@ -277,13 +280,20 @@ def main():
 						tar_ndocs = tar_pl.get_column("doc_id").unique().len()
 						ref_ndocs = ref_pl.get_column("doc_id").unique().len()
 					
-					con.create_table("kw_pos_cp", obj=kw_pos_cp, database="target", overwrite=True)
-					con.create_table("kw_ds_cp", obj=kw_ds_cp, database="target", overwrite=True)
-					con.create_table("kt_pos_cp", obj=kt_pos_cp, database="target", overwrite=True)
-					con.create_table("kt_ds_cp", obj=kt_ds_cp, database="target", overwrite=True)
-
-					_handlers.update_session('keyness_parts', True, con)
-					_handlers.update_metadata('target', key='keyness_parts', value=[tar_list, ref_list, str(tar_tokens_pos), str(ref_tokens_pos), str(tar_tokens_ds), str(ref_tokens_ds), str(tar_ndocs), str(ref_ndocs)], ibis_conn=con)
+					if "kw_pos_cp" not in st.session_state[user_session_id]["target"]:
+						st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
+					st.session_state[user_session_id]["target"]["kw_pos_cp"] = kw_pos_cp
+					if "kw_ds_cp" not in st.session_state[user_session_id]["target"]:
+						st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
+					st.session_state[user_session_id]["target"]["kw_ds_cp"] = kw_ds_cp
+					if "kt_pos_cp" not in st.session_state[user_session_id]["target"]:
+						st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
+					st.session_state[user_session_id]["target"]["kt_pos_cp"] = kt_pos_cp
+					if "kt_ds_cp" not in st.session_state[user_session_id]["target"]:
+						st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
+					st.session_state[user_session_id]["target"]["kt_ds_cp"] = kt_ds_cp
+					_handlers.update_session('keyness_parts', True, user_session_id)
+					_handlers.update_metadata('target', key='keyness_parts', value=[tar_list, ref_list, str(tar_tokens_pos), str(ref_tokens_pos), str(tar_tokens_ds), str(ref_tokens_ds), str(tar_ndocs), str(ref_ndocs)], session_id=user_session_id)
 			
 					st.success('Keywords generated!')
 					st.rerun()

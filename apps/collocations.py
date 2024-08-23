@@ -34,23 +34,16 @@ def main():
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-
-	try:
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-	except:
-		_handlers.init_session(con)
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 
 	if session.get('collocations')[0] == True:
 		
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 
-		df = con.table("collocations", database="target").to_pyarrow_batches(chunk_size=5000)
-		df = pl.from_arrow(df)
+		df = st.session_state[user_session_id]["target"]["collocations"]
 		
 		col1, col2 = st.columns([1,1])
 		with col1:
@@ -90,11 +83,10 @@ def main():
 		st.sidebar.markdown(_messages.message_reset_table)
 		
 		if st.sidebar.button("Create New Collocations Table"):
-			try:
-				con.drop_table("collocations", database="target")
-			except:
-				pass
-			_handlers.update_session('collocations', False, con)
+			if "collocations" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["collocations"] = {}
+			st.session_state[user_session_id]["target"]["collocations"] = {}
+			_handlers.update_session('collocations', False, user_session_id)
 			st.rerun()
 		st.sidebar.markdown("---")
 				
@@ -103,7 +95,7 @@ def main():
 		st.markdown(_messages.message_collocations)
 
 		if session.get("has_target")[0] == True:
-			metadata_target = _handlers.load_metadata('target', con)
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 
 		st.sidebar.markdown("### Node word")
 		st.sidebar.markdown("""Enter a node word without spaces.
@@ -187,8 +179,7 @@ def main():
 			else:
 				with st.sidebar:
 					with st.spinner('Processing collocates...'):
-						tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-						tok_pl = pl.from_arrow(tok_pl)
+						tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
 
 						coll_df = _analysis.collocations_pl(tok_pl, node_word=node_word, node_tag=node_tag, preceding=to_left, following=to_right, statistic=stat_mode, count_by=count_by)
 				
@@ -196,9 +187,11 @@ def main():
 					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
 					
 				else:
-					con.create_table("collocations", obj=coll_df, database="target", overwrite=True)
-					_handlers.update_session('collocations', True, con)
-					_handlers.update_metadata('target', key='collocations', value=[node_word, stat_mode, str(to_left), str(to_right)], ibis_conn=con)
+					if "collocations" not in st.session_state[user_session_id]["target"]:
+						st.session_state[user_session_id]["target"]["collocations"] = {}
+					st.session_state[user_session_id]["target"]["collocations"] = coll_df
+					_handlers.update_session('collocations', True, user_session_id)
+					_handlers.update_metadata('target', key='collocations', value=[node_word, stat_mode, str(to_left), str(to_right)], session_id=user_session_id)
 					st.rerun()
 
 	

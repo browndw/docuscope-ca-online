@@ -47,8 +47,6 @@ user_session_id = user_session.session_id
 if user_session_id not in st.session_state:
     st.session_state[user_session_id] = {}
 
-con = _handlers.get_db_connection(user_session_id)
-
 def index(application_options):
     if not sys.warnoptions:
         warnings.simplefilter("ignore")

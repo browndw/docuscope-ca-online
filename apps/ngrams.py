@@ -34,24 +34,16 @@ def main():
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-	
-	try:
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-	except:
-		_handlers.init_session(con)
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 
 	if session.get('ngrams')[0] == True:
 		
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 		
-		df = con.table("ngrams", database="target").to_pyarrow_batches(chunk_size=5000)
-		df = pl.from_arrow(df)
+		df = st.session_state[user_session_id]["target"]["ngrams"]
 	
 		st.markdown(_messages.message_target_info(metadata_target))
 		
@@ -61,14 +53,14 @@ def main():
 			if df.height == 0 or df is None:
 				cats_1 = []
 			elif df.height > 0:
-				cats_1 = sorted(df.get_column("Tag_1").unique().to_list())
+				cats_1 = sorted(df.get_column("Tag_1").drop_nulls().unique().to_list())
 
 			filter_tag_1 = st.multiselect("Select tags to filter in position 1:", (cats_1))
 			if len(filter_tag_1) > 0:
 				df = df.filter(pl.col("Tag_1").is_in(filter_tag_1))
 
 			if "Tag_3" in df.columns:
-				cats_3 = sorted(df.get_column("Tag_3").unique().to_list())
+				cats_3 = sorted(df.get_column("Tag_3").drop_nulls().unique().to_list())
 				filter_tag_3 = st.multiselect("Select tags to filter in position 3:", (cats_3))
 				if len(filter_tag_3) > 0:
 					df = df.filter(pl.col("Tag_3").is_in(filter_tag_3))
@@ -77,14 +69,14 @@ def main():
 			if df.height == 0 or df is None:
 				cats_2 = []
 			elif df.height > 0:
-				cats_2 = sorted(df.get_column("Tag_2").unique().to_list())
+				cats_2 = sorted(df.get_column("Tag_2").drop_nulls().unique().to_list())
 
 			filter_tag_2 = st.multiselect("Select tags to filter in position 2:", (cats_2))
 			if len(filter_tag_2) > 0:
 				df = df.filter(pl.col("Tag_2").is_in(filter_tag_2))
 
 			if "Tag_4" in df.columns:
-				cats_4 = sorted(df.get_column("Tag_4").unique().to_list())
+				cats_4 = sorted(df.get_column("Tag_4").drop_nulls().unique().to_list())
 				filter_tag_4 = st.multiselect("Select tags to filter in position 4:", (cats_4))
 				if len(filter_tag_4) > 0:
 					df = df.filter(pl.col("Tag_4").is_in(filter_tag_4))
@@ -117,11 +109,9 @@ def main():
 							""")
 	
 		if st.sidebar.button("Create a New Ngrams Table"):
-			try:
-				con.drop_table("ngrams", database="target")
-			except:
-				pass
-			_handlers.update_session('ngrams', False, con)
+			if "ngrams" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["ngrams"] = {}
+			_handlers.update_session('ngrams', False, user_session_id)
 			st.rerun()
 		st.sidebar.markdown("---")
 			
@@ -165,17 +155,17 @@ def main():
 				else:
 					with st.sidebar:
 						with st.spinner('Processing n-grams...'):
-							tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-							tok_pl = pl.from_arrow(tok_pl)
-							
+							tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
 							ngram_df = _analysis.ngrams_pl(tok_pl, ngram_span, count_by=ts)
 					
 					#cap size of dataframe
 					if ngram_df.height < 2:
 						st.markdown(_warnings.warning_12, unsafe_allow_html=True)
 					else:
-						con.create_table("ngrams", obj=ngram_df, database="target", overwrite=True)
-						_handlers.update_session('ngrams', True, con)
+						if "ngrams" not in st.session_state[user_session_id]["target"]:
+							st.session_state[user_session_id]["target"]["ngrams"] = {}
+						st.session_state[user_session_id]["target"]["ngrams"] = ngram_df
+						_handlers.update_session('ngrams', True, user_session_id)
 						st.rerun()
 
 			
@@ -248,8 +238,7 @@ def main():
 				else:
 					with st.sidebar:
 						with st.spinner('Processing n-grams...'):
-							tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-							tok_pl = pl.from_arrow(tok_pl)
+							tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
 
 							if from_anchor == 'Token':
 								ngram_df = _analysis.ngrams_by_token_pl(tok_pl, node_word, position, ngram_span, search, ts)
@@ -263,8 +252,10 @@ def main():
 					elif ngram_df.height > 100000:
 						st.markdown(_warnings.warning_13, unsafe_allow_html=True)
 					else:
-						con.create_table("ngrams", obj=ngram_df, database="target", overwrite=True)
-						_handlers.update_session('ngrams', True, con)
+						if "ngrams" not in st.session_state[user_session_id]["target"]:
+							st.session_state[user_session_id]["target"]["ngrams"] = {}
+						st.session_state[user_session_id]["target"]["ngrams"] = ngram_df
+						_handlers.update_session('ngrams', True, user_session_id)
 						st.rerun()
 					
 			st.sidebar.markdown("---")

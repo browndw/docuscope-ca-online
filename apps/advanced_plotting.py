@@ -36,15 +36,13 @@ def main():
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-
-	session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
+	
 	try:
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 	except:
 		pass
 
@@ -61,25 +59,25 @@ def main():
 	
 	if  plot_type == "Boxplot"and session.get('has_target')[0] == True:
 		
-		_handlers.update_session('pca', False, con)
+		_handlers.update_session('pca', False, user_session_id)
 		st.sidebar.markdown("### Tagset")
 		
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 
 		if tag_radio_tokens == 'Parts-of-Speech':
-			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 			if tag_type == 'General':
-				df = con.table("dtm_pos", database="target").to_polars()
+				df = st.session_state[user_session_id]["target"]["dtm_pos"]
 				df = _analysis.dtm_simplify_pl(df)
 
 			elif tag_type == 'Specific':
-				df = con.table("dtm_pos", database="target").to_polars()
+				df = st.session_state[user_session_id]["target"]["dtm_pos"]
 		
 		elif tag_radio_tokens == 'DocuScope':
-			df = con.table("dtm_ds", database="target").to_polars()
+			df = st.session_state[user_session_id]["target"]["dtm_ds"]
 			tag_type = None
 		
 		st.sidebar.markdown("---")
@@ -214,25 +212,25 @@ def main():
 	
 	elif plot_type == "Scatterplot" and session.get('has_target')[0] == True:
 
-		_handlers.update_session('pca', False, con)		
+		_handlers.update_session('pca', False, user_session_id)		
 		st.sidebar.markdown("### Tagset")
 		
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 		
 		if tag_radio_tokens == 'Parts-of-Speech':
-			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 			if tag_type == 'General':
-				df = con.table("dtm_pos", database="target").to_polars()
+				df = st.session_state[user_session_id]["target"]["dtm_pos"]
 				df = _analysis.dtm_simplify_pl(df)
 
 			elif tag_type == 'Specific':
-				df = con.table("dtm_pos", database="target").to_polars()
+				df = st.session_state[user_session_id]["target"]["dtm_pos"]
 		
 		elif tag_radio_tokens == 'DocuScope':
-			df = con.table("dtm_ds", database="target").to_polars()
+			df = st.session_state[user_session_id]["target"]["dtm_ds"]
 			tag_type = None
 		
 		st.sidebar.markdown("---")
@@ -319,23 +317,23 @@ def main():
 		with st.sidebar.expander("About general tags"):
 			st.markdown(_messages.message_general_tags)		
 
-		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+		tag_radio_tokens = st.sidebar.radio("Select tags to display:", ("Parts-of-Speech", "DocuScope"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 
 		if tag_radio_tokens == 'Parts-of-Speech':
-			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id, con,), horizontal=True)
+			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), on_change=_handlers.clear_plots, args=(user_session_id,), horizontal=True)
 			if tag_type == 'General':
-				df = con.table("dtm_pos", database="target").to_polars()
+				df = st.session_state[user_session_id]["target"]["dtm_pos"]
 				df = _analysis.dtm_simplify_pl(df)
 				df = _analysis.dtm_weight_pl(df, scheme="prop")
 				df = _analysis.dtm_weight_pl(df, scheme="scale").to_pandas()
 
 			elif tag_type == 'Specific':
-				df = con.table("dtm_pos", database="target").to_polars()
+				df = st.session_state[user_session_id]["target"]["dtm_pos"]
 				df = _analysis.dtm_weight_pl(df, scheme="prop")
 				df = _analysis.dtm_weight_pl(df, scheme="scale").to_pandas()
 		
 		elif tag_radio_tokens == 'DocuScope':
-			df = con.table("dtm_ds", database="target").to_polars()
+			df = st.session_state[user_session_id]["target"]["dtm_ds"]
 			df = _analysis.dtm_weight_pl(df, scheme="prop")
 			df = _analysis.dtm_weight_pl(df, scheme="scale").to_pandas()
 			tag_type = None
@@ -349,7 +347,7 @@ def main():
 		st.markdown("---")
 
 		if st.sidebar.button("PCA"):
-			_handlers.update_session('pca', False, con)
+			_handlers.update_session('pca', False, user_session_id)
 			if session.get('has_meta')[0] == True:
 				grouping = metadata_target.get('doccats')[0]['cats']
 			else:
@@ -359,15 +357,19 @@ def main():
 			df = df.drop([x for x in to_drop if x in df.columns], axis=1)
 			pca_df, contrib_df, ve = _analysis.pca_contributions(df, grouping)
 			
-			con.create_table("pca_df", obj=pca_df, database="target", overwrite=True)
-			con.create_table("contrib_df", obj=contrib_df, database="target", overwrite=True)
-			_handlers.update_metadata('target', 'variance', ve, con)
-			_handlers.update_session('pca', True, con)
+			if "pca_df" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["pca_df"] = {}
+			st.session_state[user_session_id]["target"]["pca_df"] = pca_df
+			if "contrib_df" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["contrib_df"] = {}
+			st.session_state[user_session_id]["target"]["contrib_df"] = contrib_df
+			_handlers.update_metadata('target', 'variance', ve, user_session_id)
+			_handlers.update_session('pca', True, user_session_id)
 			st.rerun()	
 
 		if session.get('pca')[0] == True:
-			pca_df = con.table("pca_df", database="target").to_pandas()
-			contrib_df = con.table("contrib_df", database="target").to_pandas()
+			pca_df = st.session_state[user_session_id]["target"]["pca_df"]
+			contrib_df = st.session_state[user_session_id]["target"]["contrib_df"]
 			ve = metadata_target.get("variance")[0]['temp']
 		
 			st.session_state[user_session_id]['pca_idx'] = st.sidebar.selectbox("Select principal component to plot ", (list(range(1, len(df.columns)))))

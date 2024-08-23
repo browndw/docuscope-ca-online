@@ -32,24 +32,22 @@ def main():
 	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
 	user_session_id = user_session.session_id
 
+	user_session = st.runtime.scriptrunner.script_run_context.get_script_run_ctx()
+	user_session_id = user_session.session_id
+
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
+	
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-
-	try:
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-	except:
-		_handlers.init_session(con)
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	
 	if session.get('freq_table')[0] == True:
 	
 		_handlers.load_widget_state(pathlib.Path(__file__).stem, user_session_id)
-		metadata_target = _handlers.load_metadata('target', con)
+		metadata_target = _handlers.load_metadata('target', user_session_id)
 						
 		st.sidebar.markdown("### Tagset")
 
@@ -57,15 +55,12 @@ def main():
 		if tag_radio == 'Parts-of-Speech':
 			tag_type = st.sidebar.radio("Select from general or specific tags", ("General", "Specific"), horizontal=True)			
 			if tag_type == 'General':
-				df = con.table("ft_pos", database="target").to_pyarrow_batches(chunk_size=5000)
-				df = pl.from_arrow(df)
+				df = st.session_state[user_session_id]["target"]["ft_pos"]
 				df = _analysis.freq_simplify_pl(df)
 			else:
-				df = con.table("ft_pos", database="target").to_pyarrow_batches(chunk_size=5000)
-				df = pl.from_arrow(df)
+				df = st.session_state[user_session_id]["target"]["ft_pos"]
 		else:			
-			df = con.table("ft_ds", database="target").to_pyarrow_batches(chunk_size=5000)
-			df = pl.from_arrow(df)
+			df = st.session_state[user_session_id]["target"]["ft_ds"]
 	
 		st.markdown(_messages.message_target_info(metadata_target))
 
@@ -114,7 +109,7 @@ def main():
 			else:
 				with st.sidebar:
 					with st.spinner('Processing frequencies...'):
-						_handlers.update_session('freq_table', True, con)
+						_handlers.update_session('freq_table', True, user_session_id)
 					
 					st.rerun()
 		

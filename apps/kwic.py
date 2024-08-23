@@ -34,21 +34,14 @@ def main():
 	if user_session_id not in st.session_state:
 		st.session_state[user_session_id] = {}
 	try:
-		con = st.session_state[user_session_id]["ibis_conn"]
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	except:
-		con = _handlers.get_db_connection(user_session_id)
-		_handlers.generate_temp(_states.STATES.items(), user_session_id, con)
-	
-	try:
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
-	except:
-		_handlers.init_session(con)
-		session = pl.DataFrame.to_dict(con.table("session").to_polars(), as_series=False)
+		_handlers.init_session(user_session_id)
+		session = pl.DataFrame.to_dict(st.session_state[user_session_id]["session"], as_series=False)
 	
 	if session.get('kwic')[0] == True:
 				
-		df = con.table("kwic", database="target").to_pyarrow_batches(chunk_size=5000)
-		df = pl.from_arrow(df)
+		df = st.session_state[user_session_id]["target"]["kwic"]
 
 		st.dataframe(df, hide_index=True)
 		
@@ -70,11 +63,9 @@ def main():
 		st.sidebar.markdown(_messages.message_reset_table)
 													
 		if st.sidebar.button("Create New KWIC Table"):
-			try:
-				con.drop_table("kwic", database="target")
-			except:
-				pass
-			_handlers.update_session('kwic', False, con)
+			if "kwic" not in st.session_state[user_session_id]["target"]:
+				st.session_state[user_session_id]["target"]["kwic"] = {}
+			_handlers.update_session('kwic', False, user_session_id)
 			st.rerun()
 		st.sidebar.markdown("---")
 			
@@ -126,15 +117,16 @@ def main():
 			elif len(node_word) > 15:
 				st.write(_warnings.warning_16, unsafe_allow_html=True)
 			else:
-				tok_pl = con.table("ds_tokens", database="target").to_pyarrow_batches(chunk_size=5000)
-				tok_pl = pl.from_arrow(tok_pl)
+				tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
 				
 				with st.sidebar:
 					with st.spinner('Processing KWIC...'):
 						kwic_df = _analysis.kwic_pl(tok_pl, node_word=node_word, search_type=search_type, ignore_case=ignore_case)
 				if kwic_df.is_empty() == False:
-					con.create_table("kwic", obj=kwic_df, database="target", overwrite=True)
-					_handlers.update_session('kwic', True, con)
+					if "kwic" not in st.session_state[user_session_id]["target"]:
+						st.session_state[user_session_id]["target"]["kwic"] = {}
+					st.session_state[user_session_id]["target"]["kwic"] = kwic_df
+					_handlers.update_session('kwic', True, user_session_id)
 					st.rerun()
 				else:
 					st.markdown(_warnings.warning_12, unsafe_allow_html=True)
