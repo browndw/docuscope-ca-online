@@ -412,7 +412,7 @@ def main():
 					
 					if format_select == "PARQUET":
 
-						download_file = st.session_state[user_session_id]["target"]["ds_tokens"].to_pandas().to_parquet()
+						download_file = _handlers.convert_corpus_to_zip(user_session_id, 'target')
 
 						st.markdown("---")
 						st.markdown("#### Click the button to download your corpus files.")
@@ -434,7 +434,7 @@ def main():
 										"This is the option you want if you're planning to explore your data outside of the tool, in coding enviroments like R or Python. The data include the token file, frequency tables, and document-term-matrices."])
 					
 					if data_select == "Corpus file only":
-						download_file = st.session_state[user_session_id]["target"]["ds_tokens"]
+						download_file = st.session_state[user_session_id]["reference"]["ds_tokens"].to_pandas().to_parquet()
 						
 						st.markdown("---")
 						st.markdown("#### Click the button to download your corpus file.")
@@ -451,7 +451,7 @@ def main():
 
 						if format_select == "CSV":
 
-							download_file = _handlers.convert_corpus_to_zip(con, 'reference', file_type='csv')
+							download_file = _handlers.convert_corpus_to_zip(user_session_id, 'reference', file_type='csv')
 
 							st.markdown("---")
 							st.markdown("#### Click the button to download your corpus files.")
@@ -464,7 +464,7 @@ def main():
 						
 						if format_select == "PARQUET":
 
-							download_file = _handlers.convert_corpus_to_zip(con, 'reference')
+							download_file = _handlers.convert_corpus_to_zip(user_session_id, 'reference')
 
 							st.markdown("---")
 							st.markdown("#### Click the button to download your corpus files.")
