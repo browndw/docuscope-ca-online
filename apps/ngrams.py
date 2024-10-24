@@ -117,10 +117,8 @@ def main():
 			
 	else:
 		
-		try:
-			metadata_target = _handlers.load_metadata('target', con)
-		except:
-			pass
+		if session.get("has_target")[0] == True:
+			metadata_target = _handlers.load_metadata('target', user_session_id)
 		
 		st.markdown(_messages.message_ngrams)
 
