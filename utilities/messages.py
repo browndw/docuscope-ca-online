@@ -265,8 +265,10 @@ message_internal_corpora = """
 	This is called **MICUSP-mini** and is recommended for exploring, if you are new to the tool.\n\n
 	There is also a parsed version of the full MICUSP corpus, as well as a corpus of published academic papers.
 	The latter is named **ELSEVIER** and contains data from open access publications from 20 disciplines.
-	You can see the metadata (as well as the full subject area names) on the [GitHub repository](https://github.com/browndw/corpus-tagger#elesevier-corpus).\n\n
+	You can see the metadata (as well as the full subject area names) on the [GitHub repository](https://github.com/browndw/corpus-tagger#elesevier-corpus).
+	Information about mini version of the Human-AI Parallel Corpus (HAP-E) can be found on [huggingface](https://huggingface.co/datasets/browndw/human-ai-parallel-corpus-mini).\n\n
 	If you are using the MICUSP data for academic work or for publication, [please cite it](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=U8wDvfIAAAAJ&citation_for_view=U8wDvfIAAAAJ:roLk4NBRz8UC).
+	Likewise, the citation information for [HAP-E can be found here](https://scholar.google.com/scholar_lookup?arxiv_id=2410.16107).
 	"""
 
 message_external_corpora = """
