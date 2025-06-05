@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  streamlit_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/webapp
+    command: streamlit run webapp/index.py

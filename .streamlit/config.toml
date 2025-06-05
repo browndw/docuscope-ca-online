@@ -3,7 +3,7 @@ primaryColor="#F63366"
 backgroundColor="#FFFFFF"
 secondaryBackgroundColor="#EBECF0"
 textColor="#262730"
-font="sans serif"
+font="Source Sans Pro"
 
 [server]
 enableXsrfProtection = false
@@ -11,3 +11,7 @@ enableCORS = false
 
 [runner]
 enforceSerializableSessionState = true
+
+[client]
+showSidebarNavigation = false
+toolbarMode = "minimal"

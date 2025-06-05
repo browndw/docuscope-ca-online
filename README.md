@@ -1,3 +1,4 @@
+
 # DocuScope Corpus Analysis & Concordancer
 
 <div class="image" align="center">
@@ -40,4 +41,4 @@ streamlit run webapp/index.py
 ```
 
 > [!IMPORTANT]
-> Features can like `desktop_mode` can be activated/deactivated from the `options.toml` file. Their defaults are set at their most restrictive. If you are running the app locally, you will want to set features accoringly.
+> Features can like `desktop_mode` can be activated/deactivated from the `options.toml` file. Their defaults are set at their most restrictive.

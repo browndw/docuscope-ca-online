@@ -1,4 +1,5 @@
 # Project Specific
+.streamlit/secrets.toml
 .DS_Store
 
 # Byte-compiled / optimized / DLL files

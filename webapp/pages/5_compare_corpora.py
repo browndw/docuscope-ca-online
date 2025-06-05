@@ -1,0 +1,224 @@
+# Copyright (C) 2025 David West Brown
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import pathlib
+import sys
+
+import polars as pl
+import streamlit as st
+
+# Ensure project root is in sys.path for both desktop and online
+project_root = pathlib.Path(__file__).parent.parents[1].resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+import webapp.utilities as _utils   # noqa: E402
+from webapp.menu import menu, require_login   # noqa: E402
+
+TITLE = "Compare Corpora"
+ICON = ":material/compare_arrows:"
+
+st.set_page_config(
+    page_title=TITLE, page_icon=ICON,
+    layout="wide"
+    )
+
+
+def main():
+    # Set login requirements for navigaton
+    require_login()
+    menu()
+    st.markdown(f"## {TITLE}")
+    # Get or initialize user session
+    user_session_id, session = _utils.handlers.get_or_init_user_session()
+
+    if session.get('keyness_table')[0] is True:
+
+        _utils.handlers.load_widget_state(
+            pathlib.Path(__file__).stem,
+            user_session_id
+            )
+        metadata_target = _utils.handlers.load_metadata(
+            'target',
+            user_session_id
+            )
+        metadata_reference = _utils.handlers.load_metadata(
+            'reference',
+            user_session_id
+            )
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.markdown(
+                _utils.content.message_target_info(metadata_target)
+                )
+        with col2:
+            st.markdown(
+                _utils.content.message_reference_info(metadata_reference)
+                )
+
+        with st.sidebar.expander("Column explanation",
+                                 icon=":material/view_column:"):
+            st.markdown(_utils.content.message_columns_keyness)
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Comparison")
+        table_radio = st.sidebar.radio(
+            "Select the keyness table to display:",
+            ("Tokens", "Tags Only"),
+            key=_utils.handlers.persist(
+                "kt_radio1", pathlib.Path(__file__).stem,
+                user_session_id),
+            horizontal=True)
+
+        st.sidebar.markdown("---")
+
+        if table_radio == 'Tokens':
+            tag_radio = st.sidebar.radio(
+                "Select tags to display:",
+                ("Parts-of-Speech", "DocuScope"),
+                key=_utils.handlers.persist(
+                    "kt_radio2",
+                    pathlib.Path(__file__).stem,
+                    user_session_id),
+                horizontal=True
+                )
+
+            if tag_radio == 'Parts-of-Speech':
+                tag_type = st.sidebar.radio(
+                    "Select from general or specific tags",
+                    ("General", "Specific"),
+                    horizontal=True
+                    )
+
+                if tag_type == 'General':
+                    df = st.session_state[user_session_id]["target"]["kw_pos"]
+                    df = _utils.analysis.freq_simplify_pl(df)
+                else:
+                    df = st.session_state[user_session_id]["target"]["kw_pos"]
+
+            else:
+                df = st.session_state[user_session_id]["target"]["kw_ds"]
+
+            if df.height == 0 or df is None:
+                cats = []
+            elif df.height > 0:
+                cats = sorted(df.get_column("Tag").unique().to_list())
+
+            filter_vals = st.multiselect("Select tags to filter:", (cats))
+            if len(filter_vals) > 0:
+                df = df.filter(pl.col("Tag").is_in(filter_vals))
+
+            st.dataframe(df,
+                         hide_index=True,
+                         column_config=_utils.formatters.get_streamlit_column_config(df)
+                         )
+
+            st.sidebar.markdown("---")
+
+            _utils.formatters.toggle_download(
+                label="Excel",
+                convert_func=_utils.formatters.convert_to_excel,
+                convert_args=(df.to_pandas(),),
+                file_name="keywords_tokens.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                message=_utils.content.message_download,
+                location=st.sidebar
+            )
+
+            st.sidebar.markdown("---")
+
+        else:
+            st.sidebar.markdown("### Tagset")
+            tag_radio_tags = st.sidebar.radio(
+                "Select tags to display:",
+                ("Parts-of-Speech", "DocuScope"),
+                key=_utils.handlers.persist(
+                    "kt_radio3",
+                    pathlib.Path(__file__).stem,
+                    user_session_id),
+                horizontal=True)
+
+            if tag_radio_tags == 'Parts-of-Speech':
+                df = st.session_state[
+                    user_session_id
+                    ]["target"]["kt_pos"].filter(pl.col("Tag") != "FU")
+            else:
+                df = st.session_state[
+                    user_session_id
+                    ]["target"]["kt_ds"].filter(pl.col("Tag") != "Untagged")
+
+            tab1, tab2 = st.tabs(["Keyness Table", "Keyness Plot"])
+            with tab1:
+                if df.height == 0 or df is None:
+                    cats = []
+                elif df.height > 0:
+                    cats = sorted(df.get_column("Tag").unique().to_list())
+
+                filter_vals = st.multiselect("Select tags to filter:", (cats))
+                if len(filter_vals) > 0:
+                    df = df.filter(pl.col("Tag").is_in(filter_vals))
+
+                st.markdown("**Showing keywords that reach significance at *p* < 0.01**")
+
+                st.dataframe(
+                    df,
+                    hide_index=True,
+                    column_config=_utils.formatters.get_streamlit_column_config(df)
+                    )
+
+            with tab2:
+                if df.height > 0 and df is not None:
+                    fig = _utils.formatters.plot_compare_corpus_bar(df)
+                    st.plotly_chart(fig, use_container_width=True)
+
+            st.sidebar.markdown("---")
+
+            _utils.formatters.toggle_download(
+                label="Excel",
+                convert_func=_utils.formatters.convert_to_excel,
+                convert_args=(df.to_pandas(),),
+                file_name="keywords_tags.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                message=_utils.content.message_download,
+                location=st.sidebar
+            )
+
+            st.sidebar.markdown("---")
+
+    else:
+
+        st.markdown(_utils.content.message_keyness)
+
+        st.sidebar.markdown(_utils.content.message_generate_table)
+
+        _utils.handlers.sidebar_action_button(
+            button_label="Keyness Table",
+            button_icon=":material/manufacturing:",
+            preconditions=[
+                session.get('has_target')[0],
+                session.get('has_reference')[0]
+            ],
+            action=lambda: _utils.handlers.generate_keyness_tables(user_session_id),
+            spinner_message="Generating keywords..."
+        )
+
+        if st.session_state[user_session_id].get("keyness_warning"):
+            msg, icon = st.session_state[user_session_id]["keyness_warning"]
+            st.error(msg, icon=icon)
+
+        st.sidebar.markdown("---")
+
+
+if __name__ == "__main__":
+    main()
