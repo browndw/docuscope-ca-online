@@ -2,7 +2,7 @@
 # DocuScope Corpus Analysis & Concordancer
 
 <div class="image" align="center">
-    <img width="150" height="auto" src="https://github.com/browndw/corpus-tagger/raw/main/_static/docuscope-logo.png" alt="DocuScope logo">
+    <img width="150" height="auto" src="https://github.com/browndw/corpus-tagger/raw/main/webapp/_static/docuscope-logo.png" alt="DocuScope logo">
     <br>
 </div>
 
