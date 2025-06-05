@@ -41,4 +41,4 @@ streamlit run webapp/index.py
 ```
 
 > [!IMPORTANT]
-> Features can like `desktop_mode` can be activated/deactivated from the `options.toml` file. Their defaults are set at their most restrictive.
+> Features like `desktop_mode` can be activated/deactivated from the `options.toml` file. Their defaults are set at their most restrictive.
