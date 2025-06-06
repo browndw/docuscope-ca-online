@@ -49,6 +49,8 @@ if DESKTOP:
 else:
     CACHE = _options['cache']['cache_mode']
 
+PLOTBOT_THREAD_MAXLEN = 20
+
 
 def main():
     # Set login requirements for navigaton
@@ -57,6 +59,12 @@ def main():
     st.markdown(f"## {TITLE}")
     # Get or initialize user session
     user_session_id, session = _utils.handlers.get_or_init_user_session()
+
+    st.sidebar.link_button(
+        label="Help",
+        url="https://browndw.github.io/docuscope-docs/guide/assisted-plotting.html",
+        icon=":material/help:"
+        )
 
     if session.get('has_target')[0] is True:
         metadata_target = st.session_state[
@@ -242,6 +250,11 @@ def main():
                             message['value'],
                             unsafe_allow_html=True
                             )
+                    elif message['type'] == 'error':
+                        st.markdown(
+                            message['value'],
+                            unsafe_allow_html=True
+                            )
                     elif message['type'] == 'code':
                         st.code(
                             message['value'],
@@ -282,10 +295,13 @@ def main():
                         ):
                             # Set desired resolution (scale)
                             scale = 2
-                            img_bytes = message['value'].to_image(
+                            fig = message['value']
+                            fig.update_xaxes(automargin=True)
+                            fig.update_yaxes(automargin=True)
+                            img_bytes = fig.to_image(
                                 format="png",
                                 scale=scale
-                                )
+                            )
                             st.image(img_bytes)
 
                             # Add download link
@@ -298,10 +314,7 @@ def main():
             )
 
         if st.session_state[user_session_id]["plotbot"]:
-            prompt_position = sum(
-                1 for message in st.session_state[user_session_id]["plotbot"]
-                if message["role"] == "user"
-                ) + 1
+            prompt_position = st.session_state[user_session_id]["plotbot_user_prompt_count"]
         else:
             prompt_position = 1
 
@@ -314,12 +327,21 @@ def main():
                 """)
 
             if input_initial:
-                with st.spinner(":sparkles: Generating response..."):
-                    st.session_state[user_session_id]["plotbot"].append(
-                        {"role": "user",
-                         "type": "string",
-                         "value": input_initial}
+                if input_initial:
+                    with st.spinner(":sparkles: Generating response..."):
+                        st.session_state[user_session_id]["plotbot"].append(
+                            {"role": "user", "type": "string", "value": input_initial}
                         )
+                        # Increment user prompt count
+                        if "plotbot_user_prompt_count" not in st.session_state[user_session_id]:  # noqa: E501
+                            st.session_state[user_session_id]["plotbot_user_prompt_count"] = 1  # noqa: E501
+                        else:
+                            st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1  # noqa: E501
+                        # Prune thread
+                        _utils.llms.prune_plotbot_thread(
+                            user_session_id,
+                            max_length=PLOTBOT_THREAD_MAXLEN
+                            )
 
                     if (
                         df is not None and
@@ -360,9 +382,18 @@ def main():
             if input_update:
                 with st.spinner(":sparkles: Generating response..."):
                     st.session_state[user_session_id]["plotbot"].append(
-                        {"role": "user",
-                         "type": "string",
-                         "value": input_update}
+                        {"role": "user", "type": "string", "value": input_update}
+                    )
+                    # Increment user prompt count
+                    if "plotbot_user_prompt_count" not in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]["plotbot_user_prompt_count"] = 1
+                    else:
+                        st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1
+
+                    # Prune thread
+                    _utils.llms.prune_plotbot_thread(
+                        user_session_id,
+                        max_length=PLOTBOT_THREAD_MAXLEN
                         )
 
                     _utils.llms.plotbot_user_query(
