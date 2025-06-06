@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import base64
+import hashlib
+import json
 import io
 import pathlib
 import openai
 import os
 import re
+import sys
 
 import docuscospacy as ds
 import numpy as np
@@ -28,24 +31,72 @@ import seaborn as sns
 import plotly.express as px
 import streamlit as st
 
+from loguru import logger
 from PIL import Image
 from pandasai.exceptions import MaliciousQueryError, NoResultFoundError
 from pandasai_openai import OpenAI
 import pandasai as pai
 
-from utilities import analysis
-from utilities.cache import add_message, add_plot
-from utilities.handlers import import_options_general
+from RestrictedPython import compile_restricted
+from RestrictedPython.Guards import safe_builtins
+from RestrictedPython.Guards import guarded_unpack_sequence
+from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
+from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
+
+# Ensure project root is in sys.path for both desktop and online
+project_root = pathlib.Path(__file__).parent.parents[1].resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from webapp.utilities import analysis  # noqa: E402
+from webapp.utilities.cache import add_message, add_plot  # noqa: E402
+from webapp.utilities.handlers import import_options_general  # noqa: E402, E501
+
+# Set up logging
+logger.add(
+    "webapp/plotbot_error.log",
+    level="ERROR",
+    rotation="10 MB",
+    retention="10 days",
+    enqueue=True
+    )
+
 
 # set paths
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
+OPTIONS = str(project_root.joinpath("webapp/options.toml"))
 
 _options = import_options_general(OPTIONS)
 LLM_PARAMS = _options['llm']['llm_parameters']
 LLM_MODEL = _options['llm']['llm_model']
 DESKTOP = _options['global']['desktop_mode']
 CACHE = _options['cache']['cache_mode']
+
+PLOT_INTENT_PATTERN = re.compile(
+    r"\b("
+    r"plot(s)?|chart(s)?|graph(s)?|draw|visualize|sketch|illustrate|render|depict|map|trace|diagram(s)?|"  # noqa: E501
+    r"scatter(plot)?s?|bar(plot)?s?|hist(ogram)?s?|hist(s)?|pie(chart)?s?|pie(s)?|line(plot)?s?|line(s)?|"  # noqa: E501
+    r"area(s)?|heatmap(s)?|box(plot)?s?|box(es)?|violin(plot)?s?|violin(s)?|bubble(chart)?s?|bubble(s)?|"  # noqa: E501
+    r"density(plot)?s?|density(s)?|hexbin(s)?|error(bar)?s?|error(s)?|stacked|polar|donut(chart)?s?|donut(s)?|"  # noqa: E501
+    r"funnel(s)?|distribution(s)?|dist(plot)?s?|point(s)?|joint(plot)?s?|pair(plot)?s?|categorical|swarm(plot)?s?|"  # noqa: E501
+    r"fit|reg(plot)?s?|lm(plot)?s?|kde(plot)?s?|boxen(plot)?s?|strip(plot)?s?|count(plot)?s?|"  # noqa: E501
+    r"treemap(s)?|sunburst(s)?|waterfall(s)?|step(plot)?s?|ribbon(s)?|contour(f)?s?|contour(s)?|"  # noqa: E501
+    r"mosaic(s)?|matrix|matrices|ridge(s)?|ridgeline(s)?|par(coord)?s?|parallel(s)?|dendrogram(s)?|"  # noqa: E501
+    r"network(s)?|chord(s)?|sankey(s)?|facet(s)?|subplot(s)?|axes|axis|x-?axis|y-?axis|z-?axis|"   # noqa: E501
+    r"color|hue|size|shape|label(s)?|legend(s)?|title(s)?|grid(s)?|background|foreground|font(s)?|"  # noqa: E501
+    r"scale(s)?|range(s)?|tick(s)?|mark(s)?|spine(s)?|border(s)?|strip(s)?|dot(plot)?s?|dot(s)?"  # noqa: E501
+    r")\b",
+    re.IGNORECASE
+)
+
+FORBIDDEN_PATTERNS = [
+    r'^\s*import\s',         # import statement at line start
+    r'\bexec\s*\(',          # exec(
+    r'\beval\s*\(',          # eval(
+    r'\bopen\s*\(',          # open(
+    r'^\s*os\.',             # os. usage at line start
+    r'^\s*sys\.',            # sys. usage at line start
+    r'^\s*subprocess\.',     # subprocess. usage at line start
+]
 
 
 def print_settings(dct):
@@ -332,50 +383,6 @@ def table_from_list(session_id: str,
     return None
 
 
-def detect_intent(input: str) -> str:
-    """
-    Detects the user's intent based on the input string.
-
-    Parameters
-    ----------
-    input : str
-        The input string from the user.
-
-    Returns
-    -------
-    str
-        The detected intent, which can be "plot", "cancel_plot", or "chat".
-    """
-    plot_keywords = [
-        "plot", "chart", "graph", "draw", "visualize", "sketch", "illustrate",
-        "render", "depict", "map", "trace", "diagram",
-        "visual representation", "graphical representation",
-        "represent data", "graphically show", "graphical illustration",
-
-        "scatter", "bar", "histogram", "pie", "line",
-        "area", "heatmap", "box", "boxplot", "violinplot",
-        "scatterplot", "bubblechart", "barchart"
-        "density", "densityplot", "hexbin", "error",
-        "stacked", "polar", "donut", "funnel", "distribution", "point",
-        "joint", "pair", "categorical", "swarm", "fit"
-
-        "x-axis", "y-axis", "z-axis", "color", "hue", "size", "shape",
-        "xaxis", "yaxis", "bars", "lines", "points", "markers", "labels",
-        "label", "legend", "title", "axis", "grid", "background",
-        "foreground", "font", "scale", "range", "ticks", "marks",
-        "titles", "limits", "range", "grid", "background", "foreground",
-        "font", "column", "row", "subplot", "facet", "subplot", "axes",
-        "spine", "spines", "border", "tick", "ticks", "ticklabels",
-    ]
-
-    if any(keyword in input.lower() for keyword in plot_keywords):
-        return "plot"
-    if not input or not isinstance(input, str):
-        return "chat"
-    else:
-        return "chat"
-
-
 def pandabot_user_query(df: pd.DataFrame,
                         api_key: str,
                         prompt: str,
@@ -484,19 +491,42 @@ def pandabot_user_query(df: pd.DataFrame,
             )
 
 
-def plotbot_code_generate(df: pd.DataFrame,
-                          user_request: str,
-                          plot_lib: str,
-                          schema: str,
-                          api_key: str,
-                          llm_params: dict) -> str:
+def detect_intent(user_input: str) -> str:
+    """
+    Detects if the user's input is a plotting request.
 
+    Returns
+    -------
+    str
+        "plot" if plotting intent is detected,
+        "chat" if not plotting-related,
+        "none" if input is empty or invalid.
+    """
+    if not isinstance(user_input, str) or not user_input.strip():
+        return "none"
+
+    if PLOT_INTENT_PATTERN.search(user_input):
+        return "plot"
+    return "chat"
+
+
+def plotbot_code_generate_or_update(
+    df: pd.DataFrame,
+    user_request: str,
+    plot_lib: str,
+    schema: str,
+    api_key: str,
+    llm_params: dict,
+    code_chunk: str = None
+) -> str:
     valid_columns = df.columns.tolist()
     numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
     non_numeric_columns = df.select_dtypes(exclude=['number']).columns.tolist()
 
-    prompt = f"""
+    if code_chunk is None:
+        prompt = f"""
     You are a Python plotting assistant.
+
     The user has requested to create a plot.
     Here is the data schema:
     {schema}
@@ -506,82 +536,35 @@ def plotbot_code_generate(df: pd.DataFrame,
     Numeric columns are: {', '.join(numeric_columns)}.
     Non-numeric columns are: {', '.join(non_numeric_columns)}.
 
-    Based on the user request: '{user_request}', generate appropriate code for plotting using the following steps:
-    - Use {plot_lib} for plotting.
-    - If using matplotlib use the format 'fig, ax = plt.subplots()'.
-    - Do not import libraries, only write the plotting code.
-    - Do not show the plot using 'fig.show()'.
-    - The DataFrame is called 'df'.
-    - If the request involves numeric data (like line charts, bar charts, histograms), ensure you only use numeric columns ({', '.join(numeric_columns)}).
-    - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns ({', '.join(non_numeric_columns)}).
-    - If the user mentions a column that does not exist, ignore it and use available columns instead.
-    - Ensure the code is error-free and matches the DataFrame schema.
+    Based on the user request: '{user_request}', generate Python code for plotting using {plot_lib}.
 
-    Please generate the plot code in Python:
+    Instructions:
+    - Only output valid Python code, with no explanations or markdown formatting.
+    - Do not include any import statements.
+    - The DataFrame is called 'df'.
+    - If using matplotlib, use the format 'fig, ax = plt.subplots()'.
+    - Do not call 'fig.show()' or 'plt.show()'.
+    - Use only columns that exist in the DataFrame. If the user mentions a column that does not exist, ignore it and use available columns instead.
+    - If the request involves numeric data (like line charts, bar charts, histograms), use only numeric columns.
+    - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns.
+    - Ensure the code is error-free and matches the DataFrame schema.
+    - If you need to set axis labels or titles, use generic names if the user does not specify.
+    - Include concise comments in the code to explain non-obvious steps or terminology (e.g., what a spine is or how to remove it).
+    - Do not include explanations or markdown outside the code.
+
+    Example for matplotlib:
+    fig, ax = plt.subplots()
+    ax.plot(df['col1'], df['col2'])
+    # (do not include this comment in your output)
+
+    Now, generate the code:
     """  # noqa: E501
 
-    try:
-        openai.api_key = api_key
-        response = openai.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            stream=True,
-            temperature=llm_params["temperature"],
-            max_tokens=llm_params["max_tokens"],
-            top_p=llm_params["top_p"],
-            frequency_penalty=llm_params["frequency_penalty"],
-            presence_penalty=llm_params["presence_penalty"]
-        )
-
-        full_response = ""
-        for chunk in response:
-            chunk_content = chunk.choices[0].delta.content
-            if chunk_content:
-                full_response += chunk_content
-
-        if "```python" in full_response:
-            full_response = full_response.replace("```python", "")
-        if "```" in full_response:
-            full_response = full_response.replace("```", "")
-        if "fig.show()" in full_response:
-            full_response = full_response.replace("fig.show()", "")
-
-        valid_columns = df.columns
-        for col in valid_columns:
-            if "labels_column_name" in full_response:
-                full_response = full_response.replace(
-                    "labels_column_name",
-                    col
-                    )
-
-        return full_response
-
-    except Exception as e:
-        error_message = {
-            "type": "error",
-            "value": f"Error in generating plot code: {e}"
-            }
-        return error_message
-
-
-def plotbot_code_update(df: pd.DataFrame,
-                        user_request: str,
-                        code_chunk: str,
-                        plot_lib: str,
-                        schema: str,
-                        api_key: str,
-                        llm_params: dict) -> str:
-
-    valid_columns = df.columns.tolist()
-    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
-    non_numeric_columns = df.select_dtypes(exclude=['number']).columns.tolist()
-
-    prompt = f"""
+    else:
+        prompt = f"""
     You are a Python plotting assistant.
-    The user has requested to update code that generates plot.
+
+    The user has requested to update code that generates a plot.
     Here is the data schema:
     {schema}
 
@@ -591,19 +574,28 @@ def plotbot_code_update(df: pd.DataFrame,
     Non-numeric columns are: {', '.join(non_numeric_columns)}.
 
     Based on the user request: '{user_request}',
-    and the current code {code_chunk},
-    update the code to generate the plot using the following steps:
-    - Use {plot_lib} for plotting.
-    - If using matplotlib use the format 'fig, ax = plt.subplots()'.
-    - Do not import libraries, only write the plotting code.
-    - Do not show the plot using 'fig.show()'.
-    - The DataFrame is called 'df'.
-    - If the request involves numeric data (like line charts, bar charts, histograms), ensure you only use numeric columns ({', '.join(numeric_columns)}).
-    - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns ({', '.join(non_numeric_columns)}).
-    - If the user mentions a column that does not exist, ignore it and use available columns instead.
-    - Ensure the code is error-free and matches the DataFrame schema.
+    and the current code:
+    {code_chunk}
 
-    Please generate the plot code in Python:
+    Update the code to generate the plot using the following instructions:
+    - Only output valid Python code, with no explanations or markdown formatting.
+    - Do not include any import statements.
+    - The DataFrame is called 'df'.
+    - If using matplotlib, use the format 'fig, ax = plt.subplots()'.
+    - Do not call 'fig.show()' or 'plt.show()'.
+    - Use only columns that exist in the DataFrame. If the user mentions a column that does not exist, ignore it and use available columns instead.
+    - If the request involves numeric data (like line charts, bar charts, histograms), use only numeric columns.
+    - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns.
+    - Ensure the code is error-free and matches the DataFrame schema.
+    - If you need to set axis labels or titles, use generic names if the user does not specify.
+    - Include concise comments in the code to explain non-obvious steps or terminology (e.g., what a spine is or how to remove it).
+    - Do not include explanations or markdown outside the code.
+
+    Example for matplotlib:
+    fig, ax = plt.subplots()
+    ax.plot(df['col1'], df['col2'])
+
+    Now, update and output the code:
     """  # noqa: E501
 
     try:
@@ -641,50 +633,95 @@ def plotbot_code_update(df: pd.DataFrame,
                 full_response = full_response.replace(
                     "labels_column_name",
                     col
-                    )
+                )
 
         return full_response
 
     except Exception as e:
-        error_message = {
+        logger.error(f"Error in generating plot code: {e}")  # For developer logs
+        return {
             "type": "error",
-            "value": f"Error in generating plot code: {e}"
-            }
-        return error_message
+            "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
+        }
 
 
-def clean_df_plotting(df):
-    for col in df.columns:
-        try:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        except Exception as e:
-            st.warning(f"Could not convert column {col} to numeric: {e}")
-    return df.dropna(axis=1, how="any")
+def is_code_safe(plot_code: str) -> bool:
+    for pattern in FORBIDDEN_PATTERNS:
+        if re.search(pattern, plot_code, re.MULTILINE):
+            logger.error(f"Unsafe pattern matched: {pattern} in code: {plot_code}")
+            return False
+    return True
+
+
+def strip_imports(code: str) -> str:
+    """Remove all import statements from the code."""
+    return "\n".join(
+        line for line in code.splitlines()
+        if not re.match(r'^\s*import\s', line)
+    )
 
 
 def plotbot_code_execute(plot_code: str,
                          df: pd.DataFrame,
                          plot_lib: str) -> dict:
+    if not isinstance(plot_code, str) or not plot_code.strip():
+        logger.error("plot_code is not a valid string.")
+        return {
+            "type": "error",
+            "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
+        }
+    # Strip import statements before safety check
+    plot_code = strip_imports(plot_code)
+    if not is_code_safe(plot_code):
+        logger.error("Unsafe code detected in plot instructions.")
+        return {
+            "type": "error",
+            "value": "Sorry, your request included unsafe code and could not be executed."
+        }
+
     exec_locals = {}
+    allowed_globals = {
+        "__builtins__": safe_builtins,
+        "df": df,
+        "_getitem_": guarded_getitem,
+        "_unpack_sequence_": guarded_unpack_sequence,
+        "_getiter_": guarded_getiter,
+    }
+    if plot_lib == "matplotlib":
+        allowed_globals["plt"] = plt
+    elif plot_lib == "seaborn":
+        allowed_globals["sns"] = sns
+        allowed_globals["plt"] = plt
+    elif plot_lib == "plotly.express":
+        allowed_globals["px"] = px
+
     try:
-        # df = clean_df_plotting(df)
-        if plot_lib == "matplotlib":
-            exec(plot_code, {'df': df, 'plt': plt}, exec_locals)
-        elif plot_lib == "seaborn":
-            exec(plot_code, {'df': df, 'sns': sns, 'plt': plt}, exec_locals)
-        elif plot_lib == "plotly.express":
-            exec(plot_code, {'df': df, 'px': px}, exec_locals)
+        byte_code = compile_restricted(plot_code, '<string>', 'exec')
+        exec(byte_code, allowed_globals, exec_locals)
         if "fig" in exec_locals:
             fig = exec_locals["fig"]
-            return fig
-        else:
-            return None
-    except Exception as e:
-        error_message = {
-            "type": "error",
-            "value": f"Error in executing plot code: {e}"
+            return {
+                "type": "plot",
+                "value": fig
             }
-        return error_message
+        else:
+            logger.error("No figure object ('fig') was created by the code.")
+            return {
+                "type": "error",
+                "value": "Sorry, no plot was generated. Please try a different request."
+            }
+    except SyntaxError as e:
+        logger.error(f"Syntax error in plot code: {e}")
+        return {
+            "type": "error",
+            "value": "Sorry, there was a problem with the plot code. Please try a different request."  # noqa: E501
+        }
+    except Exception as e:
+        logger.error(f"Error in executing plot code: {e}")
+        return {
+            "type": "error",
+            "value": "Sorry, something went wrong while generating your plot."
+        }
 
 
 def plotbot_user_query(session_id: str,
@@ -696,6 +733,11 @@ def plotbot_user_query(session_id: str,
                        code_chunk=None,
                        prompt_position: int = 1,
                        cache_mode: bool = False) -> None:
+    # Ensure session state keys exist
+    if "plotbot" not in st.session_state[session_id]:
+        st.session_state[session_id]["plotbot"] = []
+    if "plot_intent" not in st.session_state[session_id]:
+        st.session_state[session_id]["plot_intent"] = False
 
     if cache_mode:
         add_message(user_id=st.user.email,
@@ -708,52 +750,78 @@ def plotbot_user_query(session_id: str,
     intent = detect_intent(user_input)
     schema = df.dtypes.to_string()
 
+    if intent == "none":
+        response = (
+            ":grey_question: Please enter a request for a plot or chart."
+        )
+        st.session_state[session_id]["plotbot"].append(
+            {"role": "assistant", "type": "error", "value": response}
+        )
+        prune_plotbot_thread(session_id)
+        return
+
     if intent == "plot":
         st.session_state[session_id]["plot_intent"] = True
 
         if df is not None:
-            if code_chunk is None:
-                plot_code = plotbot_code_generate(df=df,
-                                                  user_request=user_input,
-                                                  plot_lib=plot_lib,
-                                                  schema=schema,
-                                                  api_key=api_key,
-                                                  llm_params=llm_params)
-            elif code_chunk is not None:
-                plot_code = plotbot_code_update(df=df,
-                                                user_request=user_input,
-                                                code_chunk=code_chunk,
-                                                plot_lib=plot_lib,
-                                                schema=schema,
-                                                api_key=api_key,
-                                                llm_params=llm_params)
+            # Use unified code generation/update function
+            cache_dict = st.session_state[session_id].setdefault("plotbot_cache", {})
 
-            if plot_code is None:
-                error_message = """My apologies...
-                I had trouble generating the plot code.
-                Try a different request.
-                """
+            cache_key = make_plotbot_cache_key(user_input, df, plot_lib, code_chunk)
+
+            # Check for cached code and plot
+            cached = cache_dict.get(cache_key)
+            if cached:
+                logger.debug(f"Cache hit for key: {cache_key}")
+                plot_code = cached.get("code")
+                plot_fig = cached.get("plot")
+            else:
+                logger.debug(f"Cache miss for key: {cache_key}")
+                plot_code = plotbot_code_generate_or_update(
+                    df=df,
+                    user_request=user_input,
+                    plot_lib=plot_lib,
+                    schema=schema,
+                    api_key=api_key,
+                    llm_params=llm_params,
+                    code_chunk=code_chunk
+                )
+
+            # Standardized error handling
+            if plot_code is None or (isinstance(plot_code, dict) and plot_code.get("type") == "error"):  # noqa: E501
+                error_message = plot_code.get("value") if isinstance(plot_code, dict) else (
+                    "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
+                )
                 st.session_state[session_id]["plotbot"].append(
-                    {"role": "assistant",
-                     "type": "string",
-                     "value": error_message}
-                    )
+                    {"role": "assistant", "type": "error", "value": error_message}
+                )
+                prune_plotbot_thread(session_id)
+                return
 
-            elif plot_code is dict and plot_code.get("type") == "error":
-                error_message = plot_code.get("value")
+            plot_fig = plotbot_code_execute(plot_code=plot_code, plot_lib=plot_lib, df=df)
+            # Cache the result
+            if (
+                not (isinstance(plot_code, dict) and plot_code.get("type") == "error") and
+                not (isinstance(plot_fig, dict) and plot_fig.get("type") == "error")
+            ):
+                cache_dict[cache_key] = {"code": plot_code, "plot": plot_fig}
+
+            if not isinstance(plot_fig, dict):
+                plot_fig = {
+                    "type": "error",
+                    "value": "Sorry, something went wrong while generating your plot."
+                }
+
+            if plot_fig.get("type") == "error":
                 st.session_state[session_id]["plotbot"].append(
-                    {"role": "assistant",
-                     "type": "string",
-                     "value": error_message}
-                    )
+                    {"role": "assistant", "type": "error", "value": plot_fig.get("value")}
+                )
+                prune_plotbot_thread(session_id)
+                return
 
-            plot_fig = plotbot_code_execute(plot_code=plot_code,
-                                            plot_lib=plot_lib,
-                                            df=df)
-
-            if cache_mode:
-                svg_str = fig_to_svg(figure=plot_fig, plot_lib=plot_lib)
-
+            # Cache plot if needed
+            if cache_mode and plot_fig.get("type") == "plot":
+                svg_str = fig_to_svg(figure=plot_fig["value"], plot_lib=plot_lib)
                 add_plot(user_id=st.user.email,
                          session_id=session_id,
                          assistant_id=0,
@@ -761,44 +829,42 @@ def plotbot_user_query(session_id: str,
                          plot_library=plot_lib,
                          plot_svg=svg_str)
 
+            # Append code and plot to session state
             st.session_state[session_id]["plotbot"].append(
                 {"role": "assistant", "type": "code", "value": plot_code}
+            )
+            prune_plotbot_thread(session_id)
+
+            if plot_fig.get("type") == "plot":
+                st.session_state[session_id]["plotbot"].append(
+                    {"role": "assistant", "type": "plot", "value": plot_fig["value"]}
                 )
-
-            if plot_fig:
-                st.session_state[session_id]["plotbot"].append(
-                    {"role": "assistant", "type": "plot", "value": plot_fig}
-                    )
-
+                prune_plotbot_thread(session_id)
             else:
-                error_message = """
-                No plot was generated.
-                As a plotbot, I can only execute specific types of requests.
-                For more complex tasks,
-                you might want to try AI-assisted analysis.
-                """
+                error_message = (
+                    "No plot was generated. As a plotbot, I can only execute specific types of requests."  # noqa: E501
+                    "For more complex tasks, you might want to try AI-assisted analysis."
+                )
                 st.session_state[session_id]["plotbot"].append(
-                    {"role": "assistant",
-                     "type": "string",
-                     "value": error_message}
-                    )
+                    {"role": "assistant", "type": "error", "value": error_message}
+                )
+                prune_plotbot_thread(session_id)
         else:
             error_message = "No plot was generated. Please check the code."
             st.session_state[session_id]["plotbot"].append(
-                    {"role": "assistant",
-                     "type": "string",
-                     "value": error_message}
-                    )
+                {"role": "assistant", "type": "error", "value": error_message}
+            )
+            prune_plotbot_thread(session_id)
     else:
-        response = """
-        :warning: I am unable to assist with that request.
-        I'm a plotbot, not a chat bot.
-        Try asking me to plot something related to the data.
-        """
-        if response:
-            st.session_state[session_id]["plotbot"].append(
-                {"role": "assistant", "type": "string", "value": response}
-                )
+        response = (
+            ":warning: I am unable to assist with that request.\n"
+            "I'm a plotbot, not a chat bot.\n"
+            "Try asking me to plot something related to the data."
+        )
+        st.session_state[session_id]["plotbot"].append(
+            {"role": "assistant", "type": "error", "value": response}
+        )
+        prune_plotbot_thread(session_id)
 
 
 def previous_code_chunk(messages: list[dict]):
@@ -814,9 +880,41 @@ def previous_code_chunk(messages: list[dict]):
         return None
 
 
+def prune_plotbot_thread(session_id: str,
+                         max_length: int = 20):
+    """
+    Prune the plotbot message thread to the most recent max_length messages.
+    Keeps the initial user prompt if possible.
+    """
+    thread = st.session_state[session_id]["plotbot"]
+    if len(thread) > max_length:
+        # Optionally, always keep the first user message
+        first_user_idx = next((i for i, m in enumerate(thread) if m["role"] == "user"), 0)
+        # Keep the first user message and the last (max_length-1) messages
+        st.session_state[session_id]["plotbot"] = (
+            [thread[first_user_idx]] + thread[-(max_length-1):]
+            if first_user_idx < len(thread) else thread[-max_length:]
+        )
+
+
 def generate_plot_key(session_id, plot_id):
     plot_key = session_id + "-" + str(plot_id)
     return plot_key
+
+
+def make_plotbot_cache_key(user_input, df, plot_lib, code_chunk=None):
+    # Use schema and shape, not full data, for hashing (fast & safe)
+    schema = str(df.dtypes.to_dict())
+    shape = str(df.shape)
+    key_data = {
+        "user_input": user_input,
+        "schema": schema,
+        "shape": shape,
+        "plot_lib": plot_lib,
+        "code_chunk": code_chunk or "",
+    }
+    key_str = json.dumps(key_data, sort_keys=True)
+    return hashlib.sha256(key_str.encode()).hexdigest()
 
 
 def fig_to_svg(figure: plt.Figure,
@@ -853,7 +951,7 @@ def fig_to_svg(figure: plt.Figure,
             plt.close(fig)
             return svg_str
         except Exception as e:
-            print(f"Error converting array to SVG: {e}")
+            logger.error(f"Error in generating plot code: {e}")
             return None
     if plot_lib == "plotly.express":
         try:
@@ -862,7 +960,7 @@ def fig_to_svg(figure: plt.Figure,
             svg_str = img_bytes.decode('utf-8')
             return svg_str
         except Exception as e:
-            print(f"Error converting Plotly figure to SVG: {e}")
+            logger.error(f"Error in generating plot code: {e}")
             return None
     else:
         try:
@@ -873,7 +971,7 @@ def fig_to_svg(figure: plt.Figure,
             buf.close()
             return svg_str
         except Exception as e:
-            print(f"Error converting Matplotlib figure to SVG: {e}")
+            logger.error(f"Error in generating plot code: {e}")
             return None
 
 
@@ -981,7 +1079,7 @@ def fig_to_array(fig: plt.Figure,
             # Resize and serialize the image
             return resize_and_serialize(img, max_bytes)
         except Exception as e:
-            print(f"Error converting Plotly figure to array: {e}")
+            logger.error(f"Error in generating plot code: {e}")
             return None, None, None
 
     elif plot_lib == "matplotlib":
@@ -1001,9 +1099,8 @@ def fig_to_array(fig: plt.Figure,
             buf.close()
             return result
         except Exception as e:
-            print(f"Error converting Matplotlib figure to array: {e}")
+            logger.error(f"Error in generating plot code: {e}")
             return None, None, None
-
     else:
-        print(f"Unsupported plotting library: {plot_lib}")
+        logger.error("Error in generating plot code: Unknown plot_lib or unexpected error in fig_to_array.")  # noqa: E501
         return None, None, None
