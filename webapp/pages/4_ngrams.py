@@ -43,6 +43,12 @@ def main():
     # Get or initialize user session
     user_session_id, session = _utils.handlers.get_or_init_user_session()
 
+    st.sidebar.link_button(
+        label="Help",
+        url="https://browndw.github.io/docuscope-docs/guide/ngrams.html",
+        icon=":material/help:"
+        )
+
     if session.get('ngrams')[0] is True:
 
         metadata_target = _utils.handlers.load_metadata(
