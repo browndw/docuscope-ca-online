@@ -114,6 +114,12 @@ def main() -> None:
     if KEY_READY_TO_PROCESS not in st.session_state[user_session_id]:
         st.session_state[user_session_id][KEY_READY_TO_PROCESS] = False
 
+    st.sidebar.link_button(
+        label="Help",
+        url="https://browndw.github.io/docuscope-docs/guide/load-corpus.html",
+        icon=":material/help:"
+        )
+
     # If a target corpus is already loaded
     if session.get('has_target')[0] is True:
         # Load target corpus metadata
