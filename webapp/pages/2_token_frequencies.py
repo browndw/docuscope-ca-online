@@ -43,6 +43,12 @@ def main() -> None:
     # Get or initialize user session
     user_session_id, session = _utils.handlers.get_or_init_user_session()
 
+    st.sidebar.link_button(
+        label="Help",
+        url="https://browndw.github.io/docuscope-docs/guide/token-frequencies.html",
+        icon=":material/help:"
+        )
+
     if session.get('freq_table')[0] is True:
 
         _utils.handlers.load_widget_state(
