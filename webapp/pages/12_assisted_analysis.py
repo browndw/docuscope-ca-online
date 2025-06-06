@@ -59,6 +59,12 @@ def main():
     # Get or initialize user session
     user_session_id, session = _utils.handlers.get_or_init_user_session()
 
+    st.sidebar.link_button(
+        label="Help",
+        url="https://browndw.github.io/docuscope-docs/guide/assisted-analysis.html",
+        icon=":material/help:"
+        )
+
     if session.get('has_target')[0] is True:
         metadata_target = st.session_state[
             user_session_id
