@@ -488,7 +488,7 @@ def generate_tags_table(user_session_id: str):
     st.rerun()
 
 
-def generate_keyness_tables(user_session_id: str):
+def generate_keyness_tables(user_session_id: str, threshold=0.01, swap_target=False):
     # --- Try to get all required frequency/tag tables ---
     try:
         wc_tar_pos = st.session_state[user_session_id]["target"]["ft_pos"]
@@ -521,11 +521,11 @@ def generate_keyness_tables(user_session_id: str):
         )
         return
 
-    # --- Compute keyness tables ---
-    kw_pos = ds.keyness_table(wc_tar_pos, wc_ref_pos)
-    kw_ds = ds.keyness_table(wc_tar_ds, wc_ref_ds)
-    kt_pos = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True)
-    kt_ds = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True)
+    # --- Compute keyness tables with threshold and swap_target ---
+    kw_pos = ds.keyness_table(wc_tar_pos, wc_ref_pos, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    kw_ds = ds.keyness_table(wc_tar_ds, wc_ref_ds, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    kt_pos = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    kt_ds = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True, threshold=threshold, swap_target=swap_target)  # noqa: E501
 
     # --- Check for empty results ---
     keyness_tables = [kw_pos, kw_ds, kt_pos, kt_ds]
