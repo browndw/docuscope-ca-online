@@ -18,7 +18,6 @@ import json
 import io
 import pathlib
 import openai
-import os
 import re
 import sys
 
@@ -383,114 +382,6 @@ def table_from_list(session_id: str,
     return None
 
 
-def pandabot_user_query(df: pd.DataFrame,
-                        api_key: str,
-                        prompt: str,
-                        session_id: str,
-                        prompt_position: int = 1,
-                        cache_mode: bool = False) -> None:
-
-    if cache_mode:
-        add_message(user_id=st.user.email,
-                    session_id=session_id,
-                    assistant_id=1,
-                    role="user",
-                    message_idx=prompt_position,
-                    message=prompt)
-
-    model = OpenAI(api_token=api_key)
-
-    pai.config.set({
-        "llm": model,
-        "save_logs": False,
-        "verbose": False,
-        "max_retries": 3
-    })
-
-    dfs = pai.DataFrame(df)
-    # Check if the session state exists
-    if "pandasai" not in st.session_state[session_id]:
-        st.session_state[session_id]["pandasai"] = []
-
-    response = st.session_state[session_id]["pandasai"]
-    response.append(
-        {"role": "user", "type": "string", "value": prompt}
-        )
-
-    try:
-        data = dfs.chat(prompt).to_dict()
-
-        if "type" in data and "value" in data:
-            if data["type"] != "chart":
-                response.append(
-                    {"role": "assistant",
-                     "type": data["type"],
-                     "value": data["value"]}
-                    )
-            else:
-                pass
-        # Extract the plot outputs
-        # As plots are not always stored in "type" and "value"
-        plot_outputs = re.findall(r'exports\S+png', str(data))
-        plot_outputs = list(set(plot_outputs))
-        if plot_outputs:
-            for path in plot_outputs:
-                try:
-                    if (
-                        os.path.exists(path) and
-                        os.path.isfile(path)
-                    ):
-                        im = plt.imread(path)
-                        os.remove(path)
-                        response.append(
-                            {"role": "assistant", "type": "plot", "value": im}
-                            )
-
-                        if cache_mode:
-                            # Convert the image to SVG
-                            svg_str = fig_to_svg(figure=im,
-                                                 plot_lib="matplotlib",
-                                                 is_array=True)
-                            add_plot(user_id=st.user.email,
-                                     session_id=session_id,
-                                     assistant_id=1,
-                                     message_idx=prompt_position,
-                                     plot_library='matplotlib',
-                                     plot_svg=svg_str)
-                    else:
-                        pass
-                except Exception:
-                    pass
-
-    except MaliciousQueryError:
-        error = """:confused: Well, that's embarassing.
-        I couldn't respond to your request. It could just be that I'm overwhelmed.
-        But it might also be that I don't understand your request.
-        You might want to try rephrasing it or using a different data structure.
-        """  # noqa: E501
-        response.append(
-            {"role": "assistant", "type": "error", "value": error}
-            )
-    except NoResultFoundError:
-        error = """:confused: Well, that's embarassing.
-        I couldn't respond to your request. It could just be that I'm overwhelmed.
-        But it might also be that I don't understand your request.
-        You might want to try rephrasing it or using a different data structure.
-        """  # noqa: E501
-        response.append(
-            {"role": "assistant", "type": "error", "value": error}
-            )
-    except Exception:
-        error = """:confused: Well, that's embarassing.
-        I couldn't respond to your request. It could just be that I'm overwhelmed.
-        But it might also be that I don't understand your request.
-        You might want to try rephrasing it or using a different data structure.
-        """  # noqa: E501
-        response.append(
-            {"role": "assistant", "type": "error", "value": error}
-            )
-
-
 def detect_intent(user_input: str) -> str:
     """
     Detects if the user's input is a plotting request.
@@ -757,7 +648,7 @@ def plotbot_user_query(session_id: str,
         st.session_state[session_id]["plotbot"].append(
             {"role": "assistant", "type": "error", "value": response}
         )
-        prune_plotbot_thread(session_id)
+        prune_message_thread(session_id)
         return
 
     if intent == "plot":
@@ -795,7 +686,7 @@ def plotbot_user_query(session_id: str,
                 st.session_state[session_id]["plotbot"].append(
                     {"role": "assistant", "type": "error", "value": error_message}
                 )
-                prune_plotbot_thread(session_id)
+                prune_message_thread(session_id)
                 return
 
             plot_fig = plotbot_code_execute(plot_code=plot_code, plot_lib=plot_lib, df=df)
@@ -816,7 +707,7 @@ def plotbot_user_query(session_id: str,
                 st.session_state[session_id]["plotbot"].append(
                     {"role": "assistant", "type": "error", "value": plot_fig.get("value")}
                 )
-                prune_plotbot_thread(session_id)
+                prune_message_thread(session_id)
                 return
 
             # Cache plot if needed
@@ -833,13 +724,13 @@ def plotbot_user_query(session_id: str,
             st.session_state[session_id]["plotbot"].append(
                 {"role": "assistant", "type": "code", "value": plot_code}
             )
-            prune_plotbot_thread(session_id)
+            prune_message_thread(session_id)
 
             if plot_fig.get("type") == "plot":
                 st.session_state[session_id]["plotbot"].append(
                     {"role": "assistant", "type": "plot", "value": plot_fig["value"]}
                 )
-                prune_plotbot_thread(session_id)
+                prune_message_thread(session_id)
             else:
                 error_message = (
                     "No plot was generated. As a plotbot, I can only execute specific types of requests."  # noqa: E501
@@ -848,13 +739,13 @@ def plotbot_user_query(session_id: str,
                 st.session_state[session_id]["plotbot"].append(
                     {"role": "assistant", "type": "error", "value": error_message}
                 )
-                prune_plotbot_thread(session_id)
+                prune_message_thread(session_id)
         else:
             error_message = "No plot was generated. Please check the code."
             st.session_state[session_id]["plotbot"].append(
                 {"role": "assistant", "type": "error", "value": error_message}
             )
-            prune_plotbot_thread(session_id)
+            prune_message_thread(session_id)
     else:
         response = (
             ":warning: I am unable to assist with that request.\n"
@@ -864,7 +755,166 @@ def plotbot_user_query(session_id: str,
         st.session_state[session_id]["plotbot"].append(
             {"role": "assistant", "type": "error", "value": response}
         )
-        prune_plotbot_thread(session_id)
+        prune_message_thread(session_id)
+
+
+def pandabot_user_query(
+    df: pd.DataFrame,
+    api_key: str,
+    prompt: str,
+    session_id: str,
+    prompt_position: int = 1,
+    cache_mode: bool = False
+) -> None:
+    """
+    Handles natural language queries for dataframe analysis using pandasai.
+    Appends results to session state for Streamlit display.
+
+    - For plot requests, monkeypatches plt.Figure.savefig to capture plot images in-memory,
+      preventing cross-user file collisions and ensuring safe, per-session plot handling.
+    - For statistical/text/table requests, returns results as string/table.
+    - Appends extra instructions to the prompt for plot requests to avoid plt.show() and file paths.
+    """  # noqa: E501
+    if "pandasai" not in st.session_state[session_id]:
+        st.session_state[session_id]["pandasai"] = []
+    response = st.session_state[session_id]["pandasai"]
+
+    if cache_mode:
+        add_message(
+            user_id=st.user.email,
+            session_id=session_id,
+            assistant_id=1,
+            role="user",
+            message_idx=prompt_position,
+            message=prompt
+        )
+
+    model = OpenAI(api_token=api_key)
+    pai.config.set({
+        "llm": model,
+        "save_logs": False,
+        "verbose": False,
+        "max_retries": 3,
+        "save_charts": False
+    })
+
+    # Detect if the prompt is likely a plot request
+    intent = detect_intent(prompt)
+    plot_prompt_append = (
+        "\n- Do not call plt.show(), fig.show(), or display()."
+        "\n- Do not save plots to disk or return a file path."
+        "\n- Only create the figure and assign it to a variable named 'fig'."
+        if intent == "plot" else ""
+    )
+    full_prompt = prompt + plot_prompt_append
+
+    dfs = pai.DataFrame(df)
+    response.append({"role": "user", "type": "string", "value": prompt})
+    prune_message_thread(session_id)
+
+    # --- Monkeypatch plt.Figure.savefig to capture image bytes ---
+    _original_savefig = plt.Figure.savefig
+    _last_img_bytes = {}
+
+    def savefig_to_buffer(self, fname, *args, **kwargs):
+        # If saving to a temp_chart path, redirect to buffer
+        if isinstance(fname, str) and "temp_chart" in fname:
+            buf = io.BytesIO()
+            _original_savefig(self, buf, format="png", *args, **kwargs)
+            buf.seek(0)
+            _last_img_bytes["img"] = buf.getvalue()
+            buf.close()
+        else:
+            _original_savefig(self, fname, *args, **kwargs)
+
+    plt.Figure.savefig = savefig_to_buffer
+
+    try:
+        result = dfs.chat(full_prompt)
+
+        # Restore savefig immediately after use
+        plt.Figure.savefig = _original_savefig
+
+        # 1. If result is a DataFrame
+        if isinstance(result, pd.DataFrame):
+            value = result.to_dict()
+            response.append({"role": "assistant", "type": "table", "value": value})
+            prune_message_thread(session_id)
+
+        # 2. If result is a dict (e.g., pandasai chart)
+        elif isinstance(result, dict) and "type" in result and "value" in result:
+            response.append({"role": "assistant", "type": result["type"], "value": result["value"]})  # noqa: E501
+            prune_message_thread(session_id)
+
+        # 3. If we captured image bytes via monkeypatch, use them
+        elif "img" in _last_img_bytes:
+            response.append({"role": "assistant", "type": "plot", "value": _last_img_bytes["img"]})  # noqa: E501
+            prune_message_thread(session_id)
+
+        # 4. If result is a string that looks like a file path, fallback to memory
+        elif isinstance(result, str) and re.match(r"^exports/charts/.*\.png$", result):
+            # Try to capture the figure from memory
+            if plt.get_fignums():
+                fig = plt.gcf()
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", bbox_inches='tight')
+                buf.seek(0)
+                img_bytes = buf.getvalue()
+                buf.close()
+                plt.close(fig)
+                response.append({"role": "assistant", "type": "plot", "value": img_bytes})
+                prune_message_thread(session_id)
+            else:
+                response.append({"role": "assistant", "type": "string", "value": result})
+                prune_message_thread(session_id)
+
+        # 5. Fallback: Try to capture the figure from memory
+        else:
+            if plt.get_fignums():
+                fig = plt.gcf()
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", bbox_inches='tight')
+                buf.seek(0)
+                img_bytes = buf.getvalue()
+                buf.close()
+                plt.close(fig)
+                response.append({"role": "assistant", "type": "plot", "value": img_bytes})
+                prune_message_thread(session_id)
+            else:
+                # Log unhandled result type for debugging
+                logger.warning(f"Unhandled pandasai result type: {type(result)} - {result}")
+                response.append({"role": "assistant", "type": "string", "value": str(result)})  # noqa: E501
+                prune_message_thread(session_id)
+
+    except MaliciousQueryError:
+        plt.Figure.savefig = _original_savefig
+        error = (
+            ":confused: Sorry, your request could not be processed. "
+            "It may be too complex or reference restricted operations."
+        )
+        logger.error("MaliciousQueryError in pandasai query.")
+        response.append({"role": "assistant", "type": "error", "value": error})
+        prune_message_thread(session_id)
+    except NoResultFoundError:
+        plt.Figure.savefig = _original_savefig
+        error = (
+            ":confused: Sorry, I couldn't find a result for your request. "
+            "Try rephrasing or checking your column names."
+        )
+        logger.error("NoResultFoundError in pandasai query.")
+        response.append({"role": "assistant", "type": "error", "value": error})
+        prune_message_thread(session_id)
+    except Exception as e:
+        plt.Figure.savefig = _original_savefig
+        error = (
+            ":confused: Sorry, something went wrong. "
+            "Try rephrasing your request or using a different data structure."
+        )
+        logger.error(f"Exception in pandasai query: {e}")
+        response.append({"role": "assistant", "type": "error", "value": error})
+        prune_message_thread(session_id)
+    finally:
+        plt.Figure.savefig = _original_savefig
 
 
 def previous_code_chunk(messages: list[dict]):
@@ -880,18 +930,18 @@ def previous_code_chunk(messages: list[dict]):
         return None
 
 
-def prune_plotbot_thread(session_id: str,
-                         max_length: int = 20):
+def prune_message_thread(session_id: str, thread_key: str, max_length: int = 20):
     """
-    Prune the plotbot message thread to the most recent max_length messages.
+    Prune the message thread (e.g., 'plotbot', 'pandasai')
+    to the most recent max_length messages.
     Keeps the initial user prompt if possible.
     """
-    thread = st.session_state[session_id]["plotbot"]
+    thread = st.session_state[session_id][thread_key]
     if len(thread) > max_length:
         # Optionally, always keep the first user message
         first_user_idx = next((i for i, m in enumerate(thread) if m["role"] == "user"), 0)
         # Keep the first user message and the last (max_length-1) messages
-        st.session_state[session_id]["plotbot"] = (
+        st.session_state[session_id][thread_key] = (
             [thread[first_user_idx]] + thread[-(max_length-1):]
             if first_user_idx < len(thread) else thread[-max_length:]
         )
