@@ -13,13 +13,11 @@
 # limitations under the License.
 
 import base64
-import io
 import pathlib
 import sys
 
 import polars as pl
 import streamlit as st
-from matplotlib import pyplot as plt
 
 # Ensure project root is in sys.path for both desktop and online
 project_root = pathlib.Path(__file__).parent.parents[1].resolve()
@@ -72,6 +70,9 @@ def main():
 
     if "pandasai" not in st.session_state[user_session_id]:
         st.session_state[user_session_id]["pandasai"] = []
+
+    if "pandabot_user_prompt_count" not in st.session_state[user_session_id]:
+        st.session_state[user_session_id]["pandabot_user_prompt_count"] = 0
 
     if "user_key" not in st.session_state[user_session_id]:
         st.session_state[user_session_id]["user_key"] = None
@@ -235,18 +236,9 @@ def main():
                             unsafe_allow_html=True
                             )
                     elif message['type'] == 'plot':
-                        buf = io.BytesIO()
-                        plt.imsave(buf,
-                                   message['value'],
-                                   format='png')
-                        buf.seek(0)
-                        img_bytes = buf.getvalue()
+                        st.image(message['value'])
 
-                        st.image(
-                            img_bytes
-                            )
-
-                        b64 = base64.b64encode(img_bytes).decode()
+                        b64 = base64.b64encode(message['value']).decode()
                         href = f'<a href="data:image/png;base64,{b64}" download="plot.png">Download PNG</a>'  # noqa: E501
                         st.markdown(href, unsafe_allow_html=True)
 
@@ -264,10 +256,7 @@ def main():
                         )
 
         if st.session_state[user_session_id]["pandasai"]:
-            prompt_position = sum(
-                1 for message in st.session_state[user_session_id]["pandasai"]
-                if message["role"] == "user"
-                ) + 1
+            prompt_position = st.session_state[user_session_id]["pandabot_user_prompt_count"]  # noqa: E501
         else:
             prompt_position = 1
 
@@ -280,6 +269,11 @@ def main():
                 (df is not None and df.shape[0] > 0)
             ):
                 with st.spinner(":sparkles: Generating response..."):
+                    # Increment user prompt count
+                    if "pandabot_user_prompt_count" not in st.session_state[user_session_id]:  # noqa: E501
+                        st.session_state[user_session_id]["pandabot_user_prompt_count"] = 1  # noqa: E501
+                    else:
+                        st.session_state[user_session_id]["pandabot_user_prompt_count"] += 1  # noqa: E501
                     _utils.llms.pandabot_user_query(
                         df=df.to_pandas(),
                         prompt=prompt,
@@ -295,11 +289,16 @@ def main():
                 prompt and
                 (df is None or df.shape[0] == 0)
             ):
-                st.error(
-                    """
-                    Please select a data frame to analyze.
-                    """
+                error_message = """
+                :confused: I don't have any data to plot.
+                Please select a table from the drop down list above.
+                """
+                st.session_state[user_session_id]["pandasai"].append(
+                    {"role": "assistant",
+                        "type": "string",
+                        "value": error_message}
                     )
+                st.rerun()
 
         else:
             st.markdown(
@@ -313,7 +312,8 @@ def main():
 
             user_api_key = st.text_input(
                 "Enter your OpenAI API key:",
-                type='password'
+                type='password',
+                icon=":material/key:",
                 )
 
             if st.button("Check API Key"):
