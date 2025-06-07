@@ -49,8 +49,6 @@ if DESKTOP:
 else:
     CACHE = _options['cache']['cache_mode']
 
-PLOTBOT_THREAD_MAXLEN = 20
-
 
 def main():
     # Set login requirements for navigaton
@@ -74,6 +72,9 @@ def main():
     # Initialize chat history
     if "plotbot" not in st.session_state[user_session_id]:
         st.session_state[user_session_id]["plotbot"] = []
+
+    if "plotbot_user_prompt_count" not in st.session_state[user_session_id]:
+        st.session_state[user_session_id]["plotbot_user_prompt_count"] = 0
 
     if "user_key" not in st.session_state[user_session_id]:
         st.session_state[user_session_id]["user_key"] = None
@@ -337,11 +338,6 @@ def main():
                             st.session_state[user_session_id]["plotbot_user_prompt_count"] = 1  # noqa: E501
                         else:
                             st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1  # noqa: E501
-                        # Prune thread
-                        _utils.llms.prune_plotbot_thread(
-                            user_session_id,
-                            max_length=PLOTBOT_THREAD_MAXLEN
-                            )
 
                     if (
                         df is not None and
@@ -389,12 +385,6 @@ def main():
                         st.session_state[user_session_id]["plotbot_user_prompt_count"] = 1
                     else:
                         st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1
-
-                    # Prune thread
-                    _utils.llms.prune_plotbot_thread(
-                        user_session_id,
-                        max_length=PLOTBOT_THREAD_MAXLEN
-                        )
 
                     _utils.llms.plotbot_user_query(
                         session_id=user_session_id,
