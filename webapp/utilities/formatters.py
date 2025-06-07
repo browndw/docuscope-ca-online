@@ -21,31 +21,123 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
+import re
 import streamlit as st
 import zipfile
 
 
 def get_streamlit_column_config(df):
     """
-    Returns a column_config dictionary for st.dataframe based on column name patterns.
+    Returns a column_config dictionary for st.dataframe based on column name patterns,
+    including helpful tooltips for each column.
+    Adjusts RF tooltips based on whether the table is token-based or tag-based.
     """
+    # Detect if this is a tags-only table (no 'Token' or 'Token_*' column)
+    tags_only = not any(col.startswith("Token") for col in df.columns)
+
+    # Define tooltips for common columns
+    tooltips = {
+        "AF": "Absolute frequency (raw count)",
+        "RF": (
+            "Relative frequency (percent of tokens)"
+            if tags_only else
+            "Relative frequency (per million tokens)"
+        ),
+        "LL": "Log-likelihood (keyness statistic)",
+        "LR": "Log ratio (effect size)",
+        "Range": "Document range (proportion of docs containing item)",
+        "PV": "p-value (statistical significance)",
+        "MI": "Mutual information (association strength)",
+        "AF_Ref": "Absolute frequency in reference corpus",
+        "RF_Ref": (
+            "Relative frequency in reference corpus (percent of tokens)"
+            if tags_only else
+            "Relative frequency in reference corpus (per million tokens)"
+        ),
+        "Range_Ref": "Document range in reference corpus",
+    }
+
     config = {}
     for col in df.columns:
+        # Find base name for tooltip matching (handles e.g. "RF_Ref")
+        base = col
+        if col.endswith("_Ref"):
+            base = col
+        elif "_" in col:
+            base = col.split("_")[0]
+        # Set format and help
         if col.startswith("AF"):
-            config[col] = st.column_config.NumberColumn(format="%.0f")
+            config[col] = st.column_config.NumberColumn(
+                format="%.0f",
+                help=tooltips.get(col, tooltips.get(base, "Absolute frequency"))
+            )
         elif col.startswith("RF"):
-            config[col] = st.column_config.NumberColumn(format="%.2f")
+            config[col] = st.column_config.NumberColumn(
+                format="%.2f",
+                help=tooltips.get(col, tooltips.get(base, "Relative frequency"))
+            )
         elif col.startswith("LL"):
-            config[col] = st.column_config.NumberColumn(format="%.2f")
+            config[col] = st.column_config.NumberColumn(
+                format="%.2f",
+                help=tooltips.get(col, tooltips.get(base, "Log-likelihood"))
+            )
         elif col.startswith("LR"):
-            config[col] = st.column_config.NumberColumn(format="%.2f")
+            config[col] = st.column_config.NumberColumn(
+                format="%.2f",
+                help=tooltips.get(col, tooltips.get(base, "Log ratio"))
+            )
         elif col.startswith("Range"):
-            config[col] = st.column_config.NumberColumn(format="%.2f %%")
+            config[col] = st.column_config.NumberColumn(
+                format="%.2f %%",
+                help=tooltips.get(col, tooltips.get(base, "Document range"))
+            )
         elif col.startswith("PV"):
-            config[col] = st.column_config.NumberColumn(format="%.3f")
+            config[col] = st.column_config.NumberColumn(
+                format="%.3f",
+                help=tooltips.get(col, tooltips.get(base, "p-value"))
+            )
         elif col.startswith("MI"):
-            config[col] = st.column_config.NumberColumn(format="%.3f")
+            config[col] = st.column_config.NumberColumn(
+                format="%.3f",
+                help=tooltips.get(col, tooltips.get(base, "Mutual information"))
+            )
     return config
+
+
+def color_picker_controls(default_hex="", default_palette="Plotly"):
+    """
+    Display color controls: a HEX color input and a palette dropdown.
+    Returns a tuple: (hex_color, palette_name)
+    """
+    plotly_palettes = [
+        "Plotly", "Viridis", "Cividis", "Plasma", "Inferno", "Magma",
+        "Turbo", "IceFire", "Bluered", "RdBu", "YlGnBu", "YlOrRd", "Aggrnyl",
+        "Agsunset", "Blackbody", "Blues", "Electric", "Greens", "Greys",
+        "Hot", "Jet", "Picnic", "Portland", "Rainbow", "Reds", "Earth"
+    ]
+    col1, col2 = st.columns(2)
+    with col1:
+        hex_color = st.text_input(
+            "Custom HEX color",
+            value=default_hex,
+            placeholder="Leave blank to use palette",
+            help="Enter a HEX color code (e.g., #1565c0). "
+                 "If left blank, the palette selection will be used."
+        )
+        # HEX validation
+        hex_pattern = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
+        if hex_color and not hex_pattern.match(hex_color):
+            st.warning("Invalid HEX color. Using palette instead.", icon="⚠️")
+            hex_color = ""
+    with col2:
+        palette = st.selectbox(
+            "Plotly palette",
+            plotly_palettes,
+            index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,
+            help="Choose a built-in Plotly color palette. "
+                 "Palette is used only if HEX color is blank."
+        )
+    return hex_color, palette
 
 
 def plot_tag_frequencies_bar(df):
@@ -155,21 +247,32 @@ def plot_compare_corpus_bar(df):
     return fig
 
 
-def plot_general_boxplot(df, tag_col='Tag', value_col='RF'):
+def plot_general_boxplot(df, tag_col='Tag', value_col='RF', color=None, palette=None):
     """
     General boxplot for the corpus, colored by tag, with legend at bottom left,
     and boxes sorted by median (highest to lowest).
+    Allows user to specify a custom HEX color or a Plotly palette.
     """
     # Sort tags by median value (descending)
     medians = df.groupby(tag_col)[value_col].median().sort_values(ascending=False)
     tag_order = medians.index.tolist()
+
+    # Determine color sequence
+    if color and color.lower().startswith("#"):
+        color_seq = [color] * len(tag_order)
+    elif palette and hasattr(px.colors.qualitative, palette):
+        color_seq = getattr(px.colors.qualitative, palette)
+    elif palette and hasattr(px.colors.sequential, palette):
+        color_seq = getattr(px.colors.sequential, palette)
+    else:
+        color_seq = px.colors.qualitative.Set1
 
     fig = px.box(
         df,
         x=value_col,
         y=tag_col,
         color=tag_col,
-        color_discrete_sequence=px.colors.qualitative.Set1,
+        color_discrete_sequence=color_seq,
         points=False,
         orientation='h',
         category_orders={tag_col: tag_order}
