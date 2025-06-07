@@ -102,12 +102,6 @@ def main() -> None:
 
         st.sidebar.markdown("---")
 
-        with st.sidebar.expander("Column explanation",
-                                 icon=":material/view_column:"):
-            st.markdown(_utils.content.message_columns_tokens)
-
-        st.sidebar.markdown("---")
-
         _utils.formatters.toggle_download(
             label="Excel",
             convert_func=_utils.formatters.convert_to_excel,
