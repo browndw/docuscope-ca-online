@@ -200,7 +200,7 @@ def main() -> None:
             to load and process a corpus using:
             """)
         st.page_link(
-            "pages/1_load_corpus.py",
+            page="pages/1_load_corpus.py",
             label="Manage Corpus Data",
             icon=":material/database:"
             )
