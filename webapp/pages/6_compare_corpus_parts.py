@@ -244,29 +244,10 @@ def main():
 
             st.sidebar.markdown(_utils.content.message_reset_table)
 
-            if st.sidebar.button("Compare New Categories"):
-                if "kw_pos_cp" not in st.session_state[user_session_id]["target"]:  # noqa: E501
-                    st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
-                st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
-
-                if "kw_ds_cp" not in st.session_state[user_session_id]["target"]:  # noqa: E501
-                    st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
-                st.session_state[user_session_id]["target"]["kw_ds_cp"] = {}
-
-                if "kt_pos_cp" not in st.session_state[user_session_id]["target"]:  # noqa: E501
-                    st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
-                st.session_state[user_session_id]["target"]["kt_pos_cp"] = {}
-
-                if "kt_ds_cp" not in st.session_state[user_session_id]["target"]:  # noqa: E501
-                    st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
-                st.session_state[user_session_id]["target"]["kt_ds_cp"] = {}
-
-                _utils.handlers.update_session(
-                    'keyness_parts',
-                    False,
-                    user_session_id
-                    )
-
+            if st.sidebar.button("Compare New Categories", icon=":material/refresh:"):
+                for key in ["kw_pos_cp", "kw_ds_cp", "kt_pos_cp", "kt_ds_cp"]:
+                    st.session_state[user_session_id]["target"][key] = {}
+                _utils.handlers.update_session('keyness_parts', False, user_session_id)
                 st.rerun()
 
             st.sidebar.markdown("---")
