@@ -74,10 +74,12 @@ def main():
                 _utils.content.message_reference_info(metadata_reference)
                 )
 
-        with st.sidebar.expander("Column explanation",
-                                 icon=":material/view_column:"):
-            st.markdown(_utils.content.message_columns_keyness)
-        st.sidebar.markdown("---")
+        # --- Show user selections ---
+        st.info(
+            f"**p-value threshold:** {st.session_state[user_session_id]['pval_threshold']} &nbsp;&nbsp; "  # noqa: E501
+            f"**Swapped:** {'Yes' if st.session_state[user_session_id]['swap_target'] else 'No'}"  # noqa: E501
+        )
+
         st.sidebar.markdown("### Comparison")
         table_radio = st.sidebar.radio(
             "Select the keyness table to display:",
@@ -143,6 +145,20 @@ def main():
             )
 
             st.sidebar.markdown("---")
+            st.sidebar.markdown(_utils.content.message_reset_table)
+            if st.sidebar.button("Generate New Keyness Table", icon=":material/refresh:"):
+                # Clear keyness tables for this session
+                for key in ["kw_pos", "kw_ds", "kt_pos", "kt_ds"]:
+                    if key not in st.session_state[user_session_id]["target"]:
+                        st.session_state[user_session_id]["target"][key] = {}
+                    st.session_state[user_session_id]["target"][key] = {}
+                # Reset keyness_table state
+                _utils.handlers.update_session('keyness_table', False, user_session_id)
+                # Optionally clear warnings
+                st.session_state[user_session_id]["keyness_warning"] = None
+                st.rerun()
+
+            st.sidebar.markdown("---")
 
         else:
             st.sidebar.markdown("### Tagset")
@@ -201,11 +217,108 @@ def main():
             )
 
             st.sidebar.markdown("---")
+            st.sidebar.markdown(_utils.content.message_reset_table)
+            if st.sidebar.button("Generate New Keyness Table", icon=":material/refresh:"):
+                # Clear keyness tables for this session
+                for key in ["kw_pos", "kw_ds", "kt_pos", "kt_ds"]:
+                    if key not in st.session_state[user_session_id]["target"]:
+                        st.session_state[user_session_id]["target"][key] = {}
+                    st.session_state[user_session_id]["target"][key] = {}
+                # Reset keyness_table state
+                _utils.handlers.update_session('keyness_table', False, user_session_id)
+                # Optionally clear warnings
+                st.session_state[user_session_id]["keyness_warning"] = None
+                st.rerun()
+
+            st.sidebar.markdown("---")
 
     else:
 
-        st.markdown(_utils.content.message_keyness)
+        st.markdown(
+            """
+            :material/manufacturing: Use the button to generate a table.
 
+            * To use this tool, be sure that you have loaded **a reference corpus**.
+
+            * Loading a reference can be done from:.
+            """
+            )
+        st.page_link(
+            page="pages/1_load_corpus.py",
+            label="Manage Corpus Data",
+            icon=":material/database:",
+        )
+
+        # --- Add options for p-value threshold and swap target/reference ---
+        # Initialize if not present
+        if "pval_threshold" not in st.session_state[user_session_id]:
+            st.session_state[user_session_id]["pval_threshold"] = 0.01
+        if "swap_target" not in st.session_state[user_session_id]:
+            st.session_state[user_session_id]["swap_target"] = False
+
+        # Load metadata for size check
+        try:
+            metadata_target = _utils.handlers.load_metadata('target', user_session_id)
+            target_tokens = metadata_target.get('tokens_pos', [0])[0] if metadata_target else 0  # noqa: E501
+        except Exception:
+            target_tokens = 0
+
+        try:
+            metadata_reference = _utils.handlers.load_metadata('reference', user_session_id)
+            reference_tokens = metadata_reference.get('tokens_pos', [0])[0] if metadata_reference else 0  # noqa: E501
+        except Exception:
+            reference_tokens = 0
+
+        TOKEN_LIMIT = 1_500_000
+
+        if target_tokens > TOKEN_LIMIT or reference_tokens > TOKEN_LIMIT:
+            pval_options = [0.05, 0.01]
+            st.sidebar.warning(
+                "Corpora are large (>1.5 million tokens). "
+                "p < .001 is disabled to prevent memory issues."
+            )
+        elif target_tokens == 0 or reference_tokens == 0:
+            # If metadata is missing, notthing to display
+            pval_options = []
+        else:
+            pval_options = [0.05, 0.01, 0.001]
+        # Select p-value threshold
+        pval_idx = pval_options.index(st.session_state[user_session_id]["pval_threshold"]) \
+            if st.session_state[user_session_id]["pval_threshold"] in pval_options else 1
+
+        st.sidebar.markdown("### Select threshold")
+        pval_selected = st.sidebar.selectbox(
+            "p-value threshold",
+            options=pval_options,
+            format_func=lambda x: f"{x:.3f}" if x < 0.01 else f"{x:.2f}",
+            index=pval_idx,
+            key=f"pval_threshold_{user_session_id}",
+            help=(
+                "Select the p-value threshold for keyness analysis. "
+                "Lower values are more stringent, but may be useful for larger corpora. "
+                "For smaller corpora, a threshold of 0.05 is often sufficient."
+            )
+        )
+
+        st.session_state[user_session_id]["pval_threshold"] = pval_selected
+
+        if target_tokens > 0 and reference_tokens > 0:
+            st.sidebar.markdown("### Swap target/reference corpora")
+            swap_selected = st.sidebar.toggle(
+                "Swap Target/Reference",
+                value=st.session_state[user_session_id]["swap_target"],
+                key=f"swap_target_{user_session_id}",
+                help=(
+                    "If selected, the target corpus will be used as the reference "
+                    "and the reference corpus will be used as the target for keyness analysis. "  # noqa: E501
+                    "This will show what is more frequent in the reference corpus "
+                    "compared to the target corpus. "
+                )
+            )
+            # Store the swap selection in session state
+            st.session_state[user_session_id]["swap_target"] = swap_selected
+
+        # --- End options block ---
         st.sidebar.markdown(_utils.content.message_generate_table)
 
         _utils.handlers.sidebar_action_button(
@@ -215,7 +328,11 @@ def main():
                 session.get('has_target')[0],
                 session.get('has_reference')[0]
             ],
-            action=lambda: _utils.handlers.generate_keyness_tables(user_session_id),
+            action=lambda: _utils.handlers.generate_keyness_tables(
+                user_session_id,
+                threshold=st.session_state[user_session_id]["pval_threshold"],
+                swap_target=st.session_state[user_session_id]["swap_target"]
+            ),
             spinner_message="Generating keywords..."
         )
 
