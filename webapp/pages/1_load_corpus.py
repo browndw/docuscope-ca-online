@@ -242,7 +242,16 @@ def main() -> None:
 
                 # Option 1: Load internal reference corpus
                 if ref_corpus_source == 'Internal':
-                    st.markdown(_utils.content.message_select_reference)
+                    st.markdown(
+                        """
+                        :material/priority:
+                        Select a saved corpus from the lists in the sidebar.
+
+                        :material/priority: Only corpora tagged with the same model
+                        as your target corpus will be available as a reference.
+                        """
+                        )
+                    st.sidebar.markdown("### Reference corpora")
                     st.sidebar.markdown(
                         """Use the button to load
                         a previously processed corpus.
@@ -268,7 +277,18 @@ def main() -> None:
 
                 # Option 2: Upload external reference corpus (parquet)
                 if ref_corpus_source == 'External':
-                    st.markdown(_utils.content.message_load_target_external)
+                    st.markdown(
+                        """
+                        :material/priority:
+                        Use the widget to select the corpus you'd like to load,
+                        either by browsing for them or dragging-and-dropping..
+
+                        :material/priority:
+                        Once you've selected your file,
+                        click the **UPLOAD REFERENCE** button
+                        and a processing button will appear in the sidebar.
+                        """
+                        )
 
                     with st.form("ref-file-form", clear_on_submit=True):
                         ref_file = st.file_uploader(
@@ -303,7 +323,28 @@ def main() -> None:
 
                 # Option 3: Process new reference corpus from text files
                 if ref_corpus_source == 'New':
-                    st.markdown(_utils.content.message_load_reference)
+                    st.markdown(
+                        """
+                        :material/priority:
+                        Use the widget to **select the files**
+                        you'd like process, either by browsing for them
+                        or dragging-and-dropping.
+
+                        :material/priority:
+                        Once you've selected your files, click the **UPLOAD REFERENCE**
+                        button and a processing button will appear in the sidebar.
+
+                        :material/priority: Your reference will be tagged with
+                        **the same model** as your target corpus.
+
+                        :material/priority: Be sure that all file names are unique
+                        and that they don't share names with your target corpus.
+
+                        :material/timer: Processing times may vary, but you can expect
+                        the initial corpus processing to take roughly
+                        1 minute for every 1 million words.
+                        """
+                        )
 
                     with st.form("ref-form", clear_on_submit=True):
                         ref_files = st.file_uploader(
@@ -372,16 +413,58 @@ def main() -> None:
     else:
         # No target corpus loaded: show options and info
         st.markdown("###  :dart: Load or process a target corpus")
-        st.markdown(_utils.content.message_load)
-        st.markdown("---")
+        st.markdown(
+            """
+            * From this page you can **load a saved corpus** or **process a new one**
+            by selecting the desired (**.txt**) files. You can also reset
+            your target corpus or manage any corpora you have saved.
 
-        # Expanders for corpus info
-        with st.expander("About internal corpora", icon=":material/database:"):
-            st.markdown(_utils.content.message_internal_corpora)
-        with st.expander("About external corpora", icon=":material/upload:"):
-            st.markdown(_utils.content.message_external_corpora)
-        with st.expander("About new corpora", icon=":material/library_books:"):
-            st.markdown(_utils.content.message_naming)
+            * Once you have loaded a target corpus, you can add a **reference corpus**
+            for comparison. Also note that you can encode metadata into your filenames,
+            which can used for further analysis.
+            (See the **About new corpora** expander.)
+            """
+            )
+
+        st.markdown("##### :material/info: Learn more...")
+        col_1, col_2, col_3, col_4 = st.columns(4)
+        with col_1:
+            # Expanders for corpus info
+            with st.expander("About internal corpora", icon=":material/database:"):
+                st.link_button(
+                    label="MICUSP",
+                    url="https://browndw.github.io/docuscope-docs/datasets/micusp.html",
+                    icon=":material/quick_reference:")
+                st.link_button(
+                    label="BAWE",
+                    url="https://browndw.github.io/docuscope-docs/datasets/bawe.html",
+                    icon=":material/quick_reference:")
+                st.link_button(
+                    label="ELSEVIER",
+                    url="https://browndw.github.io/docuscope-docs/datasets/elsevier.html",
+                    icon=":material/quick_reference:")
+                st.link_button(
+                    label="HAP-E",
+                    url="https://browndw.github.io/docuscope-docs/datasets/hape.html",
+                    icon=":material/quick_reference:")
+        with col_2:
+            with st.expander("About external corpora", icon=":material/upload:"):
+                st.link_button(
+                    label="Preparing an external corpus",
+                    url="https://browndw.github.io/docuscope-docs/vignettes/external-corpus.html",
+                    icon=":material/quick_reference:")
+        with col_3:
+            with st.expander("About new corpora", icon=":material/library_books:"):
+                st.link_button(
+                    label="Preparing a new corpus",
+                    url="https://browndw.github.io/docuscope-docs/vignettes/new-corpus.html",
+                    icon=":material/quick_reference:")
+        with col_4:
+            with st.expander("About the models", icon=":material/modeling:"):
+                st.link_button(
+                    label="Compare models",
+                    url="https://browndw.github.io/docuscope-docs/tagsets/model-comparison.html",
+                    icon=":material/quick_reference:")
         st.markdown("---")
         st.markdown("### Process a corpus:")
 
@@ -401,13 +484,23 @@ def main() -> None:
                 """
                 ],
             horizontal=False,
-            index=None
+            index=None,
+            help="Click on the expanders above to learn more about each option."
             )
 
         # Option 1: Load internal target corpus
         if corpus_source == 'Internal':
             st.markdown("---")
-            st.markdown(_utils.content.message_load_target_internal)
+            st.markdown(
+                """
+                :material/priority:
+                Select a saved corpus from the lists in the sidebar.
+
+                :material/priority:  Note that corpora are organized by model
+                with which they were tagged.
+                """
+                )
+            st.sidebar.markdown("### Corpora")
             st.sidebar.markdown(
                 """
                 Use the button to load a previously processed corpus.
@@ -443,7 +536,18 @@ def main() -> None:
         # Option 2: Upload external target corpus (parquet)
         if corpus_source == 'External':
             st.markdown("---")
-            st.markdown(_utils.content.message_load_target_external)
+            st.markdown(
+                """
+                :material/priority:
+                Use the widget to select the corpus you'd like to load,
+                either by browsing for them or dragging-and-dropping..
+
+                :material/priority:
+                Once you've selected your file,
+                click the **UPLOAD TARGET** button
+                and a processing button will appear in the sidebar.
+                """
+                )
 
             with st.form("corpus-file-form", clear_on_submit=True):
                 corp_file = st.file_uploader(
@@ -478,7 +582,33 @@ def main() -> None:
         # Option 3: Process new target corpus from text files
         if corpus_source == 'New':
             st.markdown("---")
-            st.markdown(_utils.content.message_load_target_new)
+            st.markdown(
+                """
+                :material/priority:
+                Use the widget to **select the files**
+                you'd like process, either by browsing for them
+                or dragging-and-dropping.
+
+                :material/priority:
+                Once you've selected your files, click the **UPLOAD** button
+                and a processing button will appear in the sidebar.
+
+                :material/priority:
+                Select **a model** from the sidebar.
+
+                :material/priority:
+                After processing, you will have the option
+                to save your corpus to use for future analysis.
+
+                :material/priority:
+                Be sure that all file names are unique.
+
+                :material/timer:
+                Processing times may vary, but you can expect
+                the initial corpus processing to take roughly
+                1 minute for every 1 million words.
+                """
+                )
 
             with st.form("corpus-form", clear_on_submit=True):
                 corp_files = st.file_uploader(
@@ -512,7 +642,8 @@ def main() -> None:
             models = load_models()
             selected_dict = st.sidebar.selectbox(
                 "Select a DocuScope model:",
-                options=MODEL_OPTIONS
+                options=MODEL_OPTIONS,
+                help="The Large Dictionary model has a more eleaborated tagset than the Common Dictionary model. Click 'About the models' (on the right) to learn more.",  # noqa: E501
                 )
             nlp = models[selected_dict]
             st.session_state[user_session_id][KEY_MODEL] = selected_dict
