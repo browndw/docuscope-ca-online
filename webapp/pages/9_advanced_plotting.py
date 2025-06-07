@@ -177,7 +177,8 @@ def main() -> None:
                     )
 
                     submitted = st.form_submit_button(
-                        "Boxplots of Frequencies by Group"
+                        label="Boxplots of Frequencies by Group",
+                        icon=":material/manufacturing:"
                         )
 
                     if submitted:
@@ -224,7 +225,10 @@ def main() -> None:
                     help="Choose one or more tags to plot as boxplots."
                     # REMOVE on_change and args here!
                 )
-                submitted = st.form_submit_button("Boxplots of Frequencies")
+                submitted = st.form_submit_button(
+                    label="Boxplots of Frequencies",
+                    icon=":material/manufacturing:"
+                    )
 
                 if submitted:
                     _utils.handlers.clear_boxplot_multiselect(user_session_id)
@@ -244,7 +248,9 @@ def main() -> None:
             ):
                 df_plot = st.session_state[user_session_id]["boxplot_df"]
                 if _utils.handlers.is_valid_df(df_plot, ['Tag', 'RF']):
-                    fig = _utils.formatters.plot_general_boxplot(df_plot)
+                    # --- color controls ---
+                    hex_color, palette = _utils.formatters.color_picker_controls()
+                    fig = _utils.formatters.plot_general_boxplot(df_plot, color=hex_color, palette=palette)
                     st.plotly_chart(fig, use_container_width=True)
 
                     stats = st.session_state[user_session_id]["boxplot_stats"]
