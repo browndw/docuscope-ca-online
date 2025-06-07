@@ -114,15 +114,11 @@ def main():
                 if len(filter_tag_4) > 0:
                     df = df.filter(pl.col("Tag_4").is_in(filter_tag_4))
 
-        st.dataframe(df,
-                     hide_index=True,
-                     column_config={
-                         "Range": st.column_config.NumberColumn(
-                             format="%.2f %%"
-                             ),
-                         "RF": st.column_config.NumberColumn(
-                             format="%.2f"
-                             )})
+        st.dataframe(
+            df,
+            hide_index=True,
+            column_config=_utils.formatters.get_streamlit_column_config(df)
+            )
 
         download_table = st.sidebar.toggle("Download to Excel?")
         if download_table is True:
