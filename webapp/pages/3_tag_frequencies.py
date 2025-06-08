@@ -89,7 +89,8 @@ def main():
                 user_session_id
                 ]["target"]["tt_ds"].filter(pl.col("Tag") != "Untagged")
 
-        st.markdown(_utils.content.message_target_info(metadata_target))
+        st.info(_utils.content.message_target_info(metadata_target))
+
         tab1, tab2 = st.tabs(["Table", "Plot"])
         with tab1:
             if df.height == 0 or df is None:
