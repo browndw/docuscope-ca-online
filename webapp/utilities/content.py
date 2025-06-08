@@ -23,9 +23,9 @@ def message_target_info(target_metadata: dict) -> str:
     ndocs = target_metadata.get('ndocs')[0]
     target_info = f"""##### Target corpus information:
 
-    Number of part-of-speech tokens in corpus: {tokens_pos}
-    \n    Number of DocuScope tokens in corpus: {tokens_ds}
-    \n    Number of documents in corpus: {ndocs}
+    Number of part-of-speech tokens in corpus: {tokens_pos:,}
+    \n    Number of DocuScope tokens in corpus: {tokens_ds:,}
+    \n    Number of documents in corpus: {ndocs:,}
     """
     return target_info
 
@@ -36,9 +36,9 @@ def message_reference_info(reference_metadata):
     ndocs = reference_metadata.get('ndocs')[0]
     reference_info = f"""##### Reference corpus information:
 
-    Number of part-of-speech tokens in corpus: {tokens_pos}
-    \n    Number of DocuScope tokens in corpus: {tokens_ds}
-    \n    Number of documents in corpus: {ndocs}
+    Number of part-of-speech tokens in corpus: {tokens_pos:,}
+    \n    Number of DocuScope tokens in corpus: {tokens_ds:,}
+    \n    Number of documents in corpus: {ndocs:,}
     """
     return reference_info
 
