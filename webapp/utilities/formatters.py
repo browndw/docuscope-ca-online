@@ -298,21 +298,32 @@ def plot_general_boxplot(df, tag_col='Tag', value_col='RF', color=None, palette=
     return fig
 
 
-def plot_grouped_boxplot(df, tag_col='Tag', value_col='RF', group_col='Group'):
+def plot_grouped_boxplot(df, tag_col='Tag', value_col='RF', group_col='Group', color=None, palette=None):
     """
     Boxplot comparing categories in subcorpora, faceted by tag and colored by group.
+    Allows user to specify a custom HEX color or a Plotly palette.
     """
     tag_order = (
         df.groupby(tag_col)[value_col].median().sort_values(ascending=False).index.tolist()
     )
     group_order = sorted(df[group_col].unique())
 
+    # Determine color sequence
+    if color and color.lower().startswith("#"):
+        color_seq = [color] * len(group_order)
+    elif palette and hasattr(px.colors.qualitative, palette):
+        color_seq = getattr(px.colors.qualitative, palette)
+    elif palette and hasattr(px.colors.sequential, palette):
+        color_seq = getattr(px.colors.sequential, palette)
+    else:
+        color_seq = px.colors.qualitative.Set1
+
     fig = px.box(
         df,
         x=value_col,
         y=group_col,
         color=group_col,
-        color_discrete_sequence=px.colors.qualitative.Set1,
+        color_discrete_sequence=color_seq,
         facet_row=tag_col,
         points=False,
         orientation='h',
@@ -431,32 +442,19 @@ def plot_pca_scatter_highlight(
 ) -> go.Figure:
     """
     Create a scatter plot for PCA results with optional highlighting of groups.
-    Parameters
-    ----------
-    df : pl.DataFrame
-        The DataFrame containing PCA results with columns for x and y coordinates,
-        group identifiers, and document IDs.
-    x_col : str
-        The column name for the x-axis values (e.g., 'PC1').
-    y_col : str
-        The column name for the y-axis values (e.g., 'PC2').
-    group_col : str
-        The column name for the group identifiers (e.g., 'Group').
-    selected_groups : list, optional
-        A list of group names to highlight in the scatter plot.
-        If None, no groups are highlighted.
-    x_label : str, optional
-        Custom label for the x-axis. If None, defaults to the x_col name.
-    y_label : str, optional
-        Custom label for the y-axis. If None, defaults to the y_col name.
-    Returns
-    -------
-    go.Figure
-        A Plotly Figure object containing the scatter plot.
     """
-    df = df.copy()
+    # Convert to pandas if needed
+    if hasattr(df, "to_pandas"):
+        df = df.to_pandas()
+    else:
+        df = df.copy()
+
+    # Drop 'Highlight' if present, then copy to avoid SettingWithCopyWarning
     if 'Highlight' in df.columns:
-        df = df.drop(columns=['Highlight'])
+        df = df.drop(columns=['Highlight']).copy()
+    else:
+        df = df.copy()
+
     df['Highlight'] = True
     if selected_groups:
         df['Highlight'] = df[group_col].apply(lambda g: g in selected_groups)
@@ -524,43 +522,94 @@ def plot_pca_variable_contrib_bar(
         contrib_2_plot, on="Tag", how="outer", suffixes=(f"_{pc1_label}", f"_{pc2_label}")
     ).fillna(0)
 
+    # Get column names for contributions
+    col_pc1 = merged.columns[1]
+    col_pc2 = merged.columns[2]
+
+    # Calculate mean absolute contributions
+    mean_pc1 = merged[col_pc1].abs().mean()
+    mean_pc2 = merged[col_pc2].abs().mean()
+
     # Decide which PC to sort by
     if sort_by == pc2_label:
-        sort_col = merged.columns[2]  # contrib_2_plot's value column
+        sort_col = col_pc2
+        main_col = col_pc2
+        mean_main = mean_pc2
+        other_col = col_pc1
+        mean_other = mean_pc1
     else:
-        sort_col = merged.columns[1]  # contrib_1_plot's value column
+        sort_col = col_pc1
+        main_col = col_pc1
+        mean_main = mean_pc1
+        other_col = col_pc2
+        mean_other = mean_pc2
 
     merged = merged.sort_values(by=sort_col, ascending=True)
 
+    # Assign color and opacity for each bar
+    colors_main = []
+    opacities_main = []
+    colors_other = []
+    opacities_other = []
+
+    for _, row in merged.iterrows():
+        # Main (sorted-by) PC
+        if abs(row[main_col]) > mean_main:
+            colors_main.append("#1565c0")  # dark blue
+            opacities_main.append(1.0)
+        else:
+            colors_main.append("#90caf9")  # light blue
+            opacities_main.append(0.6)
+        # Other PC always gray
+        colors_other.append("#bdbdbd")
+        opacities_other.append(0.4)
+
+    # Plot bars: main PC first, then other PC
     fig = go.Figure()
+    # Main PC bars
     fig.add_trace(go.Bar(
         y=merged["Tag"],
-        x=merged.iloc[:, 1],
-        name=pc1_label,
+        x=merged[main_col],
+        name=sort_by if sort_by else pc1_label,
         orientation='h',
-        marker_color='#133955',
+        marker_color=colors_main,
+        opacity=1.0,
         hovertemplate=(
-            f"<b>{pc1_label}</b><br>"
+            f"<b>{sort_by if sort_by else pc1_label}</b><br>"
             "Variable: %{y}<br>"
             "Contribution: %{x:.2%}<extra></extra>"
-        )
+        ),
+        marker=dict(opacity=opacities_main)
     ))
+    # Other PC bars
     fig.add_trace(go.Bar(
         y=merged["Tag"],
-        x=merged.iloc[:, 2],
-        name=pc2_label,
+        x=merged[other_col],
+        name=pc2_label if main_col == col_pc1 else pc1_label,
         orientation='h',
-        marker_color='#e377c2',
+        marker_color=colors_other,
+        opacity=1.0,
         hovertemplate=(
-            f"<b>{pc2_label}</b><br>"
+            f"<b>{pc2_label if main_col == col_pc1 else pc1_label}</b><br>"
             "Variable: %{y}<br>"
             "Contribution: %{x:.2%}<extra></extra>"
-        )
+        ),
+        marker=dict(opacity=opacities_other)
     ))
 
+    # Add vertical lines for mean absolute contributions (main and other PC)
+    for mean_val in [mean_main, -mean_main, mean_other, -mean_other]:
+        fig.add_vline(
+            x=mean_val,
+            line=dict(color="tomato", width=2, dash="dot"),
+            annotation_text="|mean|",
+            annotation_position="top",
+            opacity=0.7
+        )
+
     # Set tick labels every 5% (0.05), covering the full range
-    min_val = min(merged.iloc[:, 1].min(), merged.iloc[:, 2].min())
-    max_val = max(merged.iloc[:, 1].max(), merged.iloc[:, 2].max())
+    min_val = min(merged[col_pc1].min(), merged[col_pc2].min())
+    max_val = max(merged[col_pc1].max(), merged[col_pc2].max())
     tick_start = (int(min_val * 20) - 1) / 20  # round down to nearest 0.05
     tick_end = (int(max_val * 20) + 1) / 20    # round up to nearest 0.05
     tickvals = [x / 100 for x in range(int(tick_start * 100), int(tick_end * 100) + 1, 5)]
