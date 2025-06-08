@@ -286,8 +286,8 @@ def update_pca_plot(coord_data,
     mean_x = contrib_data[pca_x].abs().mean()
     mean_y = contrib_data[pca_y].abs().mean()
 
-    contrib_x = contrib_data[contrib_data[pca_x].abs() > mean_x]
-    contrib_x[pca_x] = contrib_x[pca_x]
+    # Always use .copy() after filtering
+    contrib_x = contrib_data[contrib_data[pca_x].abs() > mean_x].copy()
     contrib_x.sort_values(by=pca_x, ascending=False, inplace=True)
     contrib_x_values = contrib_x.loc[:, pca_x].tolist()
     contrib_x_values = ['%.2f' % x for x in contrib_x_values]
@@ -297,8 +297,7 @@ def update_pca_plot(coord_data,
     contrib_x = list(map(', '.join, contrib_x))
     contrib_x = '; '.join(contrib_x)
 
-    contrib_y = contrib_data[contrib_data[pca_y].abs() > mean_y]
-    contrib_y[pca_y] = contrib_y[pca_y]
+    contrib_y = contrib_data[contrib_data[pca_y].abs() > mean_y].copy()
     contrib_y.sort_values(by=pca_y, ascending=False, inplace=True)
     contrib_y_values = contrib_y.loc[:, pca_y].tolist()
     contrib_y_values = ['%.2f' % y for y in contrib_y_values]
@@ -308,11 +307,11 @@ def update_pca_plot(coord_data,
     contrib_y = list(map(', '.join, contrib_y))
     contrib_y = '; '.join(contrib_y)
 
-    contrib_1 = contrib_data[contrib_data[pca_x].abs() > 0]
+    contrib_1 = contrib_data[contrib_data[pca_x].abs() > 0].copy()
     contrib_1[pca_x] = contrib_1[pca_x].div(100)
     contrib_1.sort_values(by=pca_x, ascending=True, inplace=True)
 
-    contrib_2 = contrib_data[contrib_data[pca_y].abs() > 0]
+    contrib_2 = contrib_data[contrib_data[pca_y].abs() > 0].copy()
     contrib_2[pca_y] = contrib_2[pca_y].div(100)
     contrib_2.sort_values(by=pca_y, ascending=True, inplace=True)
 
@@ -330,7 +329,7 @@ def update_pca_plot(coord_data,
 
     return (
         pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2,
-        contrib_1_plot, contrib_2_plot  # <-- add these
+        contrib_1_plot, contrib_2_plot
     )
 
 
