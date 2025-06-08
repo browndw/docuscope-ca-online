@@ -63,12 +63,12 @@ def main():
 
         col1, col2 = st.columns([1, 1])
         with col1:
-            st.markdown(
+            st.info(
                 _utils.content.message_target_parts(
                     metadata_target.get('keyness_parts')[0]['temp'])
                 )
         with col2:
-            st.markdown(
+            st.info(
                 _utils.content.message_reference_parts(
                     metadata_target.get('keyness_parts')[0]['temp'])
                     )
@@ -151,7 +151,10 @@ def main():
                             Click the button to reset the keyness table.
                             """)
 
-            if st.sidebar.button("Compare New Categories"):
+            if st.sidebar.button(
+                label="Compare New Categories",
+                icon=":material/refresh:",
+                ):
                 if "kw_pos_cp" not in st.session_state[user_session_id]["target"]:  # noqa: E501
                     st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
                 st.session_state[user_session_id]["target"]["kw_pos_cp"] = {}
