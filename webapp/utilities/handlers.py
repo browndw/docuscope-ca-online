@@ -1619,3 +1619,19 @@ def update_ref(session_id):
         st.session_state[_REF] = list(
             set(list(st.session_state[_REF])) ^ set(item)
             )
+
+
+def update_pca_idx_tab1(session_id: str):
+    # Initialize the selectbox state if it doesn't exist
+    if f"pca_idx_tab1_{session_id}" not in st.session_state:
+        st.session_state[f"pca_idx_tab1_{session_id}"] = st.session_state[session_id].get('pca_idx', 1)
+    # Now update the shared PC index
+    st.session_state[session_id]['pca_idx'] = st.session_state[f"pca_idx_tab1_{session_id}"]
+
+
+def update_pca_idx_tab2(session_id: str):
+    # Initialize the selectbox state if it doesn't exist
+    if f"pca_idx_tab2_{session_id}" not in st.session_state:
+        st.session_state[f"pca_idx_tab2_{session_id}"] = st.session_state[session_id].get('pca_idx', 1)
+    # Now update the shared PC index
+    st.session_state[session_id]['pca_idx'] = st.session_state[f"pca_idx_tab2_{session_id}"]
