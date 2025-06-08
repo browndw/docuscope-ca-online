@@ -201,7 +201,8 @@ def main() -> None:
                 ):
                     df_plot = st.session_state[user_session_id]["boxplot_group_df"]
                     if _utils.handlers.is_valid_df(df_plot, ['Group', 'Tag']):
-                        fig = _utils.formatters.plot_grouped_boxplot(df_plot)
+                        hex_color, palette = _utils.formatters.color_picker_controls()
+                        fig = _utils.formatters.plot_grouped_boxplot(df_plot, color=hex_color, palette=palette)
                         st.plotly_chart(fig, use_container_width=True)
 
                         stats = st.session_state[user_session_id]["boxplot_group_stats"]
@@ -349,7 +350,7 @@ def main() -> None:
                 msg, icon = st.session_state[user_session_id]["scatter_group_warning"]
                 st.warning(msg, icon=icon)
 
-            # --- NEW: Multiselect for categories to highlight ---
+            # --- Multiselect for categories to highlight ---
             all_groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
             selected_groups = st.multiselect(
                 "Highlight categories in plot:",
