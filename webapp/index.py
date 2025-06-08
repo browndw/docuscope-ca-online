@@ -183,20 +183,20 @@ def main() -> None:
         the GitHub repository linked at the top of this page.
         """)
 
+    st.sidebar.markdown("### :material/lightbulb: Learn more...")
+
     st.sidebar.link_button(
         label="User Guide",
         url="https://browndw.github.io/docuscope-docs/",
         icon=":material/help:"
     )
 
-    st.sidebar.markdown("### Learn more...")
-
     if DESKTOP or (hasattr(st, "user") and getattr(st.user, "is_logged_in", False)):
         st.markdown(
             """
             All apps in the tools can be accessed by using the
             **:material/explore: Navigation** menu in the sidebar on the left.
-            But before you can use any of the other apps, you will need
+            But **before you can use any of the other apps**, you will need
             to load and process a corpus using:
             """)
         st.page_link(
