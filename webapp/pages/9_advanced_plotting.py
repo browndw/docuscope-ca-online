@@ -29,6 +29,11 @@ from webapp.menu import menu, require_login   # noqa: E402
 TITLE = "Advanced Plotting"
 ICON = ":material/line_axis:"
 
+st.set_page_config(
+    page_title=TITLE, page_icon=ICON,
+    layout="wide"
+    )
+
 
 def main() -> None:
     # Set login requirements for navigaton
@@ -485,7 +490,10 @@ def main() -> None:
         # Handle PCA button click
         with st.sidebar.form(key="pca_form"):
             st.markdown("### PCA")
-            submitted = st.form_submit_button("Principal Component Analysis")
+            submitted = st.form_submit_button(
+                label="Principal Component Analysis",
+                icon=":material/manufacturing:"
+                )
 
             if submitted:
                 _utils.handlers.generate_pca(
@@ -508,33 +516,45 @@ def main() -> None:
                 contrib_df = st.session_state[user_session_id]["target"]["contrib_df"]
                 ve = metadata_target.get("variance")[0]['temp']
 
-                st.session_state[user_session_id]['pca_idx'] = st.sidebar.selectbox(
-                    "Select principal component to plot ",
-                    (list(range(1, len(df.columns))))
-                    )
-
-                pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = _utils.analysis.update_pca_plot(  # noqa: E501
-                    pca_df,
-                    contrib_df,
-                    ve,
-                    int(st.session_state[user_session_id]['pca_idx'])
-                    )
-
+                # Get the current PC index from session state, default to 1
+                current_idx = st.session_state[user_session_id].get('pca_idx', 1)
+                # --- SHARED PC INDEX LOGIC ---
                 tab1, tab2 = st.tabs(["PCA Plot", "Variable Contribution"])
-                with tab1:
-                    # --- NEW: Multiselect for categories to highlight ---
-                    if session.get('has_meta')[0] is True:
-                        groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
-                        selected_groups = st.multiselect(
-                            "Highlight categories in PCA plot:",
-                            groups,
-                            default=[],  # Start with no groups selected
-                            key=f"highlight_pca_groups_{user_session_id}"
-                        )
-                    else:
-                        selected_groups = []
 
-                    # Add a Highlight column for coloring
+                # --- TAB 1 ---
+                with tab1:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.selectbox(
+                            "Select principal component to plot",
+                            list(range(1, len(df.columns))),
+                            key=f"pca_idx_tab1_{user_session_id}",
+                            index=current_idx - 1,
+                            on_change=_utils.handlers.update_pca_idx_tab1,
+                            args=(user_session_id,)
+                        )
+                    with col2:
+                        if session.get('has_meta')[0] is True:
+                            groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
+                            selected_groups = st.multiselect(
+                                "Highlight categories in PCA plot:",
+                                groups,
+                                default=[],
+                                key=f"highlight_pca_groups_{user_session_id}"
+                            )
+                        else:
+                            selected_groups = []
+
+                    # Always use the value from session state for plotting
+                    if 'pca_idx' not in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]['pca_idx'] = 1
+                    idx = st.session_state[user_session_id].get('pca_idx', 1)
+                    pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = _utils.analysis.update_pca_plot(
+                        pca_df,
+                        contrib_df,
+                        ve,
+                        idx
+                    )
                     fig = _utils.formatters.plot_pca_scatter_highlight(
                         pca_df,
                         pca_x,
@@ -545,44 +565,64 @@ def main() -> None:
                         y_label=pca_y
                     )
                     st.plotly_chart(fig, use_container_width=True)
-
-                    # Display variance explained
-                    st.markdown(_utils.content.message_variance_info(
+                    st.info(_utils.content.message_variance_info(
                         pca_x,
                         pca_y,
                         ve_1,
                         ve_2)
                     )
 
+                # --- TAB 2 ---
                 with tab2:
-                    # Display contribution information
-                    st.markdown(_utils.content.message_contribution_info(
-                        pca_x,
-                        pca_y,
-                        contrib_x,
-                        contrib_y)
-                    )
                     st.markdown(
-                        "##### Variable contribution (by %) to principal component:"
+                        body="##### Variable contribution (by %) to principal component:",
+                        help=(
+                            "The plots are a Python implementation of [fviz_contrib()](http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining), "
+                            "an **R** function that is part of the **factoextra** package."
+                        )
                     )
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.selectbox(
+                            "Select principal component to plot",
+                            list(range(1, len(df.columns))),
+                            key=f"pca_idx_tab2_{user_session_id}",
+                            index=st.session_state[user_session_id].get('pca_idx', 1) - 1,
+                            on_change=_utils.handlers.update_pca_idx_tab2,
+                            args=(user_session_id,)
+                        )
 
-                    with st.expander("About variable contribution"):
-                        st.markdown(_utils.content.message_variable_contrib)
-
-                    # --- Add sort_by radio ---
-                    sort_by = st.radio(
-                        "Sort variables by:",
-                        (pca_x, pca_y),
-                        index=0,
-                        horizontal=True
+                    # Always use the value from session state for plotting
+                    idx = st.session_state[user_session_id].get('pca_idx', 1)
+                    pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = _utils.analysis.update_pca_plot(
+                        pca_df,
+                        contrib_df,
+                        ve,
+                        idx
                     )
+                    with col2:
+                        sort_by = st.radio(
+                            "Sort variables by:",
+                            (pca_x2, pca_y2),
+                            index=0,
+                            horizontal=True,
+                            key=f"sort_by_{user_session_id}"
+                        )
+
+                    st.info(_utils.content.message_contribution_info(
+                        pca_x2,
+                        pca_y2,
+                        contrib_x2,
+                        contrib_y2
+                    ))
 
                     fig = _utils.formatters.plot_pca_variable_contrib_bar(
-                        contrib_1_plot, contrib_2_plot,
-                        pc1_label=pca_x, pc2_label=pca_y,
+                        contrib_1_plot2, contrib_2_plot2,
+                        pc1_label=pca_x2, pc2_label=pca_y2,
                         sort_by=sort_by
-                        )
+                    )
                     st.plotly_chart(fig, use_container_width=True)
+
             else:
                 st.info(
                     """
