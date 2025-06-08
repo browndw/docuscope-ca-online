@@ -147,10 +147,23 @@ def main() -> None:
             load_cats = st.sidebar.radio(
                 "Do you have categories in your file names to process?",
                 ("No", "Yes"),
-                horizontal=True
+                horizontal=True,
+                help=(
+                    "Metadata can be encoded into your file names, "
+                    "which can be used for further analysis. "
+                    "The tool can detect information that comes before "
+                    "the first underscore in the file name, and will "
+                    "use that information to assign categories to your "
+                    "documents. For example, if your file names are "
+                    "`cat1_doc1.txt`, `cat2_doc2.txt`, etc., "
+                    "the tool will assign `cat1` and `cat2` as categories. "
+                    )
             )
             if load_cats == 'Yes':
-                if st.sidebar.button("Process Document Metadata"):
+                if st.sidebar.button(
+                    label="Process Document Metadata",
+                    icon=ICON_PROCESS_TARGET
+                ):
                     with st.spinner('Processing metadata...'):
                         doc_cats = _utils.process.get_doc_cats(
                             metadata_target.get(KEY_DOCIDS)[0]['ids']
@@ -213,7 +226,19 @@ def main() -> None:
             load_ref = st.radio(
                 "Would you like to load a reference corpus?",
                 ("No", "Yes"),
-                horizontal=True
+                horizontal=True,
+                help=(
+                    "A reference corpus is a pre-processed corpus "
+                    "or set of documents that you can use "
+                    "to compare against your target corpus "
+                    "using the **Compare Corpora** app. "
+                    "If you choose to load a reference corpus, "
+                    "be considered about the data that you choose. "
+                    "What are trying to learn from the comparison? "
+                    "Is the reference corpus similar to your target corpus "
+                    "in its size and sampling? "
+                    "Is it from the same domain or genre? etc."
+                    )
                 )
 
             st.markdown("---")
@@ -393,7 +418,16 @@ def main() -> None:
                             ))
 
         # Sidebar: Reset all tools and files
-        st.sidebar.markdown('### Reset all tools and files:')
+        st.sidebar.markdown(
+            body='### Reset all tools and files:',
+            help=(
+                "You can use the reset button to clear all files, "
+                "tables, and plots from the interface. "
+                "If you have any unsaved plots or tables "
+                "that you'd like to preserved, "
+                "go back and save them before resetting."
+            )
+            )
         st.sidebar.markdown(""":warning:
                             Using the **reset** button will cause
                             all files, tables, and plots to be cleared.
