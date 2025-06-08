@@ -17,6 +17,7 @@ import docx
 from docx.shared import RGBColor
 from docx.shared import Pt
 from io import BytesIO
+import os
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -104,7 +105,108 @@ def get_streamlit_column_config(df):
     return config
 
 
-def color_picker_controls(default_hex="", default_palette="Plotly"):
+def add_category_description(
+        cat_counts: dict,
+        session: dict = None,
+        corpus_type: str = "target"  # "target" or "reference"
+        ) -> pd.DataFrame:
+    """
+    Adds a 'Category Description' column to cat_df
+    if the corpus is internal and a mapping exists.
+    Also displays a documentation link button for
+    internal corpora.
+    """
+    cat_df = pd.DataFrame(cat_counts.items(), columns=["Category", "Count"]).sort_values("Category")  # noqa: E501
+    # Determine which session key to use
+    db_key = f"{corpus_type}_db"
+    target_db = session.get(db_key, [''])[0]
+    if not target_db:
+        return cat_df
+
+    corpus_name = os.path.basename(target_db)
+
+    # Documentation links for each corpus family
+    doc_links = {
+        "MICUSP": "https://browndw.github.io/docuscope-docs/datasets/micusp.html",
+        "BAWE": "https://browndw.github.io/docuscope-docs/datasets/bawe.html",
+        "ELSEVIER": "https://browndw.github.io/docuscope-docs/datasets/elsevier.html",
+        "HAPE": "https://browndw.github.io/docuscope-docs/datasets/hape.html",
+    }
+
+    # Map corpus name to doc link by checking which family it belongs to
+    doc_link = None
+    for key in doc_links:
+        if key in corpus_name:
+            doc_link = doc_links[key]
+            break
+
+    mappings = {
+        "A_MICUSP_mini": {
+            "BIO": "Biology", "CEE": "Civil and Environmental Engineering", "CLS": "Classical Studies",  # noqa: E501
+            "ECO": "Economics", "EDU": "Education", "ENG": "English", "HIS": "History",
+            "IOE": "Industrial and Operational Engineering", "LIN": "Linguistics", "MEC": "Mechanical Engineering",  # noqa: E501
+            "NRE": "Natural Resources", "NUR": "Nursing", "PHI": "Philosophy", "PHY": "Physics",  # noqa: E501
+            "POL": "Political Science", "PSY": "Psychology", "SOC": "Sociology"
+        },
+        "B_MICUSP": {
+            "BIO": "Biology", "CEE": "Civil and Environmental Engineering", "CLS": "Classical Studies",  # noqa: E501
+            "ECO": "Economics", "EDU": "Education", "ENG": "English", "HIS": "History",
+            "IOE": "Industrial and Operational Engineering", "LIN": "Linguistics", "MEC": "Mechanical Engineering",  # noqa: E501
+            "NRE": "Natural Resources", "NUR": "Nursing", "PHI": "Philosophy", "PHY": "Physics",  # noqa: E501
+            "POL": "Political Science", "PSY": "Psychology", "SOC": "Sociology"
+        },
+        "C_BAWE_mini": {
+            "AH": "Arts and Humanities", "LS": "Life Sciences", "PS": "Physical Sciences", "SS": "Social Sciences"  # noqa: E501
+        },
+        "D_BAWE": {
+            "AH": "Arts and Humanities", "LS": "Life Sciences", "PS": "Physical Sciences", "SS": "Social Sciences"  # noqa: E501
+        },
+        "E_ELSEVIER": {
+            "ARTS": "Arts and Humanities", "BIOC": "Biochemistry, Genetics and Molecular Biology",  # noqa: E501
+            "BUSI": "Business, Management and Accounting", "CENG": "Chemical Engineering", "CHEM": "Chemistry",  # noqa: E501
+            "COMP": "Computer Science", "DECI": "Decision Sciences", "ECON": "Economics, Econometrics and Finance",  # noqa: E501
+            "ENGI": "Engineering", "ENVI": "Environmental Science", "HEAL": "Health Professions",  # noqa: E501
+            "IMMU": "Immunology and Microbiology", "MATE": "Material Science", "MATH": "Mathematics",  # noqa: E501
+            "MEDI": "Medicine", "NEUR": "Neuroscience", "NURS": "Nursing", "PHYS": "Physics and Astronomy",  # noqa: E501
+            "PSYC": "Psychology", "SOCI": "Social Sciences"
+        },
+        "G_MICUSP_by_level": {
+            "G0": "Final Year Undergraduate", "G1": "First Year Graduate",
+            "G2": "Second Year Graduate", "G3": "Third Year Graduate"
+        },
+        "F_MICUSP_by_paper": {},
+        "H_HAPE_mini": {},
+    }
+
+    mapping = mappings.get(corpus_name)
+    if mapping and "Category" in cat_df.columns:
+        cat_df["Category Description"] = cat_df["Category"].map(mapping).fillna(cat_df["Category"])  # noqa: E501
+        # Move 'Category Description' to the second column
+        cols = list(cat_df.columns)
+        if "Category Description" in cols:
+            cols.insert(1, cols.pop(cols.index("Category Description")))
+            cat_df = cat_df[cols]
+
+    # Show documentation link if available
+    if doc_link:
+        parts = corpus_name.split('_')
+        if len(parts) > 1:
+            corpus_label = parts[1]
+        else:
+            corpus_label = corpus_name
+        st.link_button(
+            label=f"About {corpus_label} (documentation)",
+            url=doc_link,
+            icon=":material/info:"
+        )
+
+    return cat_df
+
+
+def color_picker_controls(
+        default_hex="",
+        default_palette="Plotly"
+        ) -> tuple[str, str]:
     """
     Display color controls: a HEX color input and a palette dropdown.
     Returns a tuple: (hex_color, palette_name)
@@ -127,20 +229,22 @@ def color_picker_controls(default_hex="", default_palette="Plotly"):
         # HEX validation
         hex_pattern = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
         if hex_color and not hex_pattern.match(hex_color):
-            st.warning("Invalid HEX color. Using palette instead.", icon="⚠️")
+            st.warning("Invalid HEX color. Using palette instead.", icon="material/warning")
             hex_color = ""
     with col2:
         palette = st.selectbox(
             "Plotly palette",
             plotly_palettes,
-            index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,
+            index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,  # noqa: E501
             help="Choose a built-in Plotly color palette. "
                  "Palette is used only if HEX color is blank."
         )
     return hex_color, palette
 
 
-def plot_tag_frequencies_bar(df):
+def plot_tag_frequencies_bar(
+        df: pl.DataFrame | pd.DataFrame
+        ) -> go.Figure:
     """
     Plot a horizontal bar chart of tag frequencies.
     Expects columns: 'Tag' and 'RF' (relative frequency).
@@ -216,7 +320,7 @@ def plot_compare_corpus_bar(df):
         x="RF",
         y="Tag",
         color="Corpus",
-        color_discrete_sequence=["#e377c2", "#133955"],
+        color_discrete_sequence=["#e67e22", "#133955"],
         orientation="h",
         category_orders={"Tag": tag_order, "Corpus": corpus_order},
         hover_data={"Tag": True, "RF": ':.2f', "Corpus": True},
@@ -247,7 +351,13 @@ def plot_compare_corpus_bar(df):
     return fig
 
 
-def plot_general_boxplot(df, tag_col='Tag', value_col='RF', color=None, palette=None):
+def plot_general_boxplot(
+        df: pl.DataFrame | pd.DataFrame,
+        tag_col='Tag',
+        value_col='RF',
+        color=None,
+        palette=None
+        ) -> go.Figure:
     """
     General boxplot for the corpus, colored by tag, with legend at bottom left,
     and boxes sorted by median (highest to lowest).
@@ -298,7 +408,14 @@ def plot_general_boxplot(df, tag_col='Tag', value_col='RF', color=None, palette=
     return fig
 
 
-def plot_grouped_boxplot(df, tag_col='Tag', value_col='RF', group_col='Group', color=None, palette=None):
+def plot_grouped_boxplot(
+        df,
+        tag_col='Tag',
+        value_col='RF',
+        group_col='Group',
+        color=None,
+        palette=None
+        ) -> go.Figure:
     """
     Boxplot comparing categories in subcorpora, faceted by tag and colored by group.
     Allows user to specify a custom HEX color or a Plotly palette.
@@ -367,7 +484,11 @@ def plot_grouped_boxplot(df, tag_col='Tag', value_col='RF', group_col='Group', c
     return fig
 
 
-def plot_scatter(df, x_col, y_col):
+def plot_scatter(
+        df: pl.DataFrame,
+        x_col: str,
+        y_col: str,
+        ) -> go.Figure:
     """
     Simple scatterplot for two variables.
     """
@@ -392,7 +513,13 @@ def plot_scatter(df, x_col, y_col):
     return fig
 
 
-def plot_scatter_highlight(df, x_col, y_col, group_col, selected_groups):
+def plot_scatter_highlight(
+        df: pl.DataFrame,
+        x_col: str,
+        y_col: str,
+        group_col: str,
+        selected_groups: list = None,
+        ) -> go.Figure:
     x_label = x_col + ' (per 100 tokens)'
     y_label = y_col + ' (per 100 tokens)'
     df = df.copy()
@@ -439,7 +566,7 @@ def plot_pca_scatter_highlight(
         selected_groups: list = None,
         x_label: str = None,
         y_label: str = None
-) -> go.Figure:
+        ) -> go.Figure:
     """
     Create a scatter plot for PCA results with optional highlighting of groups.
     """
@@ -555,13 +682,13 @@ def plot_pca_variable_contrib_bar(
     for _, row in merged.iterrows():
         # Main (sorted-by) PC
         if abs(row[main_col]) > mean_main:
-            colors_main.append("#1565c0")  # dark blue
+            colors_main.append("#133955")  # dark blue
             opacities_main.append(1.0)
         else:
-            colors_main.append("#90caf9")  # light blue
+            colors_main.append("#216495")  # light blue
             opacities_main.append(0.6)
         # Other PC always gray
-        colors_other.append("#bdbdbd")
+        colors_other.append("#FFFFFF")  # white
         opacities_other.append(0.4)
 
     # Plot bars: main PC first, then other PC
@@ -621,20 +748,14 @@ def plot_pca_variable_contrib_bar(
         margin=dict(l=0, r=0, t=30, b=40),
         xaxis_title="Contribution",
         yaxis_title="Variable",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-        ),
         xaxis=dict(
             tickvals=tickvals,
             ticktext=ticktext,
             showgrid=True,
             gridcolor='lightgray',
             gridwidth=1
-        )
+        ),
+        showlegend=False,
     )
     return fig
 
