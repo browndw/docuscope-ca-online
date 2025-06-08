@@ -84,7 +84,7 @@ def main() -> None:
         else:
             df = st.session_state[user_session_id]["target"]["ft_ds"]
 
-        st.markdown(_utils.content.message_target_info(metadata_target))
+        st.info(_utils.content.message_target_info(metadata_target))
 
         if df.height == 0 or df is None:
             cats = []
@@ -113,7 +113,17 @@ def main() -> None:
         )
 
     else:
-        st.markdown(_utils.content.message_tables)
+        st.markdown(
+            """
+            :material/manufacturing:
+            Use the button in the sidebar to **generate frequency tables**.
+
+            :material/priority:
+            After the table has been generated,
+            you will be able to **toggle between the tagsets**.
+            """
+            )
+
         st.sidebar.markdown(_utils.content.message_generate_table)
 
         _utils.handlers.sidebar_action_button(
