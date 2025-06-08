@@ -127,22 +127,68 @@ def main() -> None:
         # and converted to a dictionary for easier access
         metadata_target = st.session_state[user_session_id]['metadata_target'].to_dict()  # noqa: E501
 
-        # If a reference corpus is also loaded
-        if session.get('has_reference')[0] is True:
-            metadata_reference = st.session_state[user_session_id]['metadata_reference'].to_dict()  # noqa: E501
+        # Check if reference is loaded
+        has_reference = session.get('has_reference')[0] is True
+        if has_reference:
+            metadata_reference = _utils.handlers.load_metadata(
+                CORPUS_REFERENCE,
+                user_session_id
+            )
 
-        # Show info about the loaded target corpus
-        st.markdown(_utils.content.message_target_info(metadata_target))
+        # Create tabs for Target and Reference
+        tab_labels = ["Target corpus"]
+        if has_reference:
+            tab_labels.append("Reference corpus")
+        tabs = st.tabs(tab_labels)
 
-        # Expanders for document IDs and metadata
-        with st.expander("Documents:"):
-            st.write(metadata_target.get(KEY_DOCIDS)[0]['ids'])
+        # --- Target Tab ---
+        with tabs[0]:
+            st.info(_utils.content.message_target_info(metadata_target))
+            with st.expander("Documents:"):
+                st.write(metadata_target.get(KEY_DOCIDS)[0]['ids'])
+            if session.get(KEY_HAS_META)[0] is True:
+                st.markdown('##### Target corpus metadata:')
+                cat_counts = Counter(metadata_target.get(KEY_DOCCATS)[0]['cats'])
+                cat_df = _utils.formatters.add_category_description(
+                    cat_counts,
+                    session,
+                    corpus_type="target")
+                st.dataframe(cat_df, hide_index=True)
 
-        if session.get(KEY_HAS_META)[0] is True:
-            st.markdown('##### Target corpus metadata:')
-            with st.expander("Counts of document categories:"):
-                st.write(Counter(metadata_target.get(KEY_DOCCATS)[0]['cats']))
-        else:
+        # --- Reference Tab (if loaded) ---
+        if has_reference:
+            with tabs[1]:
+                st.info(_utils.content.message_reference_info(metadata_reference))
+                with st.expander("Documents in reference corpus:"):
+                    st.write(metadata_reference.get(KEY_DOCIDS)[0]['ids'])
+
+                # Try to process and display reference metadata if target has metadata
+                if session.get(KEY_HAS_META)[0]:
+                    try:
+                        st.markdown('##### Reference corpus metadata:')
+                        # Extract categories from doc ids using get_doc_cats
+                        ref_doc_ids = metadata_reference.get(KEY_DOCIDS)[0]['ids']
+                        doc_cats_ref = _utils.process.get_doc_cats(ref_doc_ids)
+                        if doc_cats_ref:
+                            cat_counts_ref = Counter(doc_cats_ref)
+                            cat_df_ref = _utils.formatters.add_category_description(
+                                cat_counts_ref,
+                                session,
+                                corpus_type="reference")
+                            st.dataframe(cat_df_ref, hide_index=True)
+                        else:
+                            st.warning(
+                                "Not categories found in reference corpus file names.",
+                                icon=":material/info:"
+                            )
+                    except Exception:
+                        st.warning(
+                            "Could not process metadata for the reference corpus. "
+                            "This may be due to missing or malformed category information.",
+                            icon=":material/info:"
+                        )
+
+        if not session.get(KEY_HAS_META)[0]:
             st.sidebar.markdown('### Target corpus metadata:')
             load_cats = st.sidebar.radio(
                 "Do you have categories in your file names to process?",
@@ -206,20 +252,7 @@ def main() -> None:
             st.sidebar.markdown("---")
 
         # If reference corpus is loaded, show info and warnings
-        if session.get('has_reference')[0] is True:
-            metadata_reference = _utils.handlers.load_metadata(
-                CORPUS_REFERENCE,
-                user_session_id
-                )
-
-            st.markdown(
-                _utils.content.message_reference_info(metadata_reference)
-                )
-
-            with st.expander("Documents in reference corpus:"):
-                st.write(metadata_reference.get(KEY_DOCIDS)[0]['ids'])
-
-        else:
+        if not has_reference:
             # Reference corpus not loaded: offer options to load one
             st.markdown("---")
             st.markdown('##### Reference corpus:')
@@ -231,13 +264,10 @@ def main() -> None:
                     "A reference corpus is a pre-processed corpus "
                     "or set of documents that you can use "
                     "to compare against your target corpus "
-                    "using the **Compare Corpora** app. "
+                    "with the **Compare Corpora** app. "
                     "If you choose to load a reference corpus, "
                     "be considered about the data that you choose. "
-                    "What are trying to learn from the comparison? "
-                    "Is the reference corpus similar to your target corpus "
-                    "in its size and sampling? "
-                    "Is it from the same domain or genre? etc."
+                    "What are trying to learn from the comparison?"
                     )
                 )
 
@@ -419,19 +449,18 @@ def main() -> None:
 
         # Sidebar: Reset all tools and files
         st.sidebar.markdown(
-            body='### Reset all tools and files:',
+            body='### Reset all tools and files:'
+            )
+        st.sidebar.markdown(
+            body=(
+                ":warning: Using the **reset** button will cause "
+                "all files, tables, and plots to be cleared."
+            ),
             help=(
-                "You can use the reset button to clear all files, "
-                "tables, and plots from the interface. "
                 "If you have any unsaved plots or tables "
-                "that you'd like to preserved, "
+                "that you'd like to retain, "
                 "go back and save them before resetting."
-            )
-            )
-        st.sidebar.markdown(""":warning:
-                            Using the **reset** button will cause
-                            all files, tables, and plots to be cleared.
-                            """)
+            ))
         if st.sidebar.button(label=LABEL_RESET_CORPUS, icon=ICON_RESET):
             st.session_state[user_session_id] = {}
             _utils.handlers.generate_temp(
@@ -460,7 +489,7 @@ def main() -> None:
             """
             )
 
-        st.markdown("##### :material/info: Learn more...")
+        st.markdown("##### :material/lightbulb: Learn more...")
         col_1, col_2, col_3, col_4 = st.columns(4)
         with col_1:
             # Expanders for corpus info
@@ -485,19 +514,19 @@ def main() -> None:
             with st.expander("About external corpora", icon=":material/upload:"):
                 st.link_button(
                     label="Preparing an external corpus",
-                    url="https://browndw.github.io/docuscope-docs/vignettes/external-corpus.html",
+                    url="https://browndw.github.io/docuscope-docs/vignettes/external-corpus.html",  # noqa: E501
                     icon=":material/quick_reference:")
         with col_3:
             with st.expander("About new corpora", icon=":material/library_books:"):
                 st.link_button(
                     label="Preparing a new corpus",
-                    url="https://browndw.github.io/docuscope-docs/vignettes/new-corpus.html",
+                    url="https://browndw.github.io/docuscope-docs/vignettes/new-corpus.html",  # noqa: E501
                     icon=":material/quick_reference:")
         with col_4:
             with st.expander("About the models", icon=":material/modeling:"):
                 st.link_button(
                     label="Compare models",
-                    url="https://browndw.github.io/docuscope-docs/tagsets/model-comparison.html",
+                    url="https://browndw.github.io/docuscope-docs/tagsets/model-comparison.html",  # noqa: E501
                     icon=":material/quick_reference:")
         st.markdown("---")
         st.markdown("### Process a corpus:")
