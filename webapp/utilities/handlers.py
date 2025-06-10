@@ -12,17 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Session state initialization and updates
+# Corpus and metadata loading/saving
+# Data processing triggers (e.g., generate tables, run analysis)
+# Error/warning handling related to data/session
+
 import pathlib
+import sys
+import tomli
 
 import docuscospacy as ds
 import streamlit as st
 import pandas as pd
 import polars as pl
-import tomli
 
-from utilities import analysis
-
+# Ensure project root is in sys.path for both desktop and online
 project_root = pathlib.Path(__file__).parent.parents[1].resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from webapp.utilities import analysis  # noqa: E402
+
 OPTIONS = str(project_root.joinpath("webapp/options.toml"))
 
 
@@ -45,7 +55,9 @@ def get_version_from_pyproject() -> str:
         return "0.0.0"
 
 
-def import_options_general(options_path: str = OPTIONS) -> dict:
+def import_options_general(
+        options_path: str = OPTIONS
+        ) -> dict:
     """
     Import general options from a TOML file.
 
@@ -81,8 +93,10 @@ def import_options_general(options_path: str = OPTIONS) -> dict:
 
 
 # Functions for intializing session states.
-def generate_temp(states: dict,
-                  session_id: str):
+def generate_temp(
+        states: dict,
+        session_id: str
+        ) -> None:
     """
     Initialize session states with the given states for a specific session ID.
 
@@ -105,7 +119,9 @@ def generate_temp(states: dict,
             st.session_state[session_id][key] = value
 
 
-def init_session(session_id: str):
+def init_session(
+        session_id: str
+        ) -> None:
     """
     Initialize the session state with default values for a specific session ID.
 
@@ -139,7 +155,9 @@ def init_session(session_id: str):
     st.session_state[session_id]["session"] = df
 
 
-def init_ai_assist(session_id: str) -> None:
+def init_ai_assist(
+        session_id: str
+        ) -> None:
     """
     Initialize AI assistant-related session state for a specific session ID.
 
@@ -163,9 +181,11 @@ def init_ai_assist(session_id: str) -> None:
 
 
 # Functions for managing session values.
-def update_session(key: str,
-                   value,
-                   session_id: str) -> None:
+def update_session(
+        key: str,
+        value: any,
+        session_id: str
+        ) -> None:
     """
     Update a specific key-value pair in the session state
     for a given session ID.
@@ -190,7 +210,8 @@ def update_session(key: str,
     st.session_state[session_id]["session"] = df
 
 
-def get_or_init_user_session() -> tuple[str, dict]:
+def get_or_init_user_session(
+        ) -> tuple[str, dict]:
     """
     Ensure a user session exists and return its ID and session dict.
 
@@ -218,7 +239,9 @@ def get_or_init_user_session() -> tuple[str, dict]:
 
 
 # Functions for storing and managing corpus metadata
-def init_metadata_target(session_id: str) -> None:
+def init_metadata_target(
+        session_id: str
+        ) -> None:
     """
     Initialize the metadata for the target corpus in the session state.
 
@@ -281,7 +304,9 @@ def init_metadata_target(session_id: str) -> None:
     st.session_state[session_id]["metadata_target"] = df
 
 
-def init_metadata_reference(session_id: str) -> None:
+def init_metadata_reference(
+        session_id: str
+        ) -> None:
     """
     Initialize the metadata for the reference corpus in the session state.
 
@@ -340,18 +365,54 @@ def init_metadata_reference(session_id: str) -> None:
     st.session_state[session_id]["metadata_reference"] = df
 
 
-def load_metadata(corpus_type,
-                  session_id):
+def load_metadata(
+        corpus_type,
+        session_id
+        ) -> dict:
+    """
+    Load metadata for the specified corpus type from the session state.
+    Parameters
+    ----------
+    corpus_type : str
+        The type of corpus for which metadata is to be loaded.
+        Should be either 'target' or 'reference'.
+    session_id : str
+        The session ID for which the metadata is to be loaded.
+    Returns
+    -------
+    dict
+        A dictionary containing the metadata for the specified corpus type.
+   """
     table_name = "metadata_" + corpus_type
     metadata = st.session_state[session_id][table_name]
     metadata = metadata.to_dict(as_series=False)
     return metadata
 
 
-def update_metadata(corpus_type,
-                    key,
-                    value,
-                    session_id):
+def update_metadata(
+        corpus_type,
+        key,
+        value,
+        session_id
+        ) -> None:
+    """
+    Update metadata for the specified corpus type in the session state.
+    Parameters
+    ----------
+    corpus_type : str
+        The type of corpus for which metadata is to be updated.
+        Should be either 'target' or 'reference'.
+    key : str
+        The key in the metadata dictionary to update.
+    value : any
+        The value to assign to the specified key in the metadata dictionary.
+    session_id : str
+        The session ID for which the metadata is to be updated.
+    Returns
+    -------
+    None
+        The function updates the metadata in the session state.
+    """
     table_name = "metadata_" + corpus_type
     metadata = st.session_state[session_id][table_name]
     metadata = metadata.to_dict(as_series=False)
@@ -369,50 +430,10 @@ def update_metadata(corpus_type,
     st.session_state[session_id][table_name] = df
 
 
-def sidebar_action_button(
-    button_label: str,
-    button_icon: str,
-    preconditions: list,  # Now just a list of bools
-    action: callable,
-    spinner_message: str = "Processing...",
-    sidebar=True
-) -> None:
-    """
-    Render a sidebar button that checks preconditions and runs an action.
-
-    Parameters
-    ----------
-    button_label : str
-        The label for the sidebar button.
-    preconditions : list
-        Lis of conditions.
-        If any condition is False, show the error and do not run action.
-    action : Callable
-        Function to run if all preconditions are met.
-    spinner_message : str
-        Message to show in spinner.
-    sidebar : bool
-        If True, use st.sidebar, else use main area.
-    error_in_sidebar : bool
-        If True, show error messages in the sidebar,
-        otherwise show in the main area.
-    """
-    container = st.sidebar if sidebar else st
-    if container.button(button_label, icon=button_icon):
-        if not all(preconditions):
-            st.error(
-                    "It doesn't look like you've loaded a target corpus yet.\n"
-                    "You can do this by clicking on the **Manage Corpus Data** button above.",  # noqa: E501
-                    icon=":material/sentiment_stressed:"
-                )
-            return
-        with container:
-            with st.spinner(spinner_message):
-                action()
-
-
 # Callable actions
-def generate_frequency_table(user_session_id: str):
+def generate_frequency_table(
+        user_session_id: str
+        ) -> None:
     """
     Load frequency tables for the target corpus.
 
@@ -450,7 +471,9 @@ def generate_frequency_table(user_session_id: str):
     st.rerun()
 
 
-def generate_tags_table(user_session_id: str):
+def generate_tags_table(
+        user_session_id: str
+        ) -> None:
     """
     Load tags tables for the target corpus.
 
@@ -488,7 +511,11 @@ def generate_tags_table(user_session_id: str):
     st.rerun()
 
 
-def generate_keyness_tables(user_session_id: str, threshold=0.01, swap_target=False):
+def generate_keyness_tables(
+        user_session_id: str,
+        threshold: float = 0.01,
+        swap_target=False
+        ) -> None:
     # --- Try to get all required frequency/tag tables ---
     try:
         wc_tar_pos = st.session_state[user_session_id]["target"]["ft_pos"]
@@ -548,7 +575,11 @@ def generate_keyness_tables(user_session_id: str, threshold=0.01, swap_target=Fa
     st.rerun()
 
 
-def generate_keyness_parts(user_session_id: str):
+def generate_keyness_parts(
+        user_session_id: str,
+        threshold: float = 0.01,
+        swap_target: bool = False
+        ) -> None:
     # --- Check for metadata ---
     session = pl.DataFrame.to_dict(
             st.session_state[user_session_id]["session"],
@@ -558,9 +589,10 @@ def generate_keyness_parts(user_session_id: str):
         st.session_state[user_session_id]["keyness_parts_warning"] = (
             """
             No metadata found for the target corpus.
-            Please load or generate metadata first.
+            Please load or generate metadata first
+            from **Manage Corpus Data**.
             """,
-            ":material/info:"
+            ":material/sentiment_stressed:"
         )
         return
 
@@ -586,10 +618,10 @@ def generate_keyness_parts(user_session_id: str):
     wc_ref_pos, wc_ref_ds = ds.frequency_table(ref_pl, count_by="both")
     tc_ref_pos, tc_ref_ds = ds.tags_table(ref_pl, count_by="both")
 
-    kw_pos_cp = ds.keyness_table(wc_tar_pos, wc_ref_pos)
-    kw_ds_cp = ds.keyness_table(wc_tar_ds, wc_ref_ds)
-    kt_pos_cp = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True)
-    kt_ds_cp = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True)
+    kw_pos_cp = ds.keyness_table(wc_tar_pos, wc_ref_pos, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    kw_ds_cp = ds.keyness_table(wc_tar_ds, wc_ref_ds, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    kt_pos_cp = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    kt_ds_cp = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True, threshold=threshold, swap_target=swap_target)  # noqa: E501
 
     # --- Check for empty results ---
     keyness_tables = [kw_pos_cp, kw_ds_cp, kt_pos_cp, kt_ds_cp]
@@ -654,14 +686,14 @@ def generate_keyness_parts(user_session_id: str):
 
 
 def generate_collocations(
-    user_session_id: str,
-    node_word: str,
-    node_tag: str,
-    to_left: int,
-    to_right: int,
-    stat_mode: str,
-    count_by: str
-):
+        user_session_id: str,
+        node_word: str,
+        node_tag: str,
+        to_left: int,
+        to_right: int,
+        stat_mode: str,
+        count_by: str
+        ) -> None:
     # --- User input validation ---
     if not node_word:
         st.session_state[user_session_id]["collocations_warning"] = (
@@ -736,11 +768,11 @@ def generate_collocations(
 
 
 def generate_kwic(
-    user_session_id: str,
-    node_word: str,
-    search_type: str,
-    ignore_case: bool
-):
+        user_session_id: str,
+        node_word: str,
+        search_type: str,
+        ignore_case: bool
+        ) -> None:
     # --- User input validation ---
     if not node_word:
         st.session_state[user_session_id]["kwic_warning"] = (
@@ -803,10 +835,10 @@ def generate_kwic(
 
 
 def generate_ngrams(
-    user_session_id: str,
-    ngram_span: int,
-    ts: str = 'doc_id'  # Default to 'doc_id' for ngram counting
-):
+        user_session_id: str,
+        ngram_span: int,
+        ts: str = 'doc_id'  # Default to 'doc_id' for ngram counting
+        ) -> None:
     # --- User input validation ---
     if not isinstance(ngram_span, int) or ngram_span < 2 or ngram_span > 10:
         st.session_state[user_session_id]["ngram_warning"] = (
@@ -941,11 +973,11 @@ def generate_clusters(
 
 
 def generate_pca(
-    user_session_id: str,
-    df: pd.DataFrame,
-    metadata_target: dict,
-    session: dict
-):
+        user_session_id: str,
+        df: pd.DataFrame,
+        metadata_target: dict,
+        session: dict
+        ) -> None:
     # --- User input validation ---
     if df is None or df.empty:
         st.session_state[user_session_id]["pca_warning"] = (
@@ -1011,11 +1043,11 @@ def generate_pca(
 
 
 def generate_scatterplot(
-    user_session_id: str,
-    df: pl.DataFrame,
-    xaxis: str,
-    yaxis: str
-):
+        user_session_id: str,
+        df: pl.DataFrame,
+        xaxis: str,
+        yaxis: str
+        ) -> None:
     # --- User input validation ---
     if df is None or df.is_empty():
         st.session_state[user_session_id]["scatter_warning"] = (
@@ -1077,12 +1109,12 @@ def generate_scatterplot(
 
 
 def generate_scatterplot_with_groups(
-    user_session_id: str,
-    df: pl.DataFrame,
-    xaxis: str,
-    yaxis: str,
-    metadata_target: dict
-):
+        user_session_id: str,
+        df: pl.DataFrame,
+        xaxis: str,
+        yaxis: str,
+        metadata_target: dict
+        ) -> None:
     # --- User input validation ---
     if df is None or df.is_empty():
         st.session_state[user_session_id]["scatter_group_warning"] = (
@@ -1149,10 +1181,10 @@ def generate_scatterplot_with_groups(
 
 
 def generate_boxplot(
-    user_session_id: str,
-    df: pl.DataFrame,
-    box_vals: list
-):
+        user_session_id: str,
+        df: pl.DataFrame,
+        box_vals: list
+        ) -> None:
     # --- User input validation ---
     if df is None or df.is_empty():
         st.session_state[user_session_id]["boxplot_warning"] = (
@@ -1237,15 +1269,12 @@ def generate_boxplot(
 
 
 def generate_boxplot_by_group(
-    user_session_id: str,
-    df: pl.DataFrame,
-    box_vals: list,
-    grpa_list: list,
-    grpb_list: list
-):
-    import streamlit as st
-    import polars as pl
-
+        user_session_id: str,
+        df: pl.DataFrame,
+        box_vals: list,
+        grpa_list: list,
+        grpb_list: list
+        ) -> None:
     # --- User input validation ---
     if df is None or df.is_empty():
         st.session_state[user_session_id]["boxplot_group_warning"] = (
@@ -1327,7 +1356,10 @@ def generate_boxplot_by_group(
     st.success('Boxplot by group generated!')
 
 
-def generate_document_html(user_session_id: str, doc_key: str):
+def generate_document_html(
+        user_session_id: str,
+        doc_key: str
+        ) -> None:
     """
     Process a single document and generate HTML representations.
 
@@ -1391,50 +1423,26 @@ def generate_document_html(user_session_id: str, doc_key: str):
     st.rerun()
 
 
-# Functions for storing values associated with specific apps
-def update_tags(html_state: str,
-                session_id: str) -> None:
+# Convenience function called by widgets
+def is_valid_df(
+        df,
+        required_cols=None
+        ) -> bool:
     """
-    Update the HTML style string for tag highlights in the session state.
-
+    Check if a DataFrame is valid for processing.
     Parameters
     ----------
-    html_state : str
-        The HTML string representing the current tag highlights.
-    session_id : str
-        The session ID for which the tag highlights are to be updated.
-
+    df : DataFrame
+        The DataFrame to check.
+    required_cols : list, optional
+        A list of required columns that must be present in the DataFrame.
+        If None, no specific columns are checked.
     Returns
     -------
-    None
+    bool
+        True if the DataFrame is valid, False otherwise.
     """
-    _TAGS = f"tags_{session_id}"
-    html_highlights = [
-        ' { background-color:#5fb7ca; }',
-        ' { background-color:#e35be5; }',
-        ' { background-color:#ffc701; }',
-        ' { background-color:#fe5b05; }',
-        ' { background-color:#cb7d60; }'
-        ]
-    if 'html_str' not in st.session_state[session_id]:
-        st.session_state[session_id]['html_str'] = ''
-    if _TAGS in st.session_state:
-        tags = st.session_state[_TAGS]
-        if len(tags) > 5:
-            tags = tags[:5]
-            st.session_state[_TAGS] = tags
-    else:
-        tags = []
-    tags = ['.' + x for x in tags]
-    highlights = html_highlights[:len(tags)]
-    style_str = [''.join(x) for x in zip(tags, highlights)]
-    style_str = ''.join(style_str)
-    style_sheet_str = '<style>' + style_str + '</style>'
-    st.session_state[session_id]['html_str'] = style_sheet_str + html_state
-
-
-# Convenience function called by widgets
-def is_valid_df(df, required_cols=None):
+    # Check if df is None or empty
     if df is None:
         return False
     if hasattr(df, "height"):
@@ -1450,188 +1458,3 @@ def is_valid_df(df, required_cols=None):
     if required_cols:
         return all(col in cols for col in required_cols)
     return True
-
-
-def clear_boxplot_multiselect(user_session_id: str):
-    import streamlit as st
-    st.session_state[user_session_id]["boxplot_df"] = None
-    st.session_state[user_session_id]["boxplot_stats"] = None
-    st.session_state[user_session_id]["boxplot_warning"] = None
-    st.session_state[user_session_id]["boxplot_group_df"] = None
-    st.session_state[user_session_id]["boxplot_group_stats"] = None
-    st.session_state[user_session_id]["boxplot_group_warning"] = None
-
-
-def clear_plots(session_id):
-    update_session('pca', False, session_id)
-    _GRPA = f"grpa_{session_id}"
-    _GRPB = f"grpb_{session_id}"
-    _BOXPLOT_VARS = f"boxplot_vars_{session_id}"
-    # Clear group selections
-    if _GRPA in st.session_state.keys():
-        st.session_state[_GRPA] = []
-    if _GRPB in st.session_state.keys():
-        st.session_state[_GRPB] = []
-    # Clear boxplot variable selections
-    if _BOXPLOT_VARS in st.session_state.keys():
-        st.session_state[_BOXPLOT_VARS] = []
-    # Clear highlight multiselects
-    highlight_keys = [
-        f"highlight_pca_groups_{session_id}",
-        f"highlight_scatter_groups_{session_id}",
-        # add other highlight keys as needed
-    ]
-    for key in highlight_keys:
-        if key in st.session_state:
-            st.session_state[key] = []
-    # Clear plot results and warnings
-    if session_id in st.session_state:
-        # Remove 'Highlight' column from all relevant DataFrames
-        for key in [
-            "boxplot_df", "boxplot_group_df", "scatterplot_df", "scatterplot_group_df"
-        ]:
-            df = st.session_state[session_id].get(key)
-            if df is not None and hasattr(df, "columns") and "Highlight" in df.columns:
-                st.session_state[session_id][key] = df.drop(columns=["Highlight"])
-        st.session_state[session_id]["boxplot_df"] = None
-        st.session_state[session_id]["boxplot_stats"] = None
-        st.session_state[session_id]["boxplot_warning"] = None
-        st.session_state[session_id]["boxplot_group_df"] = None
-        st.session_state[session_id]["boxplot_group_stats"] = None
-        st.session_state[session_id]["boxplot_group_warning"] = None
-        st.session_state[session_id]["scatterplot_df"] = None
-        st.session_state[session_id]["scatter_correlation"] = None
-        st.session_state[session_id]["scatter_warning"] = None
-        st.session_state[session_id]["scatterplot_group_df"] = None
-        st.session_state[session_id]["scatter_group_correlation"] = None
-        st.session_state[session_id]["scatter_group_warning"] = None
-        # --- Clear PCA data and warnings ---
-        if "target" in st.session_state[session_id]:
-            st.session_state[session_id]["target"]["pca_df"] = None
-            st.session_state[session_id]["target"]["contrib_df"] = None
-        st.session_state[session_id]["pca_warning"] = None
-        if "pca_idx" in st.session_state[session_id]:
-            st.session_state[session_id]["pca_idx"] = None
-
-
-def persist(key: str,
-            app_name: str,
-            session_id: str) -> str:
-    _PERSIST_STATE_KEY = f"{app_name}_PERSIST"
-    if _PERSIST_STATE_KEY not in st.session_state[session_id].keys():
-        st.session_state[session_id][_PERSIST_STATE_KEY] = {}
-        st.session_state[session_id][_PERSIST_STATE_KEY][key] = None
-
-    if key in st.session_state:
-        st.session_state[session_id][_PERSIST_STATE_KEY][key] = st.session_state[key]  # noqa: E501
-
-    return key
-
-
-def load_widget_state(app_name: str,
-                      session_id):
-    _PERSIST_STATE_KEY = f"{app_name}_PERSIST"
-    """Load persistent widget state."""
-    if _PERSIST_STATE_KEY in st.session_state[session_id]:
-        for key in st.session_state[session_id][_PERSIST_STATE_KEY]:
-            if st.session_state[session_id][_PERSIST_STATE_KEY][key] is not None:  # noqa: E501
-                if key not in st.session_state:
-                    st.session_state[key] = st.session_state[session_id][_PERSIST_STATE_KEY][key]  # noqa: E501
-
-
-# prevent categories from being chosen in both multiselect
-def update_grpa(session_id):
-    _GRPA = f"grpa_{session_id}"
-    _GRPB = f"grpb_{session_id}"
-    if _GRPA not in st.session_state.keys():
-        st.session_state[_GRPA] = []
-    if _GRPB not in st.session_state.keys():
-        st.session_state[_GRPB] = []
-    if len(
-        list(set(st.session_state[_GRPA]) &
-             set(st.session_state[_GRPB]))
-    ) > 0:
-        item = list(
-            set(st.session_state[_GRPA]) &
-            set(st.session_state[_GRPB])
-            )
-        st.session_state[_GRPA] = list(
-            set(list(st.session_state[_GRPA])) ^ set(item)
-            )
-
-
-def update_grpb(session_id):
-    _GRPA = f"grpa_{session_id}"
-    _GRPB = f"grpb_{session_id}"
-    if _GRPA not in st.session_state.keys():
-        st.session_state[_GRPA] = []
-    if _GRPB not in st.session_state.keys():
-        st.session_state[_GRPB] = []
-    if len(
-        list(set(st.session_state[_GRPA]) &
-             set(st.session_state[_GRPB]))
-    ) > 0:
-        item = list(
-            set(st.session_state[_GRPA]) &
-            set(st.session_state[_GRPB])
-            )
-        st.session_state[_GRPB] = list(
-            set(list(st.session_state[_GRPB])) ^ set(item)
-            )
-
-
-# prevent categories from being chosen in both multiselect
-def update_tar(session_id):
-    _TAR = f"tar_{session_id}"
-    _REF = f"ref_{session_id}"
-    if _TAR not in st.session_state.keys():
-        st.session_state[_TAR] = []
-    if _REF not in st.session_state.keys():
-        st.session_state[_REF] = []
-    if len(
-        list(set(st.session_state[_TAR]) &
-             set(st.session_state[_REF]))
-    ) > 0:
-        item = list(
-            set(st.session_state[_TAR]) &
-            set(st.session_state[_REF])
-            )
-        st.session_state[_TAR] = list(
-            set(list(st.session_state[_TAR])) ^ set(item)
-            )
-
-
-def update_ref(session_id):
-    _REF = f"ref_{session_id}"
-    _TAR = f"tar_{session_id}"
-    if _TAR not in st.session_state.keys():
-        st.session_state[_TAR] = []
-    if _REF not in st.session_state.keys():
-        st.session_state[_REF] = []
-    if len(
-        list(set(st.session_state[_TAR]) &
-             set(st.session_state[_REF]))
-    ) > 0:
-        item = list(
-            set(st.session_state[_TAR]) &
-            set(st.session_state[_REF])
-            )
-        st.session_state[_REF] = list(
-            set(list(st.session_state[_REF])) ^ set(item)
-            )
-
-
-def update_pca_idx_tab1(session_id: str):
-    # Initialize the selectbox state if it doesn't exist
-    if f"pca_idx_tab1_{session_id}" not in st.session_state:
-        st.session_state[f"pca_idx_tab1_{session_id}"] = st.session_state[session_id].get('pca_idx', 1)
-    # Now update the shared PC index
-    st.session_state[session_id]['pca_idx'] = st.session_state[f"pca_idx_tab1_{session_id}"]
-
-
-def update_pca_idx_tab2(session_id: str):
-    # Initialize the selectbox state if it doesn't exist
-    if f"pca_idx_tab2_{session_id}" not in st.session_state:
-        st.session_state[f"pca_idx_tab2_{session_id}"] = st.session_state[session_id].get('pca_idx', 1)
-    # Now update the shared PC index
-    st.session_state[session_id]['pca_idx'] = st.session_state[f"pca_idx_tab2_{session_id}"]
