@@ -13,18 +13,39 @@
 # limitations under the License.
 
 import pathlib
-import docuscospacy as ds
-import polars as pl
-import streamlit as st
 import sys
+
+import docuscospacy as ds
+import streamlit as st
 
 # Ensure project root is in sys.path for both desktop and online
 project_root = pathlib.Path(__file__).parent.parents[1].resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-import webapp.utilities as _utils   # noqa: E402
-from webapp.menu import menu, require_login   # noqa: E402
+from webapp.utilities.handlers import (  # noqa: E402
+    generate_frequency_table,
+    get_or_init_user_session,
+    load_metadata
+    )
+from webapp.utilities.ui import (   # noqa: E402
+    load_widget_state,
+    persist,
+    render_dataframe,
+    sidebar_action_button,
+    sidebar_help_link,
+    tag_filter_multiselect,
+    tagset_selection,
+    target_info,
+    toggle_download,
+    )
+from webapp.utilities.formatters import (  # noqa: E402
+    convert_to_excel
+    )
+from webapp.menu import (   # noqa: E402
+    menu,
+    require_login
+    )
 
 TITLE = "Token Frequencies"
 ICON = ":material/table_view:"
@@ -36,107 +57,114 @@ st.set_page_config(
 
 
 def main() -> None:
+    """
+    Main function to run the Streamlit app for token frequencies.
+    It initializes the user session, loads the necessary data,
+    and provides the UI for generating and displaying token frequency tables.
+    """
     # Set login requirements for navigaton
     require_login()
     menu()
-    st.markdown(f"## {TITLE}")
-    # Get or initialize user session
-    user_session_id, session = _utils.handlers.get_or_init_user_session()
-
-    st.sidebar.link_button(
-        label="Help",
-        url="https://browndw.github.io/docuscope-docs/guide/token-frequencies.html",
-        icon=":material/help:"
+    st.markdown(
+        body=f"## {TITLE}",
+        help=(
+            "This app allows you to generate and view token frequency tables "
+            "for the loaded target corpus. You can filter by tags and download "
+            "the table in Excel format."
+            )
         )
+    # Get or initialize user session
+    user_session_id, session = get_or_init_user_session()
 
-    if session.get('freq_table')[0] is True:
+    sidebar_help_link("token-frequencies.html")
 
-        _utils.handlers.load_widget_state(
+    # Check if frequency table is already generated
+    if session.get('freq_table', [False])[0] is True:
+        load_widget_state(
             pathlib.Path(__file__).stem,
             user_session_id
-            )
-        metadata_target = _utils.handlers.load_metadata(
+        )
+        metadata_target = load_metadata(
             'target',
             user_session_id
-            )
+        )
+        # Load the tags table for the target
+        df, tag_options, tag_radio, tag_type = tagset_selection(
+            user_session_id=user_session_id,
+            session_state=st.session_state,
+            persist_func=persist,
+            page_stem=pathlib.Path(__file__).stem,
+            tagset_keys={
+                "Parts-of-Speech": {"General": "ft_pos", "Specific": "ft_pos"},
+                "DocuScope": "ft_ds"
+            },
+            simplify_funcs={
+                "Parts-of-Speech": {"General": ds.freq_simplify, "Specific": None}
+            },
+            tag_filters={
+                # Add filters here to exclude tags for specific tagsets/subtypes
+                # Example: "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
+            },
+            tag_radio_key="ft_radio",
+            tag_type_key="ft_type_radio"
+        )
 
-        st.sidebar.markdown("### Tagset")
+        # Display the target information and the token frequencies
+        st.info(target_info(metadata_target))
 
-        tag_radio = st.sidebar.radio(
-            "Select tags to display:", ("Parts-of-Speech", "DocuScope"),
-            key=_utils.handlers.persist(
-                "ft_radio",
-                pathlib.Path(__file__).stem, user_session_id
-                ), horizontal=True
-            )
-
-        if tag_radio == 'Parts-of-Speech':
-            tag_type = st.sidebar.radio(
-                "Select from general or specific tags",
-                ("General", "Specific"),
-                horizontal=True
-                )
-            if tag_type == 'General':
-                df = st.session_state[user_session_id]["target"]["ft_pos"]
-                df = ds.freq_simplify(df)
-            else:
-                df = st.session_state[user_session_id]["target"]["ft_pos"]
-        else:
-            df = st.session_state[user_session_id]["target"]["ft_ds"]
-
-        st.info(_utils.content.message_target_info(metadata_target))
-
-        if df.height == 0 or df is None:
-            cats = []
-        elif df.height > 0:
-            cats = sorted(df.get_column("Tag").unique().to_list())
-
-        filter_vals = st.multiselect("Select tags to filter:", (cats))
-        if len(filter_vals) > 0:
-            df = df.filter(pl.col("Tag").is_in(filter_vals))
-
-        st.dataframe(df,
-                     hide_index=True,
-                     column_config=_utils.formatters.get_streamlit_column_config(df)
-                     )
+        # Display the tagset selection radio buttons
+        df = tag_filter_multiselect(df)
+        render_dataframe(df)
 
         st.sidebar.markdown("---")
-
-        _utils.formatters.toggle_download(
+        # Toggle download options for the frequency table
+        toggle_download(
             label="Excel",
-            convert_func=_utils.formatters.convert_to_excel,
-            convert_args=(df.to_pandas(),),
+            convert_func=convert_to_excel,
+            convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
             file_name="token_frequencies.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            message=_utils.content.message_download,
             location=st.sidebar
         )
 
+        st.sidebar.markdown("---")
+
     else:
         st.markdown(
-            """
-            :material/manufacturing:
-            Use the button in the sidebar to **generate frequency tables**.
+            body=(
+                ":material/manufacturing: Use the button in the sidebar to **generate a frequency table**.\n\n"  # noqa: E501
+                ":material/priority: A **target corpus** must be loaded first.\n\n"
+                ":material/priority: After the table has been generated, "
+                "you will be able to **toggle between the tagsets**."
+                )
+        )
 
-            :material/priority:
-            After the table has been generated,
-            you will be able to **toggle between the tagsets**.
-            """
+        # Display the sidebar header for generating frequency table
+        st.sidebar.markdown(
+            body=(
+                "### Generate table\n\n"
+                "Use the button to process a table."
+                ),
+            help=(
+                "Tables are generated based on the loaded target corpus. "
+                "You can filter the table by tags after it has been generated. "
+                "The table will include token frequencies for the selected tagsets.\n\n"
+                "Click on the **Help** button for more information on how to use this app."
+                )
             )
-
-        st.sidebar.markdown(_utils.content.message_generate_table)
-
-        _utils.handlers.sidebar_action_button(
+        # Action button to generate frequency table
+        sidebar_action_button(
             button_label="Frequency Table",
             button_icon=":material/manufacturing:",
             preconditions=[
-                session.get('has_target')[0],
+                session.get('has_target', [False])[0],
             ],
-            action=lambda: _utils.handlers.generate_frequency_table(
+            action=lambda: generate_frequency_table(
                 user_session_id
             ),
             spinner_message="Processing frequencies..."
         )
+        # Display any frequency warnings
         if st.session_state[user_session_id].get("frequency_warning"):
             msg, icon = st.session_state[user_session_id]["frequency_warning"]
             st.warning(msg, icon=icon)
