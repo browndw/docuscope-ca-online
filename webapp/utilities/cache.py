@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pathlib
 import hashlib
-import streamlit as st
+import pathlib
+import sys
 
+import streamlit as st
 from datetime import datetime, timedelta
 from google.cloud import firestore
 from google.oauth2 import service_account
 
-from utilities.handlers import import_options_general
+# Ensure project root is in sys.path for both desktop and online
+project_root = pathlib.Path(__file__).parent.parents[1].resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
+from webapp.utilities.handlers import import_options_general  # noqa: E402
 
-HERE = pathlib.Path(__file__).parents[1].resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
+OPTIONS = str(project_root.joinpath("webapp/options.toml"))
 
 # import options
 _options = import_options_general(OPTIONS)
