@@ -143,7 +143,7 @@ def main() -> None:
 
         # --- Target Tab ---
         with tabs[0]:
-            st.info(_utils.content.message_target_info(metadata_target))
+            st.info(_utils.ui.target_info(metadata_target))
             with st.expander("Documents:"):
                 st.write(metadata_target.get(KEY_DOCIDS)[0]['ids'])
             if session.get(KEY_HAS_META)[0] is True:
