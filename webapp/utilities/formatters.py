@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# DataFrame formatting for display and export in Streamlit apps
+# Plotting functions
+# Data enrichement helpers
 
+import base64
 import docx
 from docx.shared import RGBColor
 from docx.shared import Pt
@@ -22,12 +26,13 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import polars as pl
-import re
 import streamlit as st
 import zipfile
 
 
-def get_streamlit_column_config(df):
+def get_streamlit_column_config(
+        df: pl.DataFrame | pd.DataFrame
+        ) -> dict:
     """
     Returns a column_config dictionary for st.dataframe based on column name patterns,
     including helpful tooltips for each column.
@@ -203,43 +208,38 @@ def add_category_description(
     return cat_df
 
 
-def color_picker_controls(
-        default_hex="",
-        default_palette="Plotly"
-        ) -> tuple[str, str]:
+def plot_download_link(
+        fig: go.Figure,
+        filename="plot.png",
+        scale=2,
+        button_text="Download high-res PNG"
+        ) -> None:
     """
-    Display color controls: a HEX color input and a palette dropdown.
-    Returns a tuple: (hex_color, palette_name)
+    Display a download link for a high-resolution PNG of a Plotly figure.
+
+    Parameters
+    ----------
+    fig : plotly.graph_objs.Figure
+        The Plotly figure to export.
+    filename : str
+        The filename for the downloaded PNG.
+    scale : int or float
+        The scale factor for the image resolution (default 2).
+    button_text : str
+        The text to display for the download link/button.
+
+    Returns
+    -------
+    None
+        Renders a download link in the Streamlit app.
     """
-    plotly_palettes = [
-        "Plotly", "Viridis", "Cividis", "Plasma", "Inferno", "Magma",
-        "Turbo", "IceFire", "Bluered", "RdBu", "YlGnBu", "YlOrRd", "Aggrnyl",
-        "Agsunset", "Blackbody", "Blues", "Electric", "Greens", "Greys",
-        "Hot", "Jet", "Picnic", "Portland", "Rainbow", "Reds", "Earth"
-    ]
-    col1, col2 = st.columns(2)
-    with col1:
-        hex_color = st.text_input(
-            "Custom HEX color",
-            value=default_hex,
-            placeholder="Leave blank to use palette",
-            help="Enter a HEX color code (e.g., #1565c0). "
-                 "If left blank, the palette selection will be used."
-        )
-        # HEX validation
-        hex_pattern = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
-        if hex_color and not hex_pattern.match(hex_color):
-            st.warning("Invalid HEX color. Using palette instead.", icon="material/warning")
-            hex_color = ""
-    with col2:
-        palette = st.selectbox(
-            "Plotly palette",
-            plotly_palettes,
-            index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,  # noqa: E501
-            help="Choose a built-in Plotly color palette. "
-                 "Palette is used only if HEX color is blank."
-        )
-    return hex_color, palette
+    # Export the figure to a PNG byte stream
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
+    img_bytes = fig.to_image(format="png", scale=scale)
+    b64 = base64.b64encode(img_bytes).decode()
+    href = f'<a href="data:image/png;base64,{b64}" download="{filename}">{button_text}</a>'
+    st.markdown(href, unsafe_allow_html=True)
 
 
 def plot_tag_frequencies_bar(
@@ -247,7 +247,7 @@ def plot_tag_frequencies_bar(
         ) -> go.Figure:
     """
     Plot a horizontal bar chart of tag frequencies.
-    Expects columns: 'Tag' and 'RF' (relative frequency).
+    Expects columns: 'Tag' and 'RF' (relative frequency, as percent).
     """
     # Sort tags by frequency descending
     df_sorted = df.sort('RF', descending=True) if hasattr(df, 'sort') else df.sort_values('RF', ascending=True)  # noqa: E501
@@ -271,21 +271,31 @@ def plot_tag_frequencies_bar(
     fig.update_layout(
         showlegend=False,
         margin=dict(l=0, r=0, t=30, b=40),
-        xaxis_title='Frequency (per 100 tokens)',
+        xaxis_title='Frequency (% of tokens)',
         yaxis_title=None,
         yaxis=dict(autorange="reversed", tickfont=dict(size=12)),
     )
     fig.update_traces(
         marker_line_width=0,
-        hovertemplate="Tag: %{y}<br>RF: %{x:.2f}<extra></extra>"
+        hovertemplate="<b>Tag:</b> %{y}<br><b>RF:</b> %{x:.2f}%<extra></extra>"
     )
     return fig
 
 
-def plot_compare_corpus_bar(df):
+def plot_compare_corpus_bar(
+        df: pl.DataFrame | pd.DataFrame
+        ) -> go.Figure:
     """
     Plot a horizontal bar chart comparing tag frequencies in two corpus parts.
     Expects columns: 'Tag', 'RF', 'RF_Ref'.
+    Parameters
+    ----------
+    df : pl.DataFrame or pd.DataFrame
+        DataFrame containing tag frequencies with columns 'Tag', 'RF', and 'RF_Ref'.
+        'RF' is the target corpus frequency, 'RF_Ref' is the reference corpus frequency.
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
     """
     # Prepare DataFrame
     df_plot = df.to_pandas() if hasattr(df, "to_pandas") else df.copy()
@@ -302,18 +312,13 @@ def plot_compare_corpus_bar(df):
         var_name='Corpus',
         value_name='RF'
     )
-    df_plot.sort_values(
-        by=["Mean", "Corpus"],
-        ascending=[True, True],
-        inplace=True
-    )
+    # Do not sort after this point!
 
     # Set tag order by descending mean
     tag_order = df_plot.groupby("Tag")["Mean"].mean().sort_values(ascending=False).index.tolist()  # noqa: E501
-    corpus_order = ['Target', 'Reference']
+    corpus_order = ['Reference', 'Target']  # Target will be on top
 
     height = max(24 * len(tag_order) + 100, 400)
-    corpus_order = ['Reference', 'Target']  # Target will be on top
 
     fig = px.bar(
         df_plot,
@@ -325,6 +330,7 @@ def plot_compare_corpus_bar(df):
         category_orders={"Tag": tag_order, "Corpus": corpus_order},
         hover_data={"Tag": True, "RF": ':.2f', "Corpus": True},
         height=height,
+        custom_data=["Corpus"],  # <-- This ensures correct mapping
     )
 
     fig.update_layout(
@@ -338,15 +344,15 @@ def plot_compare_corpus_bar(df):
         ),
         legend_title_text='',
         margin=dict(l=0, r=0, t=30, b=0),
-        xaxis_title='Frequency (per 100 tokens)',
+        xaxis_title='Frequency (% of tokens)',
         yaxis_title=None,
         bargap=0.1,
         bargroupgap=0.05,
-        barmode='group',  # <-- This ensures dodged (side-by-side) bars
+        barmode='group',
     )
     fig.update_traces(
         marker_line_width=0,
-        hovertemplate="Tag: %{y}<br>Corpus: %{marker.color}<br>RF: %{x:.2f}<extra></extra>"
+        hovertemplate="<b>Tag:</b> %{y}<br><b>Corpus:</b> %{customdata[0]}<br><b>RF:</b> %{x:.2f}%<extra></extra>",  # noqa: E501
     )
     return fig
 
@@ -361,27 +367,36 @@ def plot_general_boxplot(
     """
     General boxplot for the corpus, colored by tag, with legend at bottom left,
     and boxes sorted by median (highest to lowest).
-    Allows user to specify a custom HEX color or a Plotly palette.
+    Allows user to specify a custom HEX color, a dict, or a Plotly palette.
     """
     # Sort tags by median value (descending)
     medians = df.groupby(tag_col)[value_col].median().sort_values(ascending=False)
     tag_order = medians.index.tolist()
 
-    # Determine color sequence
-    if color and color.lower().startswith("#"):
-        color_seq = [color] * len(tag_order)
-    elif palette and hasattr(px.colors.qualitative, palette):
-        color_seq = getattr(px.colors.qualitative, palette)
-    elif palette and hasattr(px.colors.sequential, palette):
-        color_seq = getattr(px.colors.sequential, palette)
+    # Determine color mapping
+    if isinstance(color, dict):
+        color_discrete_map = color
+        color_arg = tag_col
+        color_seq = None
+    elif isinstance(color, str) and color.lower().startswith("#"):
+        color_discrete_map = {cat: color for cat in tag_order}
+        color_arg = tag_col
+        color_seq = None
+    elif palette:
+        color_discrete_map = None
+        color_arg = tag_col
+        color_seq = palette
     else:
+        color_discrete_map = None
+        color_arg = tag_col
         color_seq = px.colors.qualitative.Set1
 
     fig = px.box(
         df,
         x=value_col,
         y=tag_col,
-        color=tag_col,
+        color=color_arg,
+        color_discrete_map=color_discrete_map,
         color_discrete_sequence=color_seq,
         points=False,
         orientation='h',
@@ -398,12 +413,12 @@ def plot_general_boxplot(
             x=0
         ),
         legend_title_text='',
-        margin=dict(l=0, r=0, t=30, b=-0),  # More bottom margin for legend
+        margin=dict(l=0, r=0, t=30, b=0),
         height=100 * len(tag_order) + 120,    # More vertical space per box
         xaxis_title='Frequency (per 100 tokens)',
         yaxis_title="Tag"
     )
-    fig.update_yaxes(showticklabels=False, title=None)
+    fig.update_yaxes(showticklabels=True, title=None)
     fig.update_xaxes(title_text='Frequency (per 100 tokens)')
     return fig
 
@@ -417,7 +432,7 @@ def plot_grouped_boxplot(
         palette=None
         ) -> go.Figure:
     """
-    Boxplot comparing categories in subcorpora, faceted by tag and colored by group.
+    Boxplot comparing categories in subcorpora, grouped by tag and colored by group.
     Allows user to specify a custom HEX color or a Plotly palette.
     """
     tag_order = (
@@ -425,45 +440,34 @@ def plot_grouped_boxplot(
     )
     group_order = sorted(df[group_col].unique())
 
-    # Determine color sequence
-    if color and color.lower().startswith("#"):
-        color_seq = [color] * len(group_order)
-    elif palette and hasattr(px.colors.qualitative, palette):
-        color_seq = getattr(px.colors.qualitative, palette)
-    elif palette and hasattr(px.colors.sequential, palette):
-        color_seq = getattr(px.colors.sequential, palette)
+    if isinstance(color, dict):
+        # Per-category coloring
+        color_discrete_map = color
+        color_arg = group_col
+    elif isinstance(color, str) and color.lower().startswith("#"):
+        # Single color for all
+        color_discrete_map = {cat: color for cat in df[group_col].unique()}
+        color_arg = group_col
     else:
-        color_seq = px.colors.qualitative.Set1
+        # Use palette or default
+        color_discrete_map = None
+        color_arg = group_col
 
     fig = px.box(
         df,
+        y=tag_col,
         x=value_col,
-        y=group_col,
-        color=group_col,
-        color_discrete_sequence=color_seq,
-        facet_row=tag_col,
+        color=color_arg,
+        color_discrete_map=color_discrete_map,
+        color_discrete_sequence=palette if palette else None,
         points=False,
         orientation='h',
         category_orders={
             tag_col: tag_order,
             group_col: group_order
-        }
+        },
+        boxmode="group"
     )
-
-    # Clean up facet row titles
-    fig.for_each_annotation(
-        lambda a: a.update(
-            text=a.text.split("=")[-1], font=dict(size=12, family="Arial")
-            ))
-
-    # Remove x-axis titles from all but the bottom facet
-    for i in range(1, len(tag_order)):
-        axis_id = f'xaxis{i+1}'
-        if axis_id in fig.layout:
-            fig.layout[axis_id]['title'] = None
-
-    # Set the x-axis title only for the bottom facet
-    fig.layout.xaxis.title = 'Frequency (per 100 tokens)'
 
     fig.update_layout(
         showlegend=True,
@@ -476,11 +480,11 @@ def plot_grouped_boxplot(
         ),
         legend_title_text='',
         margin=dict(l=0, r=0, t=30, b=0),
-        height=100 * len(tag_order) + 120,
-        xaxis_title='',  # Remove global x-axis title
+        height=40 * len(tag_order) + 120,
+        xaxis_title='Frequency (per 100 tokens)',
         yaxis_title=None
     )
-    fig.update_yaxes(showticklabels=False, title=None)
+    fig.update_yaxes(showticklabels=True, title=None)
     return fig
 
 
@@ -643,7 +647,30 @@ def plot_pca_variable_contrib_bar(
         pc1_label="PC1",
         pc2_label="PC2",
         sort_by=None
-):
+        ) -> go.Figure:
+    """
+    Create a horizontal bar plot comparing variable contributions
+    to two principal components (PC1 and PC2).
+    Parameters
+    ----------
+    contrib_1_plot : pd.DataFrame
+        DataFrame containing contributions for PC1.
+        Must have columns: 'Tag', 'Contribution'.
+    contrib_2_plot : pd.DataFrame
+        DataFrame containing contributions for PC2.
+        Must have columns: 'Tag', 'Contribution'.
+    pc1_label : str
+        Label for PC1, default is "PC1".
+    pc2_label : str
+        Label for PC2, default is "PC2".
+    sort_by : str, optional
+        If provided, sort the bars by this PC label.
+        If None, sort by PC1.
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+        The resulting bar plot figure.
+    """
     # Merge on Tag for alignment
     merged = contrib_1_plot.merge(
         contrib_2_plot, on="Tag", how="outer", suffixes=(f"_{pc1_label}", f"_{pc2_label}")
@@ -761,7 +788,9 @@ def plot_pca_variable_contrib_bar(
 
 
 # Functions for handling data tables
-def convert_to_excel(df: pl.DataFrame) -> bytes:
+def convert_to_excel(
+        df: pl.DataFrame
+        ) -> bytes:
     """
     Convert a DataFrame to an Excel file in memory.
 
@@ -816,10 +845,12 @@ def add_alt_chunk(doc: docx.Document,
     doc.element.body.sectPr.addprevious(alt_chunk)
 
 
-def convert_to_word(html_string: str,
-                    tag_html: str,
-                    doc_key: str,
-                    tag_counts: pd.DataFrame) -> bytes:
+def convert_to_word(
+        html_string: str,
+        tag_html: str,
+        doc_key: str,
+        tag_counts: pd.DataFrame
+        ) -> bytes:
     """
     Convert HTML content and tag counts into a Word document and
     return it as bytes.
@@ -882,9 +913,11 @@ def convert_to_word(html_string: str,
     return processed_data
 
 
-def convert_corpus_to_zip(session_id: str,
-                          corpus_type: str,
-                          file_type="parquet") -> bytes:
+def convert_corpus_to_zip(
+        session_id: str,
+        corpus_type: str,
+        file_type="parquet"
+        ) -> bytes:
     """
     Convert all tables in a corpus to a ZIP archive of Parquet or CSV files.
 
@@ -916,8 +949,10 @@ def convert_corpus_to_zip(session_id: str,
     return processed_data
 
 
-def convert_to_zip(tok_pl: pl.DataFrame,
-                   tagset: str) -> bytes:
+def convert_to_zip(
+        tok_pl: pl.DataFrame,
+        tagset: str
+        ) -> bytes:
     """
     Convert tokenized corpus data to a ZIP archive of tagged text files.
 
@@ -1009,52 +1044,3 @@ def convert_to_zip(tok_pl: pl.DataFrame,
     processed_data = zip_buf.getvalue()
 
     return processed_data
-
-
-def toggle_download(
-    label: str,
-    convert_func,
-    convert_args: tuple = (),
-    convert_kwargs: dict = None,
-    file_name: str = "download.bin",
-    mime: str = "application/octet-stream",
-    message: str = None,
-    location=st.sidebar
-):
-    """
-    Generalized toggle-based download for Streamlit.
-
-    Parameters
-    ----------
-    label : str
-        The label for the toggle and download button.
-    convert_func : callable
-        The function to convert data to bytes.
-    convert_args : tuple
-        Positional arguments for the conversion function.
-    convert_kwargs : dict
-        Keyword arguments for the conversion function.
-    file_name : str
-        The name of the file to download.
-    mime : str
-        The MIME type of the file.
-    message : str
-        Optional markdown message to display above the button.
-    location : Streamlit container
-        Where to place the toggle and download button (default: st.sidebar).
-    """
-    convert_kwargs = convert_kwargs or {}
-    toggle_key = f"toggle_{label.replace(' ', '_')}"
-    download = location.toggle(f"Download to {label}?", key=toggle_key)
-    if download:
-        if message:
-            location.success(message,
-                             icon=":material/celebration:")
-        data = convert_func(*convert_args, **convert_kwargs)
-        location.download_button(
-            label=f"Download to {label}",
-            data=data,
-            file_name=file_name,
-            mime=mime,
-            icon=":material/download:"
-        )
