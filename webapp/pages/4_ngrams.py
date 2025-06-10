@@ -15,7 +15,6 @@
 import pathlib
 import sys
 
-import polars as pl
 import streamlit as st
 
 # Ensure project root is in sys.path for both desktop and online
@@ -23,8 +22,28 @@ project_root = pathlib.Path(__file__).parent.parents[1].resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-import webapp.utilities as _utils   # noqa: E402
-from webapp.menu import menu, require_login   # noqa: E402
+from webapp.utilities.handlers import (  # noqa: E402
+    generate_clusters,
+    generate_ngrams,
+    get_or_init_user_session,
+    load_metadata,
+    update_session
+    )
+from webapp.utilities.ui import (   # noqa: E402
+    multi_tag_filter_multiselect,
+    render_dataframe,
+    sidebar_action_button,
+    sidebar_help_link,
+    target_info,
+    toggle_download
+    )
+from webapp.utilities.formatters import (  # noqa: E402
+    convert_to_excel
+    )
+from webapp.menu import (   # noqa: E402
+    menu,
+    require_login
+    )
 
 TITLE = "N-gram and Cluster Frequency"
 ICON = ":material/table_view:"
@@ -36,131 +55,102 @@ st.set_page_config(
 
 
 def main():
+    """
+    Main function to run the Streamlit app for n-grams and clusters.
+    It initializes the user session, loads the necessary data,
+    and displays the n-grams or clusters based on user selection.
+    """
     # Set login requirements for navigaton
     require_login()
     menu()
-    st.markdown(f"## {TITLE}")
-    # Get or initialize user session
-    user_session_id, session = _utils.handlers.get_or_init_user_session()
-
-    st.sidebar.link_button(
-        label="Help",
-        url="https://browndw.github.io/docuscope-docs/guide/ngrams.html",
-        icon=":material/help:"
+    st.markdown(
+        body=f"## {TITLE}",
+        help=(
+            "This page allows you to generate and view n-grams or clusters "
+            "from your target corpus. N-grams are sequences of words or tags "
+            "that occur together in a corpus, while clusters are sequences "
+            "of words or tags that contain a specific word, part-of-a-word, "
+            "or tag. You can filter the n-grams or clusters by tags and "
+            "download the results in Excel format. Use the sidebar to "
+            "generate new tables or access help documentation."
+            )
         )
+    # Get or initialize user session
+    user_session_id, session = get_or_init_user_session()
 
-    if session.get('ngrams')[0] is True:
+    sidebar_help_link("ngrams.html")
 
-        metadata_target = _utils.handlers.load_metadata(
+    # Check if n-grams are already generated
+    if session.get('ngrams', [False])[0] is True:
+        metadata_target = load_metadata(
             'target',
             user_session_id
             )
-
+        # Load the session state for n-grams
         df = st.session_state[user_session_id]["target"]["ngrams"]
-
-        st.markdown(_utils.content.message_target_info(metadata_target))
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if df.height == 0 or df is None:
-                cats_1 = []
-            elif df.height > 0:
-                cats_1 = sorted(
-                    df.get_column("Tag_1").drop_nulls().unique().to_list()
-                    )
-
-            filter_tag_1 = st.multiselect(
-                "Select tags to filter in position 1:",
-                (cats_1)
-                )
-            if len(filter_tag_1) > 0:
-                df = df.filter(pl.col("Tag_1").is_in(filter_tag_1))
-
-            if "Tag_3" in df.columns:
-                cats_3 = sorted(
-                    df.get_column("Tag_3").drop_nulls().unique().to_list()
-                    )
-                filter_tag_3 = st.multiselect(
-                    "Select tags to filter in position 3:",
-                    (cats_3)
-                    )
-                if len(filter_tag_3) > 0:
-                    df = df.filter(pl.col("Tag_3").is_in(filter_tag_3))
-
-        with col2:
-            if df.height == 0 or df is None:
-                cats_2 = []
-            elif df.height > 0:
-                cats_2 = sorted(
-                    df.get_column("Tag_2").drop_nulls().unique().to_list()
-                    )
-
-            filter_tag_2 = st.multiselect(
-                "Select tags to filter in position 2:",
-                (cats_2)
-                )
-            if len(filter_tag_2) > 0:
-                df = df.filter(pl.col("Tag_2").is_in(filter_tag_2))
-
-            if "Tag_4" in df.columns:
-                cats_4 = sorted(
-                    df.get_column("Tag_4").drop_nulls().unique().to_list()
-                    )
-                filter_tag_4 = st.multiselect(
-                    "Select tags to filter in position 4:",
-                    (cats_4)
-                    )
-                if len(filter_tag_4) > 0:
-                    df = df.filter(pl.col("Tag_4").is_in(filter_tag_4))
-
-        st.dataframe(
-            df,
-            hide_index=True,
-            column_config=_utils.formatters.get_streamlit_column_config(df)
-            )
-
-        download_table = st.sidebar.toggle("Download to Excel?")
-        if download_table is True:
-            with st.sidebar:
-                st.sidebar.markdown(_utils.content.message_download)
-                download_file = _utils.formatters.convert_to_excel(
-                    df.to_pandas()
-                    )
-
-                st.download_button(
-                    label="Download to Excel",
-                    data=download_file,
-                    file_name="ngrams.xlsx",
-                    mime="application/vnd.ms-excel",
-                    )
+        # Display target information
+        st.info(target_info(metadata_target))
+        # Display the n-grams table
+        if df is not None and getattr(df, "height", 0) > 0:
+            tag_cols = [col for col in df.columns if col.startswith("Tag_")]
+            df, selections = multi_tag_filter_multiselect(df, tag_cols)
+            if df is None or getattr(df, "height", 0) == 0:
+                st.warning("No n-grams match the current filters.")
+            render_dataframe(df)
+        else:
+            st.warning("No n-grams match the current filters.")
 
         st.sidebar.markdown("---")
 
-        st.sidebar.markdown("### Generate new table")
-        st.sidebar.markdown("""
-                            Click the button to reset the n-grams table.
-                            """)
+        # Toggle download options for the n-grams table
+        toggle_download(
+            label="Excel",
+            convert_func=convert_to_excel,
+            convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
+            file_name="ngrams.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            location=st.sidebar
+        )
 
-        if st.sidebar.button("Create a New Ngrams Table"):
-            if "ngrams" not in st.session_state[user_session_id]["target"]:
-                st.session_state[user_session_id]["target"]["ngrams"] = {}
-            _utils.handlers.update_session(
+        st.sidebar.markdown("---")
+        # Display the sidebar header for generating a new n-grams table
+        st.sidebar.markdown(
+            body=(
+                "### Generate new table\n\n"
+                "Use the button to reset the n-grams or cluster table and start over."
+                )
+            )
+        # Action button to create a new table
+        if st.sidebar.button(
+            label="Create a New Table",
+            icon=":material/refresh:",
+        ):
+            st.session_state[user_session_id]["target"]["ngrams"] = {}
+            update_session(
                 'ngrams',
                 False,
                 user_session_id
-                )
+            )
             st.rerun()
+
         st.sidebar.markdown("---")
 
     else:
         if session.get("has_target")[0] is True:
-            metadata_target = _utils.handlers.load_metadata(
+            metadata_target = load_metadata(
                 'target',
                 user_session_id
                 )
 
-        st.markdown(_utils.content.message_ngrams)
+        st.markdown(
+            body=(
+                ":material/priority: Select either **N-grams** or **Clusters** from the options below.\n\n"  # noqa: E501
+                ":material/manufacturing: Use the button in the sidebar to **generate the table**.\n\n"  # noqa: E501
+                ":material/priority: A **target corpus** must be loaded first.\n\n"
+                ":material/priority: After the table has been generated, "
+                "you will be able to **toggle between the tagsets**."
+                )
+        )
 
         st.markdown("---")
 
@@ -175,23 +165,44 @@ def main():
                 that contain a specific word, part-of-a-word, or tag.
                 """],
             horizontal=False,
-            index=None
+            index=None,
+            help=(
+                "N-grams are sequences of words or tags that occur together "
+                "in a corpus. Clusters are sequences of words or tags that "
+                "contain a specific word, part-of-a-word, or tag. "
+                "N-grams are useful for identifying common phrases, "
+                "while clusters are useful for identifying patterns "
+                "related to specific words or morphemes (like *-tion*)."
+                )
             )
-
+        # Set the tagset variable based on the ngram_type
         if ngram_type == 'N-grams':
             st.sidebar.markdown("### Span")
             ngram_span = st.sidebar.radio(
                 'Span of your n-grams:',
                 (2, 3, 4),
-                horizontal=True
+                horizontal=True,
+                help=(
+                    "The span of your n-grams determines how many words or "
+                    "tags are included in each n-gram. For example, a span "
+                    "of 2 will create bigrams (two-word sequences), a span "
+                    "of 3 will create trigrams (three-word sequences), and "
+                    "so on."
+                    )
                 )
 
             st.sidebar.markdown("---")
-
+            # Select the tagset for n-grams
             tag_radio = st.sidebar.radio(
                 "Select a tagset:",
                 ("Parts-of-Speech", "DocuScope"),
-                horizontal=True
+                horizontal=True,
+                help=(
+                    "Choose the tagset to use for generating n-grams. "
+                    "Parts-of-Speech (POS) tags are used for grammatical "
+                    "analysis, while DocuScope tags are used for "
+                    "rhetorical analysis."
+                    )
                 )
             if tag_radio == 'Parts-of-Speech':
                 ts = 'pos'
@@ -200,35 +211,56 @@ def main():
 
             st.sidebar.markdown("---")
 
-            st.sidebar.markdown(_utils.content.message_generate_table)
-
-            _utils.handlers.sidebar_action_button(
+            # Display the sidebar header for generating frequency table
+            st.sidebar.markdown(
+                body=(
+                    "### Generate table\n\n"
+                    "Use the button to process a table."
+                    ),
+                help=(
+                    "Tables are generated based on the loaded target corpus. "
+                    "You can filter the table after it has been generated. "
+                    "The table will include ngrams for the selected tagsets.\n\n"
+                    "Click on the **Help** button for more information on how to use this app."  # noqa: E501
+                    )
+                )
+            # Action button to generate n-grams
+            sidebar_action_button(
                 button_label="N-grams Table",
                 button_icon=":material/manufacturing:",
                 preconditions=[
                     session.get('has_target')[0]
                 ],
-                action=lambda: _utils.handlers.generate_ngrams(
+                action=lambda: generate_ngrams(
                     user_session_id, ngram_span, ts
                     ),
                 spinner_message="Processing n-grams..."
             )
-
+            st.sidebar.markdown("---")
+            # Check if there is a warning message for the n-grams table
             if st.session_state[user_session_id].get("ngram_warning"):
                 msg, icon = st.session_state[user_session_id]["ngram_warning"]
                 st.error(msg, icon=icon)
 
+        # If n-grams are not selected, proceed with clusters
         if ngram_type == 'Clusters':
-
-            tag = None  # <-- Ensure tag is always defined
-            search = None  # <-- If search is also conditionally set
+            # Initialize all variables
+            tag = None
+            search = None
+            node_word = None
 
             st.sidebar.markdown("### Search mode")
             st.sidebar.markdown("Create n-grams from a token or from a tag.")
             from_anchor = st.sidebar.radio(
                 "Enter token or a tag:",
                 ("Token", "Tag"),
-                horizontal=True
+                horizontal=True,
+                help=(
+                    "Choose whether to create clusters based on a specific "
+                    "word (token) or a tag. If you choose 'Token', you can "
+                    "specify a word and how to search for it. If you choose "
+                    "'Tag', you can select a tag from the available tagsets."
+                    )
                 )
 
             if from_anchor == 'Token':
@@ -237,7 +269,15 @@ def main():
                 search_mode = st.sidebar.radio(
                     "Select search type:",
                     ("Fixed", "Starts with", "Ends with", "Contains"),
-                    horizontal=True
+                    horizontal=True,
+                    help=(
+                        "Choose how to search for the node word. "
+                        "'Fixed' will match the exact word, 'Starts with' "
+                        "will match words that begin with a character sequence, "
+                        "'Ends with' will match words that end with the character "
+                        "sequence, and 'Contains' will match words that contain "
+                        "the character sequence anywhere."
+                        )
                     )
                 if search_mode == "Fixed":
                     search = "fixed"
@@ -251,7 +291,13 @@ def main():
                 tag_radio = st.sidebar.radio(
                     "Select a tagset:",
                     ("Parts-of-Speech", "DocuScope"),
-                    horizontal=True
+                    horizontal=True,
+                    help=(
+                        "Choose the tagset to use for clustering. "
+                        "Parts-of-Speech (POS) tags are used for grammatical "
+                        "analysis, while DocuScope tags are used for "
+                        "rhetorical analysis."
+                        )
                     )
 
                 if tag_radio == 'Parts-of-Speech':
@@ -263,7 +309,14 @@ def main():
                 tag_radio = st.sidebar.radio(
                     "Select a tagset:",
                     ("Parts-of-Speech", "DocuScope"),
-                    horizontal=True
+                    horizontal=True,
+                    help=(
+                        "In this mode, you can select a tag from the "
+                        "available tagsets to create clusters based on that tag. "
+                        "For example, if 'NN1' is selected, the clusters will "
+                        "include all n-grams where the node word is tagged as "
+                        "as 'NN1' (noun, singular)."
+                        )
                     )
 
                 if tag_radio == 'Parts-of-Speech':
@@ -297,10 +350,18 @@ def main():
             st.sidebar.markdown("---")
 
             st.sidebar.markdown("### Span & position")
+            # Set the span and position for clusters
             ngram_span = st.sidebar.radio(
-                'Span of your n-grams:',
+                'Span of your clusters:',
                 (2, 3, 4),
-                horizontal=True
+                horizontal=True,
+                help=(
+                    "The span of your clusters determines how many words or "
+                    "tags are included in each cluster. For example, a span "
+                    "of 2 will create two-word sequences, a span "
+                    "of 3 will create three-word sequences, and "
+                    "so on."
+                    )
                 )
             position = st.sidebar.selectbox(
                 'Position of your node word or tag:',
@@ -309,21 +370,33 @@ def main():
 
             st.sidebar.markdown("---")
 
-            st.sidebar.markdown(_utils.content.message_generate_table)
-
-            _utils.handlers.sidebar_action_button(
+            # Display the sidebar header for generating frequency table
+            st.sidebar.markdown(
+                body=(
+                    "### Generate table\n\n"
+                    "Use the button to process a table."
+                    ),
+                help=(
+                    "Tables are generated based on the loaded target corpus. "
+                    "You can filter the table after it has been generated. "
+                    "The table will include cluster frequencies for the selected tagsets.\n\n"  # noqa: E501
+                    "Click on the **Help** button for more information on how to use this app."  # noqa: E501
+                    )
+                )
+            # Action button to generate clusters
+            sidebar_action_button(
                 button_label="Clusters Table",
                 button_icon=":material/manufacturing:",
                 preconditions=[
                     session.get('has_target')[0],  # Only check for corpus presence here
                 ],
-                action=lambda: _utils.handlers.generate_clusters(
+                action=lambda: generate_clusters(
                     user_session_id, from_anchor, node_word,
                     tag, position, ngram_span, search, ts
                 ),
                 spinner_message="Processing clusters..."
             )
-            # Display warning in main container
+            # Display warning if there is an issue with n-grams
             if st.session_state[user_session_id].get("ngram_warning"):
                 msg, icon = st.session_state[user_session_id]["ngram_warning"]
                 st.error(msg, icon=icon)
