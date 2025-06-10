@@ -17,19 +17,6 @@
 # Others populate the results of statistical functions.
 
 
-def message_target_info(target_metadata: dict) -> str:
-    tokens_pos = target_metadata.get('tokens_pos')[0]
-    tokens_ds = target_metadata.get('tokens_ds')[0]
-    ndocs = target_metadata.get('ndocs')[0]
-    target_info = f"""##### Target corpus information:
-
-    Number of part-of-speech tokens in corpus: {tokens_pos:,}
-    \n    Number of DocuScope tokens in corpus: {tokens_ds:,}
-    \n    Number of documents in corpus: {ndocs:,}
-    """
-    return target_info
-
-
 def message_reference_info(reference_metadata):
     tokens_pos = reference_metadata.get('tokens_pos')[0]
     tokens_ds = reference_metadata.get('tokens_ds')[0]
@@ -140,29 +127,6 @@ def message_group_info(grp_a: list[str],
 
 # Static messages that populates the main containers of the apps.
 
-message_tables = """
-    ###### :material/ads_click: \
-    Use the button in the sidebar to generate a table.
-
-    * After the table has been generated,
-    you will be able to toggle between the tagsets.
-    """
-
-message_ngrams = """
-    ###### :material/checklist: \
-    N-grams/Clusters can be created using different options:
-
-    * You can generate a table of the most common 1-, 2-, 3-, and 4-grams.
-
-    * You can input a word or string, specify whether that input should
-    match a token completely or partially, and choose which tagset to return.
-
-    * Alternatively, you can select a tag (like **NN1** or **AcademicTerms**)
-    as the basis for your clusters.
-
-    * For clusters, you must select their span and the slot where your chosen
-    word or tag should appear (on the left, in the middle, or on the right).
-    """
 
 message_collocations = """
     ###### :material/checklist: \
@@ -301,23 +265,6 @@ message_pandabot_tips = """
     craft your requests using specific terms or commands.
     """  # noqa: E501
 
-message_download_tagged = """
-    Once a corpus has been processed, you can use this page to generate
-    a **zipped folder of tagged text files**.
-    The tags are embbedd into the text after a vertical bar:
-    ````
-    At|II root|NN1 , every|AT1 hypothesis|NN1 is|VBZ a|AT1 claim|NN1 about|II the|AT relevance|NN1
-    ````
-    Because the tags identify mutliword units, spaces that occur
-    within a token are replaced with underscores:
-    ````
-    evidence|Reasoning and|SyntacticComplexity theory|AcademicTerms pertaining_to_the|Reasoning possibility_of|ConfidenceHedged sympatric|Description speciation|Description
-    ````
-    If you are planning to use the output to process the files in a tool
-    like AntConc or in a coding environment, take note of these
-    conventions and account for them accordingly.
-    """  # noqa: E501
-
 message_single_document = """
     :point_left: To use this page, first select a document. Then you can:\n
     * Choose up to 5 tags to highlight in the document.
@@ -369,17 +316,6 @@ message_internal_corpora = """
     Likewise, the citation information for [HAP-E can be found here](https://scholar.google.com/scholar_lookup?arxiv_id=2410.16107).
     """  # noqa: E501
 
-message_external_corpora = """
-    An external corpus is one that has already been processed
-    by DocuScope CAC and downloaded to your computer.
-    Most often, you would do this to save time.
-    Processing is the most computationally intensive part of preparing the data.
-    But you also might do this to easily share your data with others.
-    Finally you might want to run you own experiments outside of the tool.
-    The corpus file is in a specialized format called **parquet**.
-    A parquet file can read into coding environments
-    like Python and R using packages like **polars** and **arrow**.
-    """  # noqa: E501
 
 message_naming = """
     Files must be in a TXT (plain text) format.
