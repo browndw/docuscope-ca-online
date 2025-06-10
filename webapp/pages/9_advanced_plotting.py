@@ -23,8 +23,44 @@ project_root = pathlib.Path(__file__).parent.parents[1].resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-import webapp.utilities as _utils   # noqa: E402
-from webapp.menu import menu, require_login   # noqa: E402
+from webapp.utilities.handlers import (  # noqa: E402
+    generate_boxplot,
+    generate_boxplot_by_group,
+    generate_pca,
+    generate_scatterplot,
+    generate_scatterplot_with_groups,
+    get_or_init_user_session,
+    is_valid_df,
+    load_metadata,
+    update_session
+    )
+from webapp.utilities.ui import (   # noqa: E402
+    clear_boxplot_multiselect,
+    clear_plots,
+    color_picker_controls,
+    contribution_info,
+    correlation_info,
+    update_grpa,
+    update_grpb,
+    update_pca_idx_tab1,
+    update_pca_idx_tab2,
+    variance_info
+    )
+from webapp.utilities.formatters import (  # noqa: E402
+    plot_general_boxplot,
+    plot_grouped_boxplot,
+    plot_pca_scatter_highlight,
+    plot_pca_variable_contrib_bar,
+    plot_scatter,
+    plot_scatter_highlight
+    )
+from webapp.utilities.analysis import (  # noqa: E402
+    update_pca_plot
+    )
+from webapp.menu import (   # noqa: E402
+    menu,
+    require_login
+    )
 
 TITLE = "Advanced Plotting"
 ICON = ":material/line_axis:"
@@ -41,7 +77,7 @@ def main() -> None:
     menu()
     st.markdown(f"## {TITLE}")
     # Get or initialize user session
-    user_session_id, session = _utils.handlers.get_or_init_user_session()
+    user_session_id, session = get_or_init_user_session()
 
     st.sidebar.link_button(
         label="Help",
@@ -51,7 +87,7 @@ def main() -> None:
 
     try:
         # Load metadata for the target
-        metadata_target = _utils.handlers.load_metadata(
+        metadata_target = load_metadata(
             'target',
             user_session_id
             )
@@ -59,7 +95,9 @@ def main() -> None:
         pass
 
     # Display a markdown message for plotting
-    st.markdown(_utils.content.message_plotting)
+    st.markdown(
+        body="_utils.content.message_plotting"
+        )
 
     # Radio button to select the type of plot
     plot_type = st.radio(
@@ -85,17 +123,14 @@ def main() -> None:
     # Handle Boxplot selection
     if plot_type == "Boxplot" and session.get('has_target')[0] is True:
 
-        _utils.handlers.update_session('pca', False, user_session_id)
+        update_session('pca', False, user_session_id)
         st.sidebar.markdown("### Tagset")
-
-        with st.sidebar.expander("About general tags"):
-            st.markdown(_utils.content.message_general_tags)
 
         # Radio button to select tag type
         tag_radio_tokens = st.sidebar.radio(
             "Select tags to display:",
             ("Parts-of-Speech", "DocuScope"),
-            on_change=_utils.handlers.clear_plots, args=(user_session_id,),
+            on_change=clear_plots, args=(user_session_id,),
             horizontal=True
             )
 
@@ -103,7 +138,7 @@ def main() -> None:
             tag_type = st.sidebar.radio(
                 "Select from general or specific tags",
                 ("General", "Specific"),
-                on_change=_utils.handlers.clear_plots, args=(user_session_id,),
+                on_change=clear_plots, args=(user_session_id,),
                 horizontal=True)
             if tag_type == 'General':
                 df = st.session_state[user_session_id]["target"]["dtm_pos"]
@@ -166,7 +201,7 @@ def main() -> None:
                         "Select categories for group A:",
                         (sorted(set(metadata_target.get('doccats')[0]['cats']))),
                         key=f"grpa_{user_session_id}",
-                        on_change=_utils.handlers.update_grpa(user_session_id),
+                        on_change=update_grpa(user_session_id),
                         help="Group A will be shown in one color.",
                         disabled=not cats
                     )
@@ -175,7 +210,7 @@ def main() -> None:
                     grpb = st.multiselect(
                         "Select categories for group B:",
                         (sorted(set(metadata_target.get('doccats')[0]['cats']))),
-                        on_change=_utils.handlers.update_grpb(user_session_id),
+                        on_change=update_grpb(user_session_id),
                         key=f"grpb_{user_session_id}",
                         help="Group B will be shown in another color.",
                         disabled=not cats
@@ -188,10 +223,10 @@ def main() -> None:
 
                     if submitted:
                         # If you need to clear state, do it here:
-                        _utils.handlers.clear_boxplot_multiselect(
+                        clear_boxplot_multiselect(
                             user_session_id
                             )
-                        _utils.handlers.generate_boxplot_by_group(
+                        generate_boxplot_by_group(
                             user_session_id, df, box_vals, grpa, grpb
                         )
 
@@ -205,9 +240,10 @@ def main() -> None:
                     st.session_state[user_session_id]["boxplot_group_df"].shape[0] > 0
                 ):
                     df_plot = st.session_state[user_session_id]["boxplot_group_df"]
-                    if _utils.handlers.is_valid_df(df_plot, ['Group', 'Tag']):
-                        hex_color, palette = _utils.formatters.color_picker_controls()
-                        fig = _utils.formatters.plot_grouped_boxplot(df_plot, color=hex_color, palette=palette)
+                    if is_valid_df(df_plot, ['Group', 'Tag']):
+                        # Place color controls and plotting here, outside the form
+                        color_dict = color_picker_controls([", ".join(grpa), ", ".join(grpb)])
+                        fig = plot_grouped_boxplot(df_plot, color=color_dict)
                         st.plotly_chart(fig, use_container_width=True)
 
                         stats = st.session_state[user_session_id]["boxplot_group_stats"]
@@ -237,8 +273,8 @@ def main() -> None:
                     )
 
                 if submitted:
-                    _utils.handlers.clear_boxplot_multiselect(user_session_id)
-                    _utils.handlers.generate_boxplot(
+                    clear_boxplot_multiselect(user_session_id)
+                    generate_boxplot(
                         user_session_id, df, box_vals
                     )
 
@@ -253,10 +289,10 @@ def main() -> None:
                 st.session_state[user_session_id]["boxplot_df"].shape[0] > 0
             ):
                 df_plot = st.session_state[user_session_id]["boxplot_df"]
-                if _utils.handlers.is_valid_df(df_plot, ['Tag', 'RF']):
+                if is_valid_df(df_plot, ['Tag', 'RF']):
                     # --- color controls ---
-                    hex_color, palette = _utils.formatters.color_picker_controls()
-                    fig = _utils.formatters.plot_general_boxplot(df_plot, color=hex_color, palette=palette)
+                    color_dict = color_picker_controls(box_vals)
+                    fig = plot_general_boxplot(df_plot, color=color_dict)
                     st.plotly_chart(fig, use_container_width=True)
 
                     stats = st.session_state[user_session_id]["boxplot_stats"]
@@ -268,17 +304,14 @@ def main() -> None:
     # Handle Scatterplot selection
     elif plot_type == "Scatterplot" and session.get('has_target')[0] is True:
 
-        _utils.handlers.update_session('pca', False, user_session_id)
+        update_session('pca', False, user_session_id)
         st.sidebar.markdown("### Tagset")
-
-        with st.sidebar.expander("About general tags"):
-            st.markdown(_utils.content.message_general_tags)
 
         # Radio button to select tag type
         tag_radio_tokens = st.sidebar.radio(
             "Select tags to display:",
             ("Parts-of-Speech", "DocuScope"),
-            on_change=_utils.handlers.clear_plots,
+            on_change=clear_plots,
             args=(user_session_id,), horizontal=True
             )
 
@@ -287,7 +320,7 @@ def main() -> None:
             tag_type = st.sidebar.radio(
                 "Select from general or specific tags",
                 ("General", "Specific"),
-                on_change=_utils.handlers.clear_plots, args=(user_session_id,),
+                on_change=clear_plots, args=(user_session_id,),
                 horizontal=True
                 )
             if tag_type == 'General':
@@ -347,7 +380,7 @@ def main() -> None:
                     submitted = st.form_submit_button("Scatterplot of Frequencies by Group")
 
                     if submitted:
-                        _utils.handlers.generate_scatterplot_with_groups(
+                        generate_scatterplot_with_groups(
                             user_session_id, df, xaxis, yaxis, metadata_target
                         )
 
@@ -370,8 +403,8 @@ def main() -> None:
                 st.session_state[user_session_id]["scatterplot_group_df"] is not None
             ):
                 df_plot = st.session_state[user_session_id]["scatterplot_group_df"]
-                if _utils.handlers.is_valid_df(df_plot, [xaxis, yaxis]):
-                    fig = _utils.formatters.plot_scatter_highlight(
+                if is_valid_df(df_plot, [xaxis, yaxis]):
+                    fig = plot_scatter_highlight(
                         df_plot,
                         xaxis,
                         yaxis,
@@ -381,11 +414,8 @@ def main() -> None:
                     st.plotly_chart(fig, use_container_width=True)
 
                     cc_df, cc_r, cc_p = st.session_state[user_session_id]["scatter_group_correlation"]  # noqa: E501
-                    st.markdown(_utils.content.message_correlation_info(
-                        cc_df,
-                        cc_r,
-                        cc_p
-                    ))
+                    # Display correlation information
+                    st.info(correlation_info(cc_df, cc_r, cc_p))
                 else:
                     st.info("Please select valid variables and ensure data is available.")
 
@@ -410,7 +440,7 @@ def main() -> None:
                 submitted = st.form_submit_button("Scatterplot of Frequencies")
 
                 if submitted:
-                    _utils.handlers.generate_scatterplot(
+                    generate_scatterplot(
                         user_session_id, df, xaxis, yaxis
                     )
 
@@ -424,16 +454,13 @@ def main() -> None:
                 st.session_state[user_session_id]["scatterplot_df"] is not None
             ):
                 df_plot = st.session_state[user_session_id]["scatterplot_df"]
-                if _utils.handlers.is_valid_df(df_plot, [xaxis, yaxis]):
-                    fig = _utils.formatters.plot_scatter(df_plot, xaxis, yaxis)
+                if is_valid_df(df_plot, [xaxis, yaxis]):
+                    fig = plot_scatter(df_plot, xaxis, yaxis)
                     st.plotly_chart(fig, use_container_width=True)
 
                     cc_df, cc_r, cc_p = st.session_state[user_session_id]["scatter_correlation"]  # noqa: E501
-                    st.markdown(_utils.content.message_correlation_info(
-                        cc_df,
-                        cc_r,
-                        cc_p)
-                    )
+                    # Display correlation information
+                    st.markdown(correlation_info(cc_df, cc_r, cc_p))
                 else:
                     st.info("Please select valid variables and ensure data is available.")
 
@@ -442,14 +469,11 @@ def main() -> None:
 
         st.sidebar.markdown("### Tagset")
 
-        with st.sidebar.expander("About general tags"):
-            st.markdown(_utils.content.message_general_tags)
-
         # Radio button to select tag type
         tag_radio_tokens = st.sidebar.radio(
             "Select tags to display:",
             ("Parts-of-Speech", "DocuScope"),
-            on_change=_utils.handlers.clear_plots, args=(user_session_id,),
+            on_change=clear_plots, args=(user_session_id,),
             horizontal=True
             )
 
@@ -458,7 +482,7 @@ def main() -> None:
             tag_type = st.sidebar.radio(
                 "Select from general or specific tags",
                 ("General", "Specific"),
-                on_change=_utils.handlers.clear_plots, args=(user_session_id,),
+                on_change=clear_plots, args=(user_session_id,),
                 horizontal=True
                 )
             if tag_type == 'General':
@@ -496,9 +520,7 @@ def main() -> None:
                 )
 
             if submitted:
-                _utils.handlers.generate_pca(
-                    user_session_id, df, metadata_target, session
-                )
+                generate_pca(user_session_id, df, metadata_target, session)
 
         if st.session_state[user_session_id].get("pca_warning"):
             msg, icon = st.session_state[user_session_id]["pca_warning"]
@@ -512,7 +534,7 @@ def main() -> None:
             st.session_state[user_session_id]["target"]["pca_df"].shape[0] > 0
         ):
             pca_df = st.session_state[user_session_id]["target"]["pca_df"]
-            if _utils.handlers.is_valid_df(pca_df, ['PC1', 'PC2']):
+            if is_valid_df(pca_df, ['PC1', 'PC2']):
                 contrib_df = st.session_state[user_session_id]["target"]["contrib_df"]
                 ve = metadata_target.get("variance")[0]['temp']
 
@@ -530,7 +552,7 @@ def main() -> None:
                             list(range(1, len(df.columns))),
                             key=f"pca_idx_tab1_{user_session_id}",
                             index=current_idx - 1,
-                            on_change=_utils.handlers.update_pca_idx_tab1,
+                            on_change=update_pca_idx_tab1,
                             args=(user_session_id,)
                         )
                     with col2:
@@ -549,13 +571,13 @@ def main() -> None:
                     if 'pca_idx' not in st.session_state[user_session_id]:
                         st.session_state[user_session_id]['pca_idx'] = 1
                     idx = st.session_state[user_session_id].get('pca_idx', 1)
-                    pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = _utils.analysis.update_pca_plot(
+                    pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = update_pca_plot(
                         pca_df,
                         contrib_df,
                         ve,
                         idx
                     )
-                    fig = _utils.formatters.plot_pca_scatter_highlight(
+                    fig = plot_pca_scatter_highlight(
                         pca_df,
                         pca_x,
                         pca_y,
@@ -565,12 +587,7 @@ def main() -> None:
                         y_label=pca_y
                     )
                     st.plotly_chart(fig, use_container_width=True)
-                    st.info(_utils.content.message_variance_info(
-                        pca_x,
-                        pca_y,
-                        ve_1,
-                        ve_2)
-                    )
+                    st.info(variance_info(pca_x, pca_y, ve_1, ve_2))
 
                 # --- TAB 2 ---
                 with tab2:
@@ -588,13 +605,13 @@ def main() -> None:
                             list(range(1, len(df.columns))),
                             key=f"pca_idx_tab2_{user_session_id}",
                             index=st.session_state[user_session_id].get('pca_idx', 1) - 1,
-                            on_change=_utils.handlers.update_pca_idx_tab2,
+                            on_change=update_pca_idx_tab2,
                             args=(user_session_id,)
                         )
 
                     # Always use the value from session state for plotting
                     idx = st.session_state[user_session_id].get('pca_idx', 1)
-                    pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = _utils.analysis.update_pca_plot(
+                    pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = update_pca_plot(
                         pca_df,
                         contrib_df,
                         ve,
@@ -609,14 +626,9 @@ def main() -> None:
                             key=f"sort_by_{user_session_id}"
                         )
 
-                    st.info(_utils.content.message_contribution_info(
-                        pca_x2,
-                        pca_y2,
-                        contrib_x2,
-                        contrib_y2
-                    ))
+                    st.info(contribution_info(pca_x2, pca_y2, contrib_x2, contrib_y2))
 
-                    fig = _utils.formatters.plot_pca_variable_contrib_bar(
+                    fig = plot_pca_variable_contrib_bar(
                         contrib_1_plot2, contrib_2_plot2,
                         pc1_label=pca_x2, pc2_label=pca_y2,
                         sort_by=sort_by
