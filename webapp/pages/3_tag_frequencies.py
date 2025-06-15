@@ -130,7 +130,7 @@ def main():
             else:
                 fig = plot_tag_frequencies_bar(df)
                 st.plotly_chart(fig, use_container_width=True)
-                plot_download_link(fig, filename="my_plot.png")
+                plot_download_link(fig, filename="tag_frequency_plot.png")
 
         st.sidebar.markdown("---")
         # Add a download button for the tag frequencies table
