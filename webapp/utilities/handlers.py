@@ -1048,11 +1048,17 @@ def generate_scatterplot(
         xaxis: str,
         yaxis: str
         ) -> None:
+    # --- Clear color picker session state for this plot ---
+    color_picker_prefixes = ["color_picker_form_", "color_picker_form_Highlight", "color_picker_form_Non-Highlight"]  # noqa: E501
+    keys_to_remove = [k for k in st.session_state.keys() if any(k.startswith(prefix) for prefix in color_picker_prefixes)]  # noqa: E501
+    for k in keys_to_remove:
+        del st.session_state[k]
+
     # --- User input validation ---
     if df is None or df.is_empty():
         st.session_state[user_session_id]["scatter_warning"] = (
             """
-            No data available for plotting."
+            No data available for plotting.
             Please process your corpus and select valid tags.
             """,
             ":material/info:"
@@ -1086,9 +1092,9 @@ def generate_scatterplot(
         )
         return
 
-    # --- Compute correlation ---
+    # --- Compute correlation (always as dict) ---
     try:
-        cc_df, cc_r, cc_p = analysis.correlation(
+        cc_dict = analysis.correlation(
             df_plot,
             xaxis,
             yaxis
@@ -1102,9 +1108,8 @@ def generate_scatterplot(
 
     # --- Save results and clear warning ---
     st.session_state[user_session_id]["scatterplot_df"] = df_plot
-    st.session_state[user_session_id]["scatter_correlation"] = (cc_df, cc_r, cc_p)
+    st.session_state[user_session_id]["scatter_correlation"] = cc_dict
     st.session_state[user_session_id]["scatter_warning"] = None
-    st.success('Scatterplot generated!')
     # Optionally: st.rerun()
 
 
@@ -1112,9 +1117,14 @@ def generate_scatterplot_with_groups(
         user_session_id: str,
         df: pl.DataFrame,
         xaxis: str,
-        yaxis: str,
-        metadata_target: dict
+        yaxis: str
         ) -> None:
+    # --- Clear color picker session state for this plot ---
+    color_picker_prefixes = ["color_picker_form_", "color_picker_form_Highlight", "color_picker_form_Non-Highlight"]  # noqa: E501
+    keys_to_remove = [k for k in st.session_state.keys() if any(k.startswith(prefix) for prefix in color_picker_prefixes)]  # noqa: E501
+    for k in keys_to_remove:
+        del st.session_state[k]
+
     # --- User input validation ---
     if df is None or df.is_empty():
         st.session_state[user_session_id]["scatter_group_warning"] = (
@@ -1158,9 +1168,9 @@ def generate_scatterplot_with_groups(
         )
         return
 
-    # --- Compute correlation ---
+    # --- Compute correlation for all points only ---
     try:
-        cc_df, cc_r, cc_p = analysis.correlation(
+        cc_dict = analysis.correlation(
             df_plot,
             xaxis,
             yaxis
@@ -1174,9 +1184,8 @@ def generate_scatterplot_with_groups(
 
     # --- Save results and clear warning ---
     st.session_state[user_session_id]["scatterplot_group_df"] = df_plot
-    st.session_state[user_session_id]["scatter_group_correlation"] = (cc_df, cc_r, cc_p)
+    st.session_state[user_session_id]["scatter_group_correlation"] = cc_dict
     st.session_state[user_session_id]["scatter_group_warning"] = None
-    st.success('Scatterplot with groups generated!')
     # Optionally: st.rerun()
 
 
@@ -1265,7 +1274,6 @@ def generate_boxplot(
     st.session_state[user_session_id]["boxplot_df"] = df_pandas
     st.session_state[user_session_id]["boxplot_stats"] = stats
     st.session_state[user_session_id]["boxplot_warning"] = None
-    st.success('Boxplot generated!')
 
 
 def generate_boxplot_by_group(
@@ -1353,7 +1361,6 @@ def generate_boxplot_by_group(
     st.session_state[user_session_id]["boxplot_group_df"] = df_pandas
     st.session_state[user_session_id]["boxplot_group_stats"] = stats
     st.session_state[user_session_id]["boxplot_group_warning"] = None
-    st.success('Boxplot by group generated!')
 
 
 def generate_document_html(
