@@ -16,8 +16,9 @@ import base64
 import json
 import os
 import pathlib
-import streamlit as st
 import sys
+
+import streamlit as st
 
 # Ensure project root is in sys.path for both desktop and online
 project_root = pathlib.Path(__file__).parent.parent.resolve()
@@ -40,7 +41,7 @@ DESKTOP = _options['global']['desktop_mode']
 
 
 st.set_page_config(
-    page_title="DocuScope Corpus Analysis", page_icon=":material/quick_reference_all:",
+    page_title="DocuScope Corpus Analysis", page_icon=":material/library_books:",
     layout="wide"
     )
 
@@ -104,7 +105,7 @@ def version_info(ds_version: str,
 
 def main() -> None:
     """
-    index.py: Streamlit entry point for DocuScope CAC.
+    index.py: Streamlit entry point for DocuScope CA.
 
     Returns
     -------
