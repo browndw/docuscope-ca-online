@@ -21,6 +21,8 @@ import docx
 from docx.shared import RGBColor
 from docx.shared import Pt
 from io import BytesIO
+import math
+import numpy as np
 import os
 import pandas as pd
 import plotly.express as px
@@ -373,53 +375,97 @@ def plot_general_boxplot(
     medians = df.groupby(tag_col)[value_col].median().sort_values(ascending=False)
     tag_order = medians.index.tolist()
 
-    # Determine color mapping
+    # Color logic
     if isinstance(color, dict):
-        color_discrete_map = color
-        color_arg = tag_col
-        color_seq = None
+        color_map = color
     elif isinstance(color, str) and color.lower().startswith("#"):
-        color_discrete_map = {cat: color for cat in tag_order}
-        color_arg = tag_col
-        color_seq = None
+        color_map = {cat: color for cat in tag_order}
     elif palette:
-        color_discrete_map = None
-        color_arg = tag_col
-        color_seq = palette
+        palette_colors = palette if isinstance(palette, list) else px.colors.qualitative.Set1
+        color_map = {cat: palette_colors[i % len(palette_colors)] for i, cat in enumerate(tag_order)}
     else:
-        color_discrete_map = None
-        color_arg = tag_col
-        color_seq = px.colors.qualitative.Set1
+        palette_colors = px.colors.qualitative.Set1
+        color_map = {cat: palette_colors[i % len(palette_colors)] for i, cat in enumerate(tag_order)}
 
+    # Compute summary stats for hover
+    stats = (
+        df.groupby(tag_col)[value_col]
+        .agg(['mean', 'median', lambda s: s.quantile(0.75) - s.quantile(0.25), 'min', 'max'])
+        .rename(columns={'mean': 'Mean', 'median': 'Median', '<lambda_0>': 'IQR', 'min': 'Min', 'max': 'Max'})
+        .reset_index()
+    )
+
+    # Create boxplot
     fig = px.box(
         df,
         x=value_col,
         y=tag_col,
-        color=color_arg,
-        color_discrete_map=color_discrete_map,
-        color_discrete_sequence=color_seq,
+        color=tag_col,
+        color_discrete_map=color_map,
         points=False,
         orientation='h',
         category_orders={tag_col: tag_order}
     )
 
+    # Turn off default boxplot hover for all traces
+    for trace in fig.data:
+        if trace.type == "box":
+            trace.hoverinfo = "skip"
+            trace.hoveron = "boxes"
+
+    # Overlay transparent bar for custom hover
+    bar_df = stats.copy()
+    bar_df['bar'] = bar_df['Max'] - bar_df['Min']
+    bar_df['base'] = bar_df['Min']
+    fig2 = px.bar(
+        bar_df,
+        y=tag_col,
+        x='bar',
+        base='base',
+        orientation='h',
+        color=tag_col,
+        color_discrete_map=color_map,
+        hover_data={
+            'Mean': ':.2f',
+            'Median': ':.2f',
+            'IQR': ':.2f',
+            'Min': ':.2f',
+            'Max': ':.2f',
+            'base': False,
+            'bar': False,
+        },
+    ).update_traces(opacity=0.01,  # nearly invisible, but hoverable
+                    hovertemplate="<b>%{y}</b><br>Min: %{customdata[3]:.2f}%<br>IQR: %{customdata[2]:.2f}%<br>Median: %{customdata[1]:.2f}%<br>Mean: %{customdata[0]:.2f}%<br>Max: %{customdata[4]:.2f}%<extra></extra>")
+
+    # Add bar traces to boxplot
+    for trace in fig2.data:
+        fig.add_trace(trace)
+
     fig.update_layout(
-        showlegend=True,
+        hovermode="closest",
+        showlegend=False,
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=-0.25,  # Move legend even lower
+            y=-0.25,
             xanchor="left",
             x=0
         ),
         legend_title_text='',
         margin=dict(l=0, r=0, t=30, b=0),
-        height=100 * len(tag_order) + 120,    # More vertical space per box
+        height=100 * len(tag_order) + 120,
         xaxis_title='Frequency (per 100 tokens)',
         yaxis_title="Tag"
     )
-    fig.update_yaxes(showticklabels=True, title=None)
-    fig.update_xaxes(title_text='Frequency (per 100 tokens)')
+    fig.update_yaxes(showticklabels=True, title=None, tickangle=0)
+    fig.update_xaxes(title_text='Frequency (per 100 tokens)', range=[0, None])
+    # Add vertical line at x=0, colored gray
+    fig.add_vline(
+        x=0,
+        line_width=2,
+        line_color="lightgray",
+        layer="below"
+    )
     return fig
 
 
@@ -441,18 +487,24 @@ def plot_grouped_boxplot(
     group_order = sorted(df[group_col].unique())
 
     if isinstance(color, dict):
-        # Per-category coloring
         color_discrete_map = color
         color_arg = group_col
     elif isinstance(color, str) and color.lower().startswith("#"):
-        # Single color for all
         color_discrete_map = {cat: color for cat in df[group_col].unique()}
         color_arg = group_col
     else:
-        # Use palette or default
         color_discrete_map = None
         color_arg = group_col
 
+    # Compute summary stats for hover (per tag+group)
+    stats = (
+        df.groupby([tag_col, group_col])[value_col]
+        .agg(['mean', 'median', lambda s: s.quantile(0.75) - s.quantile(0.25), 'min', 'max'])
+        .rename(columns={'mean': 'Mean', 'median': 'Median', '<lambda_0>': 'IQR', 'min': 'Min', 'max': 'Max'})
+        .reset_index()
+    )
+
+    # Create boxplot
     fig = px.box(
         df,
         y=tag_col,
@@ -469,7 +521,48 @@ def plot_grouped_boxplot(
         boxmode="group"
     )
 
+    # Turn off default boxplot hover for all traces
+    for trace in fig.data:
+        if trace.type == "box":
+            trace.hoverinfo = "skip"
+            trace.hoveron = "boxes"
+
+    # Overlay transparent bar for custom hover (per tag+group)
+    bar_df = stats.copy()
+    bar_df['bar'] = bar_df['Max'] - bar_df['Min']
+    bar_df['base'] = bar_df['Min']
+    fig2 = px.bar(
+        bar_df,
+        y=tag_col,
+        x='bar',
+        base='base',
+        color=group_col,
+        orientation='h',
+        color_discrete_map=color_discrete_map,
+        category_orders={group_col: group_order, tag_col: tag_order},
+        hover_data={
+            'Mean': ':.2f',
+            'Median': ':.2f',
+            'IQR': ':.2f',
+            'Min': ':.2f',
+            'Max': ':.2f',
+            'base': False,
+            'bar': False,
+            tag_col: False,
+            group_col: False,
+        },
+    ).update_traces(
+        opacity=0.01,  # nearly invisible, but hoverable
+        hovertemplate="<b>%{y} | %{customdata[5]}</b><br>Min: %{customdata[3]:.2f}%<br>IQR: %{customdata[2]:.2f}%<br>Median: %{customdata[1]:.2f}%<br>Mean: %{customdata[0]:.2f}%<br>Max: %{customdata[4]:.2f}%<extra></extra>"
+    )
+
+    # Add bar traces to boxplot
+    for trace in fig2.data:
+        trace.showlegend = False  # Hide bar overlay from legend
+        fig.add_trace(trace)
+
     fig.update_layout(
+        hovermode="closest",
         showlegend=True,
         legend=dict(
             orientation="h",
@@ -485,6 +578,15 @@ def plot_grouped_boxplot(
         yaxis_title=None
     )
     fig.update_yaxes(showticklabels=True, title=None)
+    fig.update_xaxes(title_text='Frequency (per 100 tokens)', range=[0, None])
+
+    # Add vertical line at x=0, colored gray
+    fig.add_vline(
+        x=0,
+        line_width=2,
+        line_color="gray",
+        layer="below"
+    )
     return fig
 
 
@@ -492,27 +594,131 @@ def plot_scatter(
         df: pl.DataFrame,
         x_col: str,
         y_col: str,
+        color=None,
+        trendline: bool = False
         ) -> go.Figure:
     """
-    Simple scatterplot for two variables.
+    Simple scatterplot for two variables, with optional color support and trendline.
     """
     x_label = x_col + ' (per 100 tokens)'
     y_label = y_col + ' (per 100 tokens)'
-    fig = px.scatter(
-        df,
-        x=x_col,
-        y=y_col,
-        color_discrete_sequence=['#133955'],
-        opacity=0.75,
-        hover_data=['doc_id'] if 'doc_id' in df.columns else None
-    )
-    fig.update_traces(marker=dict(size=8))
+
+    # Determine color
+    if isinstance(color, dict):
+        color_val = list(color.values())[0] if color else '#133955'
+    elif isinstance(color, str) and color.lower().startswith("#"):
+        color_val = color
+    else:
+        color_val = '#133955'
+
+    # Axis scaling and ticks
+    x_max = df[x_col].max() if not df.empty else 1
+    y_max = df[y_col].max() if not df.empty else 1
+    axis_max = max(x_max, y_max)
+    axis_max = axis_max * 1.05 if axis_max > 0 else 1
+
+    # --- Tick calculation: min 4, max 8, multiples of 2.5 ---
+    def get_tick_interval(axis_max):
+        candidates = [0.5, 1, 2.5, 5, 10, 25, 50, 100]
+        for interval in candidates:
+            n_ticks = int(axis_max // interval) + 1
+            if 4 <= n_ticks <= 8:
+                return interval
+        for interval in reversed(candidates):
+            n_ticks = int(axis_max // interval) + 1
+            if n_ticks >= 4:
+                return interval
+        return None  # fallback: let Plotly decide
+
+    tick_interval = get_tick_interval(axis_max)
+    if tick_interval:
+        axis_max = math.ceil(axis_max / tick_interval) * tick_interval
+        n_ticks = int(axis_max // tick_interval) + 1
+        tickvals = [round(i * tick_interval, 2) for i in range(n_ticks)]
+        ticktext = [str(v) for v in tickvals]
+        xaxis_kwargs = dict(
+            range=[0, axis_max],
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black',
+            tickvals=tickvals,
+            ticktext=ticktext
+        )
+        yaxis_kwargs = dict(
+            range=[0, axis_max],
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black',
+            tickvals=tickvals,
+            ticktext=ticktext
+        )
+    else:
+        xaxis_kwargs = dict(
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black'
+        )
+        yaxis_kwargs = dict(
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black'
+        )
+
+    fig = go.Figure()
+
+    # All points
+    fig.add_trace(go.Scatter(
+        x=df[x_col],
+        y=df[y_col],
+        mode='markers',
+        marker=dict(
+            color=color_val,
+            size=8,
+            opacity=0.75,
+            line=dict(width=0)
+        ),
+        name="All Points",
+        text=df['doc_id'] if 'doc_id' in df.columns else None,
+        hovertemplate=(
+            "<b>doc_id:</b> %{text}<br>"
+            f"<b>{x_col}:</b> %{{x:.2f}}%<br>"
+            f"<b>{y_col}:</b> %{{y:.2f}}%<extra></extra>"
+        ) if 'doc_id' in df.columns else (
+            f"<b>{x_col}:</b> %{{x:.2f}}%<br>"
+            f"<b>{y_col}:</b> %{{y:.2f}}%<extra></extra>"
+        ),
+        showlegend=False
+    ))
+
+    # Optional: Add trendline for all points
+    if trendline and not df.empty and len(df) > 1:
+        x = df[x_col]
+        y = df[y_col]
+        coeffs = np.polyfit(x, y, 1)
+        x_fit = np.array([0, axis_max])
+        y_fit = coeffs[0] * x_fit + coeffs[1]
+        fig.add_trace(go.Scatter(
+            x=x_fit,
+            y=y_fit,
+            mode='lines',
+            line=dict(color='tomato', width=2, dash='dash'),
+            name="Linear fit",
+            showlegend=False
+        ))
+
+    fig.update_xaxes(**xaxis_kwargs)
+    fig.update_yaxes(**yaxis_kwargs)
     fig.update_layout(
         showlegend=False,
         margin=dict(l=0, r=0, t=30, b=40),
         xaxis_title=x_label or x_col,
         yaxis_title=y_label or y_col,
-        height=500
+        height=500,
+        width=500
     )
     return fig
 
@@ -523,7 +729,13 @@ def plot_scatter_highlight(
         y_col: str,
         group_col: str,
         selected_groups: list = None,
+        color=None,
+        trendline=None
         ) -> go.Figure:
+    """
+    Scatterplot with optional group highlighting and user-defined colors.
+    Highlighted points are plotted on top of non-highlighted points.
+    """
     x_label = x_col + ' (per 100 tokens)'
     y_label = y_col + ' (per 100 tokens)'
     df = df.copy()
@@ -532,32 +744,152 @@ def plot_scatter_highlight(
     df['Highlight'] = True
     if selected_groups:
         df['Highlight'] = df[group_col].apply(lambda g: g in selected_groups)
-        color_map = {True: '#133955', False: 'lightgray'}
-        color_seq = [color_map[True], color_map[False]]
-        # Ensure Highlight is categorical and True is first
-        df['Highlight'] = df['Highlight'].astype('category')
-        df['Highlight'] = df['Highlight'].cat.set_categories([True, False])
-        if not df.empty:
-            df.iloc[0, df.columns.get_loc('Highlight')] = True
     else:
-        color_seq = ['#133955']
+        df['Highlight'] = True
 
-    fig = px.scatter(
-        df,
-        x=x_col,
-        y=y_col,
-        color='Highlight',
-        color_discrete_sequence=color_seq,
-        opacity=0.75,
-        hover_data=['doc_id', group_col] if group_col in df.columns else None
-    )
-    fig.update_traces(marker=dict(size=8))
+    # Color logic
+    if isinstance(color, dict):
+        highlight_color = color.get('Highlight', '#133955')
+        non_highlight_color = color.get('Non-Highlight', 'lightgray')
+    elif isinstance(color, str) and color.lower().startswith("#"):
+        highlight_color = color
+        non_highlight_color = 'lightgray'
+    else:
+        highlight_color = '#133955'
+        non_highlight_color = 'lightgray'
+
+    # Axis scaling and ticks
+    x_max = df[x_col].max() if not df.empty else 1
+    y_max = df[y_col].max() if not df.empty else 1
+    axis_max = max(x_max, y_max)
+    axis_max = axis_max * 1.05 if axis_max > 0 else 1
+
+    # --- Tick calculation: min 4, max 8, multiples of 2.5 ---
+    def get_tick_interval(axis_max):
+        candidates = [0.5, 1, 2.5, 5, 10, 25, 50, 100]
+        for interval in candidates:
+            n_ticks = int(axis_max // interval) + 1
+            if 4 <= n_ticks <= 8:
+                return interval
+        for interval in reversed(candidates):
+            n_ticks = int(axis_max // interval) + 1
+            if n_ticks >= 4:
+                return interval
+        return None  # fallback: let Plotly decide
+
+    tick_interval = get_tick_interval(axis_max)
+    if tick_interval:
+        axis_max = math.ceil(axis_max / tick_interval) * tick_interval
+        n_ticks = int(axis_max // tick_interval) + 1
+        tickvals = [round(i * tick_interval, 2) for i in range(n_ticks)]
+        ticktext = [str(v) for v in tickvals]
+        xaxis_kwargs = dict(
+            range=[0, axis_max],
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black',
+            tickvals=tickvals,
+            ticktext=ticktext
+        )
+        yaxis_kwargs = dict(
+            range=[0, axis_max],
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black',
+            tickvals=tickvals,
+            ticktext=ticktext
+        )
+    else:
+        xaxis_kwargs = dict(
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black'
+        )
+        yaxis_kwargs = dict(
+            showgrid=False,
+            zeroline=True,
+            zerolinewidth=2,
+            zerolinecolor='black'
+        )
+
+    # Split data
+    df_non_highlight = df[df['Highlight'] == False]  # noqa: E712
+    df_highlight = df[df['Highlight'] == True]  # noqa: E712
+
+    fig = go.Figure()
+
+    # Non-highlighted points (bottom layer)
+    if not df_non_highlight.empty:
+        fig.add_trace(go.Scatter(
+            x=df_non_highlight[x_col],
+            y=df_non_highlight[y_col],
+            mode='markers',
+            marker=dict(
+                color=non_highlight_color,
+                size=8,
+                opacity=0.5,
+                line=dict(width=0)
+            ),
+            name="Non-Highlight",
+            text=df_non_highlight[group_col] if group_col in df_non_highlight.columns else None,
+            hovertemplate=(
+                f"<b>{group_col}:</b> %{{text}}<br>"
+                f"<b>{x_col}:</b> %{{x:.2f}}%<br>"
+                f"<b>{y_col}:</b> %{{y:.2f}}%<extra></extra>"
+            ) if group_col in df_non_highlight.columns else None,
+            showlegend=False
+        ))
+
+    # Highlighted points (top layer)
+    if not df_highlight.empty:
+        fig.add_trace(go.Scatter(
+            x=df_highlight[x_col],
+            y=df_highlight[y_col],
+            mode='markers',
+            marker=dict(
+                color=highlight_color,
+                size=8,
+                opacity=0.85,
+                line=dict(width=1, color='black')
+            ),
+            name="Highlight",
+            text=df_highlight[group_col] if group_col in df_highlight.columns else None,
+            hovertemplate=(
+                f"<b>{group_col}:</b> %{{text}}<br>"
+                f"<b>{x_col}:</b> %{{x:.2f}}%<br>"
+                f"<b>{y_col}:</b> %{{y:.2f}}%<extra></extra>"
+            ) if group_col in df_highlight.columns else None,
+            showlegend=False
+        ))
+
+    # Optional: Add trendline for highlighted points only
+    if trendline and not df_highlight.empty and len(df_highlight) > 1:
+        x = df_highlight[x_col]
+        y = df_highlight[y_col]
+        coeffs = np.polyfit(x, y, 1)
+        x_fit = np.array([0, axis_max])
+        y_fit = coeffs[0] * x_fit + coeffs[1]
+        fig.add_trace(go.Scatter(
+            x=x_fit,
+            y=y_fit,
+            mode='lines',
+            line=dict(color='tomato', width=2, dash='dash'),
+            name="Linear fit",
+            showlegend=False
+        ))
+
+    fig.update_xaxes(**xaxis_kwargs)
+    fig.update_yaxes(**yaxis_kwargs)
     fig.update_layout(
         showlegend=False,
         margin=dict(l=0, r=0, t=30, b=40),
         xaxis_title=x_label or x_col,
         yaxis_title=y_label or y_col,
-        height=500
+        height=500,
+        width=500
     )
     return fig
 
@@ -573,6 +905,7 @@ def plot_pca_scatter_highlight(
         ) -> go.Figure:
     """
     Create a scatter plot for PCA results with optional highlighting of groups.
+    Highlighted points are plotted on top of non-highlighted points.
     """
     # Convert to pandas if needed
     if hasattr(df, "to_pandas"):
@@ -589,15 +922,12 @@ def plot_pca_scatter_highlight(
     df['Highlight'] = True
     if selected_groups:
         df['Highlight'] = df[group_col].apply(lambda g: g in selected_groups)
-        color_map = {True: '#133955', False: 'lightgray'}
-        color_seq = [color_map[True], color_map[False]]
-        # Ensure Highlight is categorical and True is first
-        df['Highlight'] = df['Highlight'].astype('category')
-        df['Highlight'] = df['Highlight'].cat.set_categories([True, False])
-        if not df.empty:
-            df.iloc[0, df.columns.get_loc('Highlight')] = True
     else:
-        color_seq = ['#133955']
+        df['Highlight'] = True
+
+    # Color logic
+    highlight_color = '#133955'
+    non_highlight_color = 'lightgray'
 
     # Find max absolute value for axis normalization
     max_abs = max(
@@ -606,16 +936,55 @@ def plot_pca_scatter_highlight(
     )
     max_abs = (int(max_abs) + 1) if max_abs == int(max_abs) else round(max_abs + 0.5, 2)
 
-    fig = px.scatter(
-        df,
-        x=x_col,
-        y=y_col,
-        color='Highlight',
-        color_discrete_sequence=color_seq,
-        opacity=0.75,
-        hover_data=['doc_id', group_col] if group_col in df.columns else None
-    )
-    fig.update_traces(marker=dict(size=10))
+    # Split data
+    df_non_highlight = df[df['Highlight'] == False]
+    df_highlight = df[df['Highlight'] == True]
+
+    fig = go.Figure()
+
+    # Non-highlighted points (bottom layer)
+    if not df_non_highlight.empty:
+        fig.add_trace(go.Scatter(
+            x=df_non_highlight[x_col],
+            y=df_non_highlight[y_col],
+            mode='markers',
+            marker=dict(
+                color=non_highlight_color,
+                size=8,
+                opacity=0.5,
+                line=dict(width=0)
+            ),
+            name="Non-Highlight",
+            text=df_non_highlight[group_col] if group_col in df_non_highlight.columns else None,
+            hovertemplate=(
+                f"<b>{group_col}:</b> %{{text}}<br>"
+                f"<b>{x_col}:</b> %{{x:.2f}}<br>"
+                f"<b>{y_col}:</b> %{{y:.2f}}<extra></extra>"
+            ) if group_col in df_non_highlight.columns else None,
+            showlegend=False
+        ))
+
+    # Highlighted points (top layer)
+    if not df_highlight.empty:
+        fig.add_trace(go.Scatter(
+            x=df_highlight[x_col],
+            y=df_highlight[y_col],
+            mode='markers',
+            marker=dict(
+                color=highlight_color,
+                size=8,
+                opacity=0.85,
+                line=dict(width=1, color='black')
+            ),
+            name="Highlight",
+            text=df_highlight[group_col] if group_col in df_highlight.columns else None,
+            hovertemplate=(
+                f"<b>{group_col}:</b> %{{text}}<br>"
+                f"<b>{x_col}:</b> %{{x:.2f}}<br>"
+                f"<b>{y_col}:</b> %{{y:.2f}}<extra></extra>"
+            ) if group_col in df_highlight.columns else None,
+            showlegend=False
+        ))
 
     # Add zero axes
     fig.add_shape(type="line",
@@ -634,7 +1003,8 @@ def plot_pca_scatter_highlight(
         margin=dict(l=0, r=0, t=30, b=40),
         xaxis_title=x_label or x_col,
         yaxis_title=y_label or y_col,
-        height=500
+        height=500,
+        width=500
     )
     fig.update_xaxes(showgrid=False, range=[-max_abs, max_abs], zeroline=False)
     fig.update_yaxes(showgrid=False, range=[-max_abs, max_abs], zeroline=False)
