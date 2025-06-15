@@ -97,16 +97,42 @@ def reference_info(
     return reference_info
 
 
-def collocation_info(collocation_data):
-    mi = str(collocation_data[1]).upper()
-    span = collocation_data[2] + 'L - ' + collocation_data[3] + 'R'
-    coll_info = f"""##### Collocate information:
-
-    Association measure: {mi}
-    \n    Span: {span}
-    \n    Node word: {collocation_data[0]}
+def correlation_info(cc_dict):
     """
-    return coll_info
+    Formats correlation info for display in a code block for easy copy-paste.
+    r is always shown to 3 decimal places, p to 5 decimal places.
+    """
+    def fmt_r(val):
+        try:
+            return f"{float(val):.3f}"
+        except Exception:
+            return str(val)
+
+    def fmt_p(val):
+        try:
+            return f"{float(val):.5f}"
+        except Exception:
+            return str(val)
+
+    lines = []
+    if 'all' in cc_dict and cc_dict['all']:
+        lines.append(
+            f"All points: r({cc_dict['all']['df']}) = {fmt_r(cc_dict['all']['r'])}, p = {fmt_p(cc_dict['all']['p'])}"  # noqa: E501
+        )
+    if 'highlight' in cc_dict and cc_dict['highlight']:
+        lines.append(
+            f"Highlighted group: r({cc_dict['highlight']['df']}) = {fmt_r(cc_dict['highlight']['r'])}, p = {fmt_p(cc_dict['highlight']['p'])}"  # noqa: E501
+        )
+        if 'non_highlight' in cc_dict and cc_dict['non_highlight']:
+            lines.append(
+                f"Non-highlighted group: r({cc_dict['non_highlight']['df']}) = {fmt_r(cc_dict['non_highlight']['r'])}, p = {fmt_p(cc_dict['non_highlight']['p'])}"  # noqa: E501
+            )
+    lines_str = "\n    ".join(lines)
+    corr_info = f"""##### Pearson's correlation coefficient:
+
+    {lines_str}
+    """
+    return corr_info
 
 
 def variance_info(
@@ -133,18 +159,6 @@ def contribution_info(
     {pca_x}: {contrib_x}\n    {pca_y}: {contrib_y}
     """
     return contrib_info
-
-
-def correlation_info(
-        cc_df: str,
-        cc_r: float,
-        cc_p: float
-        ) -> str:
-    corr_info = f"""##### Pearson's correlation coefficient:
-
-    r({cc_df}) = {cc_r}, p-value = {cc_p}
-    """
-    return corr_info
 
 
 def message_stats_info(
@@ -350,7 +364,7 @@ def sidebar_action_button(
         otherwise show in the main area.
     """
     container = st.sidebar if sidebar else st
-    if container.button(button_label, icon=button_icon):
+    if container.button(button_label, icon=button_icon, type="primary"):
         if not all(preconditions):
             st.error(
                     body=(
@@ -541,40 +555,13 @@ def tagset_selection(
         simplify_funcs: dict = None,
         tag_filters: dict = None,
         tag_radio_key: str = "tag_radio",
-        tag_type_key: str = "tag_type_radio"
+        tag_type_key: str = "tag_type_radio",
+        on_change=None,
+        on_change_args=None
         ) -> tuple:
     """
     Modular sidebar UI for tagset selection,
     supporting custom keys, filters, and simplify functions.
-
-    Parameters
-    ----------
-    user_session_id : str
-        The session ID for the current user.
-    session_state : dict
-        The session state dictionary.
-    persist_func : callable
-        Function to persist widget state.
-    page_stem : str
-        The stem of the current page for state persistence.
-    tagset_keys : dict, optional
-        Dict mapping tagset names to session keys, e.g.
-        {
-            "Parts-of-Speech": {"General": "ft_pos", "Specific": "ft_pos"},
-            "DocuScope": "ft_ds"
-        }
-    simplify_funcs : dict, optional
-        Dict mapping tagset names (and optionally subtypes) to simplify functions.
-        E.g., {"Parts-of-Speech": {"General": ds.freq_simplify, "Specific": None}}
-    tag_filters : dict, optional
-        Dict mapping tagset names (and optionally subtypes) to filter functions or
-        lists of tags to exclude.
-        E.g., {"Parts-of-Speech": {"Specific": lambda df: df.filter(pl.col("Tag") != "FU")},
-        "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")}
-    tag_radio_key : str
-        Key for the tagset radio widget.
-    tag_type_key : str
-        Key for the tag type radio widget (for subtypes).
 
     Returns
     -------
@@ -587,7 +574,6 @@ def tagset_selection(
     tag_type : str or None
         The selected tag type (if applicable).
     """
-    st.sidebar.markdown("### Tagset")
     tagset_keys = tagset_keys or {
         "Parts-of-Speech": {"General": "ft_pos", "Specific": "ft_pos"},
         "DocuScope": "ft_ds"
@@ -606,7 +592,9 @@ def tagset_selection(
             "If you select Parts-of-Speech, you can choose between "
             "general (for the full CLAWS7 tagset) "
             "or specific tags (for a simplified, collapsed tagset). "
-        )
+        ),
+        on_change=on_change,
+        args=on_change_args
     )
 
     tag_type = None
@@ -618,7 +606,9 @@ def tagset_selection(
             "Select from general or specific tags",
             list(tagset_keys[tag_radio].keys()),
             key=persist_func(tag_type_key, page_stem, user_session_id),
-            horizontal=True
+            horizontal=True,
+            on_change=on_change,
+            args=on_change_args
         )
         session_key = tagset_keys[tag_radio][tag_type]
         df = session_state[user_session_id]["target"].get(session_key)
@@ -937,29 +927,79 @@ def update_ref(
             )
 
 
-def clear_boxplot_multiselect(
-        user_session_id: str
-        ) -> None:
+def clear_boxplot_multiselect(user_session_id: str) -> None:
     """
     Clear the boxplot multiselects and reset related session state.
     This function resets the boxplot variable selections and clears
-    any associated DataFrames and statistics in the session state.
-    Parameters
-    ----------
-    user_session_id : str
-        The session ID for the current user session.
-    Returns
-    -------
-    None
+    any associated DataFrames, statistics, and widget state in the session state.
     """
     if user_session_id not in st.session_state:
         return
+
+    # Clear DataFrames, stats, warnings, and selected variables/groups
     keys = [
         "boxplot_df", "boxplot_stats", "boxplot_warning",
         "boxplot_group_df", "boxplot_group_stats", "boxplot_group_warning"
     ]
     for key in keys:
         st.session_state[user_session_id][key] = None
+
+    # Also clear widget keys related to boxplot UI,
+    # including all segmented controls and buttons
+    widget_keys = [
+        f"grpa_{user_session_id}",
+        f"grpb_{user_session_id}",
+        f"boxplot_btn_{user_session_id}",
+        f"boxplot_group_btn_{user_session_id}",
+        f"boxplot_vars_grouped_{user_session_id}",
+        f"boxplot_vars_nongrouped_{user_session_id}",
+        # Add color picker keys if used
+        f"color_picker_boxplot_{user_session_id}_cat_0",
+        f"color_picker_boxplot_{user_session_id}_cat_1",
+        # If you use more color pickers, add their keys here
+    ]
+    for wkey in widget_keys:
+        if wkey in st.session_state:
+            del st.session_state[wkey]
+
+
+def clear_scatterplot_multiselect(user_session_id: str) -> None:
+    """
+    Clear the scatterplot multiselects and reset related session state.
+    This function resets the scatterplot variable selections and clears
+    any associated DataFrames, statistics, and widget state in the session state.
+    """
+    if user_session_id not in st.session_state:
+        return
+
+    # Clear DataFrames, stats, warnings, and selected variables/groups
+    keys = [
+        "scatterplot_df", "scatter_correlation", "scatter_warning",
+        "scatterplot_group_df", "scatter_group_correlation", "scatter_group_warning",
+        "scatterplot_group_x", "scatterplot_group_y", "scatterplot_group_selected_groups",
+        "scatterplot_nongrouped_x", "scatterplot_nongrouped_y"
+    ]
+    for key in keys:
+        st.session_state[user_session_id][key] = None
+
+    # Also clear widget keys related to scatterplot UI,
+    # including all segmented controls and buttons
+    widget_keys = [
+        f"scatterplot_btn_{user_session_id}",
+        f"scatterplot_group_btn_{user_session_id}",
+        f"scatter_x_grouped_{user_session_id}",
+        f"scatter_y_grouped_{user_session_id}",
+        f"scatter_x_nongrouped_{user_session_id}",
+        f"scatter_y_nongrouped_{user_session_id}",
+        f"highlight_scatter_groups_{user_session_id}",
+        # Add color picker keys if used
+        f"color_picker_scatter_{user_session_id}_Highlight_0",
+        f"color_picker_scatter_{user_session_id}_Non-Highlight_1",
+        f"color_picker_scatter_{user_session_id}_All_Points_0",
+    ]
+    for wkey in widget_keys:
+        if wkey in st.session_state:
+            del st.session_state[wkey]
 
 
 def clear_plots(
@@ -1021,12 +1061,15 @@ def clear_plots(
 
     # --- Clear color picker and segmented control widget states ---
     widget_prefixes = [
-        "color_picker_form_", "seg_", "filter_", "highlight_", "toggle_", "download_", "boxplot_vars_"
+        "color_picker_form_", "seg_", "filter_", "highlight_", "toggle_", "download_", "boxplot_vars_"  # noqa: E501
     ]
     keys_to_remove = [k for k in st.session_state.keys()
                       if any(k.startswith(prefix) for prefix in widget_prefixes)]
     for k in keys_to_remove:
         del st.session_state[k]
+    # --- Clear boxplot and scatterplot multiselects ---
+    clear_boxplot_multiselect(session_id)
+    clear_scatterplot_multiselect(session_id)
 
 
 # Functions for storing values associated with specific apps
@@ -1079,24 +1122,44 @@ def rgb_to_hex(rgb_str):
 
 
 def color_picker_controls(
-    cats: list[str] = None,
-    default_hex: str = "#1565c0",
-    default_palette: str = "Plotly",
-    expander_label: str = "Box/Line Colors",
-    form_key: str = "color_picker_form"
-) -> dict:
+        cats: list[str] = None,
+        default_hex: str = "#133955",
+        default_palette: str = "Plotly",
+        expander_label: str = "Plot Colors",
+        key_prefix: str = "color_picker_form",
+        non_highlight_default: str = "#d3d3d3",
+        reference_corpus_default: str = "#e67e22"
+        ) -> dict:
     """
     Modular color picker controls for per-category coloring.
     Returns a dict: {category: hex_color}
+    key_prefix: a string to ensure unique Streamlit widget keys.
     """
 
-    # Only use qualitative palettes that are available
-    plotly_palettes = [p for p in dir(plotly.colors.qualitative) if not p.startswith("_") and isinstance(getattr(plotly.colors.qualitative, p), list)]
+    # Get qualitative palettes, omitting any that end with '_r' except 'Alphabet'
+    qualitative_palettes = [
+        p for p in dir(plotly.colors.qualitative)
+        if not p.startswith("_")
+        and isinstance(getattr(plotly.colors.qualitative, p), list)
+        and (not p.endswith("_r") or p == "Alphabet")
+    ]
+
+    # Add sequential palettes (flat list, not dicts), omitting any that end with '_r'
+    sequential_palettes = [
+        p for p in dir(plotly.colors.sequential)
+        if not p.startswith("_")
+        and isinstance(getattr(plotly.colors.sequential, p), list)
+        and (not p.endswith("_r"))
+    ]
+
+    # Combine and sort palettes alphabetically
+    plotly_palettes = sorted(qualitative_palettes + sequential_palettes)
+
     if not cats:
         cats = ["All"]
 
-    color_mode_key = f"{form_key}_mode"
-    palette_key = f"{form_key}_palette"
+    color_mode_key = f"{key_prefix}_mode"
+    palette_key = f"{key_prefix}_palette"
 
     color_dict = {}
 
@@ -1110,11 +1173,27 @@ def color_picker_controls(
 
         if color_mode == "Custom (pick colors)":
             prev_color = default_hex
+            seen_keys = set()
             for idx, cat in enumerate(cats):
+                # Set special defaults for certain categories
+                if cat.lower() == "non-highlight":
+                    color_default = non_highlight_default
+                elif cat.lower() == "reference corpus":
+                    color_default = reference_corpus_default
+                else:
+                    color_default = prev_color
+                safe_cat = str(cat).replace(" ", "_").replace(",", "_").replace("/", "_")
+                if not safe_cat:
+                    safe_cat = f"cat_{idx}"
+                # Ensure uniqueness even if cats has duplicates or empty strings
+                color_key = f"{key_prefix}_{safe_cat}_{idx}"
+                while color_key in seen_keys:
+                    color_key = f"{key_prefix}_{safe_cat}_{idx}_{len(seen_keys)}"
+                seen_keys.add(color_key)
                 color = st.color_picker(
                     f"Color for {cat}",
-                    value=st.session_state.get(f"{form_key}_{cat}", prev_color),
-                    key=f"{form_key}_{cat}"
+                    value=st.session_state.get(color_key, color_default),
+                    key=color_key
                 )
                 color_dict[cat] = color
                 prev_color = color  # Default next color to previous
@@ -1122,25 +1201,32 @@ def color_picker_controls(
             palette = st.selectbox(
                 "Plotly palette",
                 plotly_palettes,
-                index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,
+                index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,  # noqa: E501
                 key=palette_key
             )
-            palette_colors_raw = getattr(plotly.colors.qualitative, palette)
-            palette_colors = [rgb_to_hex(c) for c in palette_colors_raw]
+            palette_colors_raw = getattr(plotly.colors.qualitative, palette, None) or getattr(plotly.colors.sequential, palette, None)  # noqa: E501
+            palette_colors = [rgb_to_hex(c) for c in palette_colors_raw] if palette_colors_raw else [default_hex]  # noqa: E501
             prev_color = palette_colors[0] if palette_colors else default_hex
+            seen_keys = set()
             for idx, cat in enumerate(cats):
+                safe_cat = str(cat).replace(" ", "_").replace(",", "_").replace("/", "_")
+                if not safe_cat:
+                    safe_cat = f"cat_{idx}"
+                color_key = f"{key_prefix}_{safe_cat}_{idx}"
+                while color_key in seen_keys:
+                    color_key = f"{key_prefix}_{safe_cat}_{idx}_{len(seen_keys)}"
+                seen_keys.add(color_key)
                 default_idx = (
-                    palette_colors.index(st.session_state.get(f"{form_key}_{cat}", prev_color))
-                    if st.session_state.get(f"{form_key}_{cat}", prev_color) in palette_colors
+                    palette_colors.index(st.session_state.get(color_key, prev_color))
+                    if st.session_state.get(color_key, prev_color) in palette_colors
                     else idx % len(palette_colors)
                 )
-
                 color = st.segmented_control(
                     f"Color for {cat}",
                     options=palette_colors,
                     default=palette_colors[default_idx],
                     selection_mode="single",
-                    key=f"{form_key}_{cat}"
+                    key=color_key
                 )
                 color_dict[cat] = color
                 prev_color = color  # Default next color to previous
