@@ -418,9 +418,7 @@ def main():
                 if user_api_key:
                     if _utils.llms.is_openai_key_valid(user_api_key):
                         st.success("API key is valid!")
-                        st.session_state[
-                            user_session_id
-                            ]["user_key"] = user_api_key
+                        st.session_state[user_session_id]["user_key"] = user_api_key
                         st.rerun()
                     else:
                         st.error(
