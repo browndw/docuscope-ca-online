@@ -15,11 +15,14 @@
 import numpy as np
 import pandas as pd
 import polars as pl
-import scipy
+from scipy.stats import pearsonr
 from sklearn import decomposition
 
 
-def subset_pl(tok_pl, select_ids: list):
+def subset_pl(
+        tok_pl,
+        select_ids: list
+        ) -> pl.DataFrame:
     token_subset = (
         tok_pl
         .with_columns(
@@ -34,9 +37,11 @@ def subset_pl(tok_pl, select_ids: list):
     return token_subset
 
 
-def split_corpus(tok: dict,
-                 tar_list: list,
-                 ref_list: list):
+def split_corpus(
+        tok: dict,
+        tar_list: list,
+        ref_list: list
+        ) -> tuple:
 
     tar_docs = {
         key: value for key, value in tok.items() if key.startswith
@@ -69,7 +74,9 @@ def split_corpus(tok: dict,
     return tar_docs, ref_docs, tar_words, ref_words, tar_tokens, ref_tokens, tar_ndocs, ref_ndocs  # noqa: E501
 
 
-def freq_simplify_pl(frequency_table):
+def freq_simplify_pl(
+        frequency_table
+        ) -> pl.DataFrame:
     """
     A function for aggregating part-of-speech tags \
         into more general lexical categories \
@@ -124,7 +131,9 @@ def freq_simplify_pl(frequency_table):
     return simple_df
 
 
-def dtm_simplify_grouped(dtm_pl):
+def dtm_simplify_grouped(
+        dtm_pl
+        ) -> pl.DataFrame:
     simple_df = (
         dtm_pl
         .unpivot(pl.selectors.numeric(), index=["doc_id", "Group"])
@@ -156,7 +165,9 @@ def dtm_simplify_grouped(dtm_pl):
     return simple_df
 
 
-def tags_table_grouped(df: pl.DataFrame) -> pl.DataFrame:
+def tags_table_grouped(
+        df: pl.DataFrame
+        ) -> pl.DataFrame:
     """
     Processes a document-feature-matrix to compute absolute frequency (AF),
     relative frequency (RF), and range
@@ -243,8 +254,10 @@ def tags_table_grouped(df: pl.DataFrame) -> pl.DataFrame:
     return result
 
 
-def pca_contributions(dtm: pd.DataFrame,
-                      doccats: list):
+def pca_contributions(
+        dtm: pd.DataFrame,
+        doccats: list
+        ) -> tuple:
 
     df = dtm.set_index('doc_id')
     n = min(len(df.index), len(df.columns))
@@ -275,10 +288,12 @@ def pca_contributions(dtm: pd.DataFrame,
     return pca_df, contrib_df, ve
 
 
-def update_pca_plot(coord_data,
-                    contrib_data,
-                    variance,
-                    pca_idx):
+def update_pca_plot(
+        coord_data,
+        contrib_data,
+        variance,
+        pca_idx
+        ) -> tuple:
 
     pca_x = coord_data.columns[pca_idx - 1]
     pca_y = coord_data.columns[pca_idx]
@@ -333,20 +348,67 @@ def update_pca_plot(coord_data,
     )
 
 
-def correlation(df: pd.DataFrame,
-                x: str,
-                y: str):
-    cc = scipy.stats.stats.pearsonr(df[x], df[y])
-    cc_r = round(cc.statistic, 3)
-    cc_p = round(cc.pvalue, 5)
-    cc_df = len(df.index) - 2
-    return cc_df, cc_r, cc_p
+def correlation(
+        df: pd.DataFrame,
+        x: str,
+        y: str
+        ) -> dict:
+    """
+    Returns a dict with Pearson correlation for all points only.
+    """
+    cc = pearsonr(df[x], df[y])
+    return {
+        'all': {
+            'df': len(df.index) - 2,
+            'r': round(cc.statistic, 3),
+            'p': round(cc.pvalue, 5)
+        }
+    }
 
 
-def boxplots_pl(dtm_pl: pl.DataFrame,
-                box_vals: list,
-                grp_a=None,
-                grp_b=None) -> pl.DataFrame:
+def correlation_update(
+        cc_dict, df: pd.DataFrame,
+        x: str,
+        y: str,
+        group_col: str,
+        highlight_groups: list
+        ) -> dict:
+    """
+    Updates cc_dict with highlight and non-highlight group correlations.
+    """
+    # Highlight group
+    df_high = df[df[group_col].isin(highlight_groups)]
+    if len(df_high) > 2:
+        cc_high = pearsonr(df_high[x], df_high[y])
+        cc_dict['highlight'] = {
+            'df': len(df_high.index) - 2,
+            'r': round(cc_high.statistic, 3),
+            'p': round(cc_high.pvalue, 5)
+        }
+    else:
+        cc_dict['highlight'] = None
+
+    # Non-highlight group
+    df_non = df[~df[group_col].isin(highlight_groups)]
+    if len(df_non) > 2:
+        cc_non = pearsonr(df_non[x], df_non[y])
+        cc_dict['non_highlight'] = {
+            'df': len(df_non.index) - 2,
+            'r': round(cc_non.statistic, 3),
+            'p': round(cc_non.pvalue, 5)
+        }
+    else:
+        cc_dict['non_highlight'] = None
+
+    return cc_dict
+
+
+def boxplots_pl(
+        dtm_pl: pl.DataFrame,
+        box_vals: list,
+        grp_a=None,
+        grp_b=None
+        ) -> pl.DataFrame:
 
     df_plot = (
         dtm_pl
@@ -406,8 +468,10 @@ def boxplots_pl(dtm_pl: pl.DataFrame,
         return df_plot
 
 
-def scatterplots_pl(dtm_pl: pl.DataFrame,
-                    axis_vals: list):
+def scatterplots_pl(
+        dtm_pl: pl.DataFrame,
+        axis_vals: list
+        ) -> pl.DataFrame:
 
     df_plot = (
         dtm_pl
