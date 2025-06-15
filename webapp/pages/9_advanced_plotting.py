@@ -37,9 +37,11 @@ from webapp.utilities.handlers import (  # noqa: E402
 from webapp.utilities.ui import (   # noqa: E402
     clear_boxplot_multiselect,
     clear_plots,
+    clear_scatterplot_multiselect,
     color_picker_controls,
     contribution_info,
     correlation_info,
+    tagset_selection,
     update_grpa,
     update_grpb,
     update_pca_idx_tab1,
@@ -47,6 +49,7 @@ from webapp.utilities.ui import (   # noqa: E402
     variance_info
     )
 from webapp.utilities.formatters import (  # noqa: E402
+    plot_download_link,
     plot_general_boxplot,
     plot_grouped_boxplot,
     plot_pca_scatter_highlight,
@@ -55,6 +58,7 @@ from webapp.utilities.formatters import (  # noqa: E402
     plot_scatter_highlight
     )
 from webapp.utilities.analysis import (  # noqa: E402
+    correlation_update,
     update_pca_plot
     )
 from webapp.menu import (   # noqa: E402
@@ -116,6 +120,7 @@ def main() -> None:
             for groups (if you've processed corpus metadata).
             """
             ],
+        on_change=clear_plots, args=(user_session_id,),
         horizontal=False,
         index=None
         )
@@ -127,46 +132,44 @@ def main() -> None:
         st.sidebar.markdown("### Tagset")
 
         # Radio button to select tag type
-        tag_radio_tokens = st.sidebar.radio(
-            "Select tags to display:",
-            ("Parts-of-Speech", "DocuScope"),
-            on_change=clear_plots, args=(user_session_id,),
-            horizontal=True
-            )
-
-        if tag_radio_tokens == 'Parts-of-Speech':
-            tag_type = st.sidebar.radio(
-                "Select from general or specific tags",
-                ("General", "Specific"),
-                on_change=clear_plots, args=(user_session_id,),
-                horizontal=True)
-            if tag_type == 'General':
-                df = st.session_state[user_session_id]["target"]["dtm_pos"]
-                df = ds.dtm_simplify(df)
-
-            elif tag_type == 'Specific':
-                df = st.session_state[user_session_id]["target"]["dtm_pos"]
-
-        # Handle DocuScope tag selection
-        elif tag_radio_tokens == 'DocuScope':
-            df = st.session_state[user_session_id]["target"]["dtm_ds"]
-            tag_type = None
-
-        st.sidebar.markdown("---")
+        df, cats, tag_radio, tag_type = tagset_selection(
+            user_session_id=user_session_id,
+            session_state=st.session_state,
+            persist_func=lambda key, page, user: f"{key}_{page}_{user}",
+            page_stem="advanced_plotting",
+            tagset_keys={
+                "Parts-of-Speech": {"General": "dtm_pos", "Specific": "dtm_pos"},
+                "DocuScope": "dtm_ds"
+            },
+            simplify_funcs={
+                "Parts-of-Speech": {"General": ds.dtm_simplify, "Specific": None}
+            },
+            tag_filters={
+                "Parts-of-Speech": {
+                    "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),  # noqa: E501
+                    "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])  # noqa: E501
+                },
+                "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])  # noqa: E501
+            },
+            tag_radio_key="tag_radio",
+            tag_type_key="tag_type_radio",
+            on_change=clear_plots,
+            on_change_args=(user_session_id,)
+        )
 
         st.markdown("""---""")
 
         # Toggle to plot using grouping variables
-        by_group = st.toggle("Plot using grouping variables.")
+        by_group = st.toggle(
+            label="Plot using grouping variables.",
+            on_change=clear_plots, args=(user_session_id,)
+            )
 
         # Determine categories for plotting
-        if df.height == 0 or df is None:
+        if df is None or getattr(df, "height", 0) == 0:
             cats = []
-        elif df.height > 0:
-            to_drop = ['doc_id', 'Other', 'FU', 'Untagged']
-            cats = sorted(
-                list(df.drop([x for x in to_drop if x in df.columns]).columns)
-                )
+        else:
+            cats = sorted([col for col in df.columns if col != "doc_id"])
 
         # Handle plotting with grouping variables
         if by_group:
@@ -180,55 +183,60 @@ def main() -> None:
                     icon=":material/new_label:"
                     )
             else:
-                with st.sidebar.form(key="boxplot_group_form"):
-                    st.markdown("### Variables")
-                    box_vals = st.multiselect(
-                        "Select variables for plotting:",
-                        (cats),
-                        key=f"boxplot_vars_{user_session_id}",
-                        help="Choose one or more tags to plot as boxplots."
-                        # REMOVE on_change and args here!
-                    )
-
+                with st.expander("Boxplot Variables", expanded=True):
+                    # Create a form for boxplot grouping variables
+                    # Before the form
                     st.markdown('### Grouping variables')
                     st.markdown(
                         """Select grouping variables from your metadata
-                        and click the button to generate boxplots of frequencies.
-                        """
+                        and click the button to generate boxplots of frequencies."""
                     )
-                    st.markdown('#### Group A')
-                    grpa = st.multiselect(
+                    all_cats = sorted(set(metadata_target.get('doccats')[0]['cats']))
+
+                    grpa = st.segmented_control(
                         "Select categories for group A:",
-                        (sorted(set(metadata_target.get('doccats')[0]['cats']))),
+                        all_cats,
+                        selection_mode="multi",
                         key=f"grpa_{user_session_id}",
-                        on_change=update_grpa(user_session_id),
-                        help="Group A will be shown in one color.",
+                        on_change=update_grpa,
+                        args=(user_session_id,),
+                        help="Group A will be shown in one boxplot.",
                         disabled=not cats
                     )
 
-                    st.markdown('#### Group B')
-                    grpb = st.multiselect(
+                    grpb = st.segmented_control(
                         "Select categories for group B:",
-                        (sorted(set(metadata_target.get('doccats')[0]['cats']))),
-                        on_change=update_grpb(user_session_id),
+                        all_cats,
+                        selection_mode="multi",
                         key=f"grpb_{user_session_id}",
-                        help="Group B will be shown in another color.",
+                        on_change=update_grpb,
+                        args=(user_session_id,),
+                        help="Group B will be shown in another boxplot.",
                         disabled=not cats
                     )
 
-                    submitted = st.form_submit_button(
-                        label="Boxplots of Frequencies by Group",
-                        icon=":material/manufacturing:"
-                        )
+                    st.markdown("### Variables")
+                    box_val1 = st.segmented_control(
+                        "Select variables for plotting:",
+                        cats,
+                        selection_mode="multi",
+                        key=f"boxplot_vars_grouped_{user_session_id}",
+                        help="Choose one or more tags to plot as boxplots."
+                    )
 
-                    if submitted:
-                        # If you need to clear state, do it here:
-                        clear_boxplot_multiselect(
-                            user_session_id
-                            )
-                        generate_boxplot_by_group(
-                            user_session_id, df, box_vals, grpa, grpb
-                        )
+                # Sidebar action button
+                boxplot_group_btn = st.sidebar.button(
+                    label="Generate Boxplots",
+                    key=f"boxplot_group_btn_{user_session_id}",
+                    help="Generate grouped boxplots for selected variables.",
+                    type="secondary",
+                    use_container_width=False,
+                    icon=":material/manufacturing:"
+                )
+
+                if boxplot_group_btn:
+                    clear_boxplot_multiselect(user_session_id)
+                    generate_boxplot_by_group(user_session_id, df, box_val1, grpa, grpb)
 
                 if st.session_state[user_session_id].get("boxplot_group_warning"):
                     msg, icon = st.session_state[user_session_id]["boxplot_group_warning"]
@@ -242,7 +250,10 @@ def main() -> None:
                     df_plot = st.session_state[user_session_id]["boxplot_group_df"]
                     if is_valid_df(df_plot, ['Group', 'Tag']):
                         # Place color controls and plotting here, outside the form
-                        color_dict = color_picker_controls([", ".join(grpa), ", ".join(grpb)])
+                        color_dict = color_picker_controls(
+                            [", ".join(grpa), ", ".join(grpb)],
+                            key_prefix=f"color_picker_boxplot_{user_session_id}"
+                        )
                         fig = plot_grouped_boxplot(df_plot, color=color_dict)
                         st.plotly_chart(fig, use_container_width=True)
 
@@ -258,25 +269,31 @@ def main() -> None:
 
         # Handle plotting without grouping variables
         else:
-            with st.sidebar.form(key="boxplot_form"):
+            with st.expander("Boxplot Variables", expanded=True):
                 st.markdown("### Variables")
-                box_vals = st.multiselect(
+                box_val2 = st.segmented_control(
                     "Select variables for plotting:",
-                    (cats),
-                    key=f"boxplot_vars_{user_session_id}",
+                    cats,
+                    selection_mode="multi",
+                    key=f"boxplot_vars_nongrouped_{user_session_id}",
                     help="Choose one or more tags to plot as boxplots."
-                    # REMOVE on_change and args here!
                 )
-                submitted = st.form_submit_button(
-                    label="Boxplots of Frequencies",
-                    icon=":material/manufacturing:"
-                    )
 
-                if submitted:
-                    clear_boxplot_multiselect(user_session_id)
-                    generate_boxplot(
-                        user_session_id, df, box_vals
-                    )
+            # Sidebar action button
+            boxplot_btn = st.sidebar.button(
+                label="Boxplots of Frequencies",
+                key=f"boxplot_btn_{user_session_id}",
+                help="Generate boxplots for selected variables.",
+                type="secondary",
+                use_container_width=False,
+                icon=":material/manufacturing:"
+            )
+
+            if boxplot_btn:
+                clear_boxplot_multiselect(user_session_id)
+                generate_boxplot(
+                    user_session_id, df, box_val2
+                )
 
             if st.session_state[user_session_id].get("boxplot_warning"):
                 msg, icon = st.session_state[user_session_id]["boxplot_warning"]
@@ -291,9 +308,10 @@ def main() -> None:
                 df_plot = st.session_state[user_session_id]["boxplot_df"]
                 if is_valid_df(df_plot, ['Tag', 'RF']):
                     # --- color controls ---
-                    color_dict = color_picker_controls(box_vals)
+                    color_dict = color_picker_controls(box_val2)
                     fig = plot_general_boxplot(df_plot, color=color_dict)
                     st.plotly_chart(fig, use_container_width=True)
+                    plot_download_link(fig, filename="boxplots.png")
 
                     stats = st.session_state[user_session_id]["boxplot_stats"]
                     st.markdown("##### Descriptive statistics:")
@@ -307,50 +325,39 @@ def main() -> None:
         update_session('pca', False, user_session_id)
         st.sidebar.markdown("### Tagset")
 
-        # Radio button to select tag type
-        tag_radio_tokens = st.sidebar.radio(
-            "Select tags to display:",
-            ("Parts-of-Speech", "DocuScope"),
+        df, cats, tag_radio, tag_type = tagset_selection(
+            user_session_id=user_session_id,
+            session_state=st.session_state,
+            persist_func=lambda key, page, user: f"{key}_{page}_{user}",
+            page_stem="advanced_plotting",
+            tagset_keys={
+                "Parts-of-Speech": {"General": "dtm_pos", "Specific": "dtm_pos"},
+                "DocuScope": "dtm_ds"
+            },
+            simplify_funcs={
+                "Parts-of-Speech": {"General": ds.dtm_simplify, "Specific": None}
+            },
+            tag_filters={
+                "Parts-of-Speech": {
+                    "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),
+                    "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])
+                },
+                "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])
+            },
+            tag_radio_key="tag_radio",
+            tag_type_key="tag_type_radio",
             on_change=clear_plots,
-            args=(user_session_id,), horizontal=True
-            )
-
-        # Handle Parts-of-Speech tag selection
-        if tag_radio_tokens == 'Parts-of-Speech':
-            tag_type = st.sidebar.radio(
-                "Select from general or specific tags",
-                ("General", "Specific"),
-                on_change=clear_plots, args=(user_session_id,),
-                horizontal=True
-                )
-            if tag_type == 'General':
-                df = st.session_state[user_session_id]["target"]["dtm_pos"]
-                df = ds.dtm_simplify(df)
-
-            elif tag_type == 'Specific':
-                df = st.session_state[user_session_id]["target"]["dtm_pos"]
-
-        # Handle DocuScope tag selection
-        elif tag_radio_tokens == 'DocuScope':
-            df = st.session_state[user_session_id]["target"]["dtm_ds"]
-            tag_type = None
-
-        st.sidebar.markdown("---")
-
-        st.markdown("---")
-
-        by_group_highlight = st.toggle("Hightlight groups in scatterplots.")
+            on_change_args=(user_session_id,)
+        )
 
         # Determine categories for plotting
-        if df.height == 0 or df is None:
+        if df is None or getattr(df, "height", 0) == 0:
             cats = []
-        elif df.height > 0:
-            to_drop = ['doc_id', 'Other', 'FU', 'Untagged']
-            cats = sorted(
-                list(df.drop([x for x in to_drop if x in df.columns]).columns)
-                )
+        else:
+            cats = sorted([col for col in df.columns if col != "doc_id"])
 
-        # Handle scatterplot with group highlighting
+        by_group_highlight = st.toggle("Highlight groups in scatterplots.")
+
         if by_group_highlight:
             if session['has_meta'][0] is False:
                 st.warning(
@@ -361,41 +368,58 @@ def main() -> None:
                     icon=":material/new_label:"
                 )
             else:
-                with st.sidebar.form(key="scatterplot_group_form"):
+                with st.expander("Scatterplot Variables", expanded=True):
+
+                    st.markdown("### Highlight Groups")
+                    all_groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
+                    selected_groups = st.segmented_control(
+                        "Highlight categories in plot:",
+                        options=all_groups,
+                        selection_mode="multi",
+                        key=f"highlight_scatter_groups_{user_session_id}"
+                    )
                     st.markdown("### Variables")
-                    xaxis = st.selectbox(
-                        "Select variable for the x-axis",
-                        (cats),
-                        key=f"scatter_x_{user_session_id}",
+                    xaxis1 = st.segmented_control(
+                        "Select variable for the x-axis:",
+                        cats,
+                        selection_mode="single",
+                        key=f"scatter_x_grouped_{user_session_id}",
                         help="Choose a tag for the x-axis.",
                         disabled=not cats
                     )
-                    yaxis = st.selectbox(
-                        "Select variable for the y-axis",
-                        (cats),
-                        key=f"scatter_y_{user_session_id}",
+                    yaxis1 = st.segmented_control(
+                        "Select variable for the y-axis:",
+                        cats,
+                        selection_mode="single",
+                        key=f"scatter_y_grouped_{user_session_id}",
                         help="Choose a tag for the y-axis.",
                         disabled=not cats
                     )
-                    submitted = st.form_submit_button("Scatterplot of Frequencies by Group")
 
-                    if submitted:
+                    # Sidebar action button
+                    scatterplot_group_btn = st.sidebar.button(
+                        label="Scatterplot of Frequencies by Group",
+                        key=f"scatterplot_group_btn_{user_session_id}",
+                        help="Generate grouped scatterplot for selected variables.",
+                        type="secondary",
+                        use_container_width=False,
+                        icon=":material/manufacturing:"
+                    )
+
+                    if scatterplot_group_btn:
+                        clear_scatterplot_multiselect(user_session_id)
+                        clear_scatterplot_multiselect(user_session_id)
+                        # Store the selected variables in session state
+                        st.session_state[user_session_id]["scatterplot_group_x"] = xaxis1
+                        st.session_state[user_session_id]["scatterplot_group_y"] = yaxis1
+                        st.session_state[user_session_id]["scatterplot_group_selected_groups"] = selected_groups  # noqa: E501
                         generate_scatterplot_with_groups(
-                            user_session_id, df, xaxis, yaxis, metadata_target
+                            user_session_id, df, xaxis1, yaxis1
                         )
 
             if st.session_state[user_session_id].get("scatter_group_warning"):
                 msg, icon = st.session_state[user_session_id]["scatter_group_warning"]
                 st.warning(msg, icon=icon)
-
-            # --- Multiselect for categories to highlight ---
-            all_groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
-            selected_groups = st.multiselect(
-                "Highlight categories in plot:",
-                all_groups,
-                default=[],  # Start with no groups selected
-                key=f"highlight_scatter_groups_{user_session_id}"
-            )
 
             # Plot if available
             if (
@@ -403,64 +427,104 @@ def main() -> None:
                 st.session_state[user_session_id]["scatterplot_group_df"] is not None
             ):
                 df_plot = st.session_state[user_session_id]["scatterplot_group_df"]
-                if is_valid_df(df_plot, [xaxis, yaxis]):
-                    fig = plot_scatter_highlight(
-                        df_plot,
-                        xaxis,
-                        yaxis,
-                        'Group',
-                        selected_groups
+                x_col = st.session_state[user_session_id].get("scatterplot_group_x")
+                y_col = st.session_state[user_session_id].get("scatterplot_group_y")
+                plot_groups = st.session_state[user_session_id].get("scatterplot_group_selected_groups", [])  # noqa: E501
+                if is_valid_df(df_plot, [x_col, y_col]):
+                    color_dict = color_picker_controls(
+                        ["Highlight", "Non-Highlight"],
+                        key_prefix=f"color_picker_scatter_{user_session_id}"
+                    )
+                    show_trend = st.checkbox(
+                        label="Show linear fit (regression line)",
+                        value=False
                         )
-                    st.plotly_chart(fig, use_container_width=True)
+                    fig = plot_scatter_highlight(
+                        df=df_plot,
+                        x_col=x_col,
+                        y_col=y_col,
+                        group_col="Group",
+                        selected_groups=plot_groups,
+                        color=color_dict,
+                        trendline=show_trend)
 
-                    cc_df, cc_r, cc_p = st.session_state[user_session_id]["scatter_group_correlation"]  # noqa: E501
-                    # Display correlation information
-                    st.info(correlation_info(cc_df, cc_r, cc_p))
+                    st.plotly_chart(fig, use_container_width=False)
+                    plot_download_link(fig, filename="scatterplot_highlight.png")
+                    cc_dict = st.session_state[user_session_id]["scatter_group_correlation"]
+                    cc_dict = correlation_update(
+                        cc_dict,
+                        df_plot,
+                        x_col,
+                        y_col,
+                        group_col="Group",
+                        highlight_groups=selected_groups
+                    )
+                    st.info(correlation_info(cc_dict))
                 else:
                     st.info("Please select valid variables and ensure data is available.")
 
-        # Handle scatterplot without group highlighting
         else:
-            with st.sidebar.form(key="scatterplot_form"):
+            with st.expander("Scatterplot Variables", expanded=True):
                 st.markdown("### Variables")
-                xaxis = st.selectbox(
-                    "Select variable for the x-axis",
-                    (cats),
-                    key=f"scatter_x_{user_session_id}",
+                xaxis2 = st.segmented_control(
+                    "Select variable for the x-axis:",
+                    cats,
+                    selection_mode="single",
+                    key=f"scatter_x_nongrouped_{user_session_id}",
                     help="Choose a tag for the x-axis.",
                     disabled=not cats
                 )
-                yaxis = st.selectbox(
-                    "Select variable for the y-axis",
-                    (cats),
-                    key=f"scatter_y_{user_session_id}",
+                yaxis2 = st.segmented_control(
+                    "Select variable for the y-axis:",
+                    cats,
+                    selection_mode="single",
+                    key=f"scatter_y_nongrouped_{user_session_id}",
                     help="Choose a tag for the y-axis.",
                     disabled=not cats
                 )
-                submitted = st.form_submit_button("Scatterplot of Frequencies")
 
-                if submitted:
-                    generate_scatterplot(
-                        user_session_id, df, xaxis, yaxis
-                    )
+                # Sidebar action button
+                scatterplot_btn = st.sidebar.button(
+                    label="Scatterplot of Frequencies",
+                    key=f"scatterplot_btn_{user_session_id}",
+                    help="Generate scatterplot for selected variables.",
+                    type="secondary",
+                    use_container_width=False,
+                    icon=":material/manufacturing:"
+                )
 
-            if st.session_state[user_session_id].get("scatter_warning"):
-                msg, icon = st.session_state[user_session_id]["scatter_warning"]
-                st.warning(msg, icon=icon)
+                if scatterplot_btn:
+                    # Optionally clear previous scatterplot state here
+                    clear_scatterplot_multiselect(user_session_id)
+                    generate_scatterplot(user_session_id, df, xaxis2, yaxis2)
+                    # Store the selected variables in session state
+                    st.session_state[user_session_id]["scatterplot_nongrouped_x"] = xaxis2
+                    st.session_state[user_session_id]["scatterplot_nongrouped_y"] = yaxis2
 
-            # Plot if available
+            # Only display the plot if it has been generated
             if (
                 "scatterplot_df" in st.session_state[user_session_id] and
                 st.session_state[user_session_id]["scatterplot_df"] is not None
             ):
                 df_plot = st.session_state[user_session_id]["scatterplot_df"]
-                if is_valid_df(df_plot, [xaxis, yaxis]):
-                    fig = plot_scatter(df_plot, xaxis, yaxis)
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    cc_df, cc_r, cc_p = st.session_state[user_session_id]["scatter_correlation"]  # noqa: E501
-                    # Display correlation information
-                    st.markdown(correlation_info(cc_df, cc_r, cc_p))
+                x_col = st.session_state[user_session_id].get("scatterplot_nongrouped_x")
+                y_col = st.session_state[user_session_id].get("scatterplot_nongrouped_y")
+                if is_valid_df(df_plot, [x_col, y_col]):
+                    color_dict = color_picker_controls(["All Points"])
+                    show_trend = st.checkbox(
+                        label="Show linear fit (regression line)",
+                        value=False
+                        )
+                    fig = plot_scatter(
+                        df_plot,
+                        x_col,
+                        y_col,
+                        color=color_dict,
+                        trendline=show_trend
+                        )
+                    st.plotly_chart(fig, use_container_width=False)
+                    cc_dict = st.session_state[user_session_id]["scatter_correlation"]
+                    st.info(correlation_info(cc_dict))
                 else:
                     st.info("Please select valid variables and ensure data is available.")
 
@@ -512,15 +576,15 @@ def main() -> None:
         st.markdown("---")
 
         # Handle PCA button click
-        with st.sidebar.form(key="pca_form"):
-            st.markdown("### PCA")
-            submitted = st.form_submit_button(
-                label="Principal Component Analysis",
-                icon=":material/manufacturing:"
-                )
+        st.sidebar.markdown("### PCA")
+        pca_btn = st.sidebar.button(
+            label="Principal Component Analysis",
+            key=f"pca_btn_{user_session_id}",
+            icon=":material/manufacturing:"
+        )
 
-            if submitted:
-                generate_pca(user_session_id, df, metadata_target, session)
+        if pca_btn:
+            generate_pca(user_session_id, df, metadata_target, session)
 
         if st.session_state[user_session_id].get("pca_warning"):
             msg, icon = st.session_state[user_session_id]["pca_warning"]
