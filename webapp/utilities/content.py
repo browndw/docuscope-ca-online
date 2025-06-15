@@ -30,21 +30,6 @@ def message_reference_info(reference_metadata):
     return reference_info
 
 
-def message_target_parts(keyness_parts):
-    t_cats = keyness_parts[0]
-    tokens_pos = keyness_parts[2]
-    tokens_ds = keyness_parts[4]
-    ndocs = keyness_parts[6]
-    target_info = f"""##### Target corpus information:
-
-    Document categories: {t_cats}
-    \n    Part-of-speech tokens: {tokens_pos}
-    \n    DocuScope tokens: {tokens_ds}
-    \n    Documents: {ndocs}
-    """
-    return target_info
-
-
 def message_reference_parts(keyness_parts):
     r_cats = keyness_parts[1]
     tokens_pos = keyness_parts[3]
