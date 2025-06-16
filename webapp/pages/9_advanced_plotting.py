@@ -36,7 +36,6 @@ from webapp.utilities.handlers import (  # noqa: E402
     update_session
     )
 from webapp.utilities.ui import (   # noqa: E402
-    clear_boxplot_multiselect,
     clear_plots,
     clear_scatterplot_multiselect,
     color_picker_controls,
@@ -77,10 +76,23 @@ st.set_page_config(
 
 
 def main() -> None:
+    """
+    Main function to run the advanced plotting page.
+    This function sets up the Streamlit page, handles user sessions,
+    and provides options for generating various plots based on user input.
+    """
     # Set login requirements for navigaton
     require_login()
     menu()
-    st.markdown(f"## {TITLE}")
+    st.markdown(
+        body=f"## {TITLE}",
+        help=(
+            "This page allows you to create advanced plots of tag frequencies from your corpus. "  # noqa: E501
+            "You can generate boxplots, scatterplots, and perform principal component analysis (PCA) on the tag frequencies. "   # noqa: E501
+            "Use the **Manage Corpus Data** button from the **Navigation** menu "
+            "to process metadata for your corpus, "
+            "which will enable grouping variables in your plots."
+        ))
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
 
@@ -101,7 +113,12 @@ def main() -> None:
 
     # Display a markdown message for plotting
     st.markdown(
-        body="_utils.content.message_plotting"
+        body=(
+            ":material/manufacturing: This page allows you to create advanced plots of tag frequencies "  # noqa: E501
+            "from your corpus.\n\n"
+            ":material/priority: You can also highlight groups in scatterplots and PCA plots if you "  # noqa: E501
+            "have processed metadata for your corpus."
+        )
         )
 
     # Radio button to select the type of plot
@@ -125,6 +142,8 @@ def main() -> None:
         horizontal=False,
         index=None
         )
+
+    st.markdown("---")
 
     # Handle Boxplot selection
     if plot_type == "Boxplot" and session.get('has_target')[0] is True:
@@ -158,11 +177,16 @@ def main() -> None:
             on_change_args=(user_session_id,)
         )
 
-        st.markdown("""---""")
+        st.sidebar.markdown("""---""")
 
         # Toggle to plot using grouping variables
         by_group = st.toggle(
             label="Plot using grouping variables.",
+            key=f"by_group_boxplot_{user_session_id}",
+            help=(
+                "If you have processed metadata for your corpus, "
+                "you can select grouping variables to plot tag frequencies by group."
+            ),
             on_change=clear_plots, args=(user_session_id,)
             )
 
@@ -182,15 +206,22 @@ def main() -> None:
                     button above.
                     """,
                     icon=":material/new_label:"
-                    )
+                )
             else:
                 with st.expander("Boxplot Variables", expanded=True):
-                    # Create a form for boxplot grouping variables
-                    # Before the form
-                    st.markdown('### Grouping variables')
                     st.markdown(
-                        """Select grouping variables from your metadata
-                        and click the button to generate boxplots of frequencies."""
+                        body="### Grouping variables",
+                        help=(
+                            "Select one or more variables to plot as boxplots. "
+                            "You can select multiple variables for comparison. "
+                            "Note that plots will only update after "
+                            "you click the **Generate Boxplots** button."
+                        ))
+                    st.markdown(
+                        body=(
+                            "Select grouping variables from your metadata "
+                            "and click the button to generate boxplots of frequencies."
+                        )
                     )
                     all_cats = sorted(set(metadata_target.get('doccats')[0]['cats']))
 
@@ -216,7 +247,9 @@ def main() -> None:
                         disabled=not cats
                     )
 
-                    st.markdown("### Variables")
+                    st.markdown(
+                        body="### Variables"
+                    )
                     box_val1 = st.segmented_control(
                         "Select variables for plotting:",
                         cats,
@@ -225,7 +258,16 @@ def main() -> None:
                         help="Choose one or more tags to plot as boxplots."
                     )
 
-                # Sidebar action button
+                st.sidebar.markdown(
+                    body="### Boxplots of Frequencies by Group",
+                    help=(
+                        "Click the button to generate boxplots of tag frequencies "
+                        "for the selected variables and groups."
+                        "Be sure to select at least one variable "
+                        "and one category from group A and one from group B."
+                    )
+                )
+
                 boxplot_group_btn = st.sidebar.button(
                     label="Generate Boxplots",
                     key=f"boxplot_group_btn_{user_session_id}",
@@ -235,8 +277,13 @@ def main() -> None:
                     icon=":material/manufacturing:"
                 )
 
+                st.sidebar.markdown("---")
+
+                # Only update the confirmed selection when the button is pressed
                 if boxplot_group_btn:
-                    clear_boxplot_multiselect(user_session_id)
+                    st.session_state[user_session_id]["confirmed_box_val1"] = box_val1
+                    st.session_state[user_session_id]["confirmed_grpa"] = grpa
+                    st.session_state[user_session_id]["confirmed_grpb"] = grpb
                     generate_boxplot_by_group(user_session_id, df, box_val1, grpa, grpb)
 
                 if st.session_state[user_session_id].get("boxplot_group_warning"):
@@ -250,13 +297,17 @@ def main() -> None:
                 ):
                     df_plot = st.session_state[user_session_id]["boxplot_group_df"]
                     if is_valid_df(df_plot, ['Group', 'Tag']):
-                        # Place color controls and plotting here, outside the form
+                        # Use the confirmed selection for color controls and plotting
+                        confirmed_box_val1 = st.session_state[user_session_id].get("confirmed_box_val1", [])
+                        confirmed_grpa = st.session_state[user_session_id].get("confirmed_grpa", [])
+                        confirmed_grpb = st.session_state[user_session_id].get("confirmed_grpb", [])
                         color_dict = color_picker_controls(
-                            [", ".join(grpa), ", ".join(grpb)],
+                            [", ".join(confirmed_grpa), ", ".join(confirmed_grpb)],
                             key_prefix=f"color_picker_boxplot_{user_session_id}"
                         )
                         fig = plot_grouped_boxplot(df_plot, color=color_dict)
                         st.plotly_chart(fig, use_container_width=True)
+                        plot_download_link(fig, filename="grouped_boxplots.png")
 
                         stats = st.session_state[user_session_id]["boxplot_group_stats"]
                         st.markdown("##### Descriptive statistics:")
@@ -266,7 +317,7 @@ def main() -> None:
                             """
                             Please select valid variables and ensure data is available.
                             """
-                            )
+                        )
 
         # Handle plotting without grouping variables
         else:
@@ -281,17 +332,26 @@ def main() -> None:
                 )
 
             # Sidebar action button
+            st.sidebar.markdown(
+                body="### Boxplots of Frequencies",
+                help=(
+                    "Click the button to generate boxplots of tag frequencies "
+                    "for the selected variables."
+                    )
+                )
             boxplot_btn = st.sidebar.button(
-                label="Boxplots of Frequencies",
+                label="Generate Boxplots",
                 key=f"boxplot_btn_{user_session_id}",
                 help="Generate boxplots for selected variables.",
                 type="secondary",
                 use_container_width=False,
                 icon=":material/manufacturing:"
             )
+            st.sidebar.markdown("---")
 
+            # Only update the confirmed selection when the button is pressed
             if boxplot_btn:
-                clear_boxplot_multiselect(user_session_id)
+                st.session_state[user_session_id]["confirmed_box_val2"] = box_val2
                 generate_boxplot(
                     user_session_id, df, box_val2
                 )
@@ -308,8 +368,9 @@ def main() -> None:
             ):
                 df_plot = st.session_state[user_session_id]["boxplot_df"]
                 if is_valid_df(df_plot, ['Tag', 'RF']):
-                    # --- color controls ---
-                    color_dict = color_picker_controls(box_val2)
+                    # Use the confirmed selection for color controls and plotting
+                    confirmed_box_val2 = st.session_state[user_session_id].get("confirmed_box_val2", [])
+                    color_dict = color_picker_controls(confirmed_box_val2)
                     fig = plot_general_boxplot(df_plot, color=color_dict)
                     st.plotly_chart(fig, use_container_width=True)
                     plot_download_link(fig, filename="boxplots.png")
@@ -340,16 +401,17 @@ def main() -> None:
             },
             tag_filters={
                 "Parts-of-Speech": {
-                    "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),
-                    "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])
+                    "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),  # noqa: E501
+                    "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])  # noqa: E501
                 },
-                "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])
+                "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])  # noqa: E501
             },
             tag_radio_key="tag_radio",
             tag_type_key="tag_type_radio",
             on_change=clear_plots,
             on_change_args=(user_session_id,)
         )
+        st.sidebar.markdown("""---""")
 
         # Determine categories for plotting
         if df is None or getattr(df, "height", 0) == 0:
@@ -357,7 +419,15 @@ def main() -> None:
         else:
             cats = sorted([col for col in df.columns if col != "doc_id"])
 
-        by_group_highlight = st.toggle("Highlight groups in scatterplots.")
+        by_group_highlight = st.toggle(
+            label="Highlight groups in scatterplots.",
+            key=f"by_group_scatter_{user_session_id}",
+            help=(
+                "If you have processed metadata for your corpus, "
+                "you can select groups to highlight in scatterplots."
+            ),
+            on_change=clear_plots, args=(user_session_id,)
+            )
 
         if by_group_highlight:
             if session['has_meta'][0] is False:
@@ -398,17 +468,25 @@ def main() -> None:
                     )
 
                     # Sidebar action button
+                    st.sidebar.markdown(
+                        body="### Scatterplot of Frequencies by Group",
+                        help=(
+                            "Click the button to generate scatterplots of tag frequencies "
+                            "for the selected variables and groups."
+                            "Be sure to select at least one variable and one group."
+                        )
+                    )
                     scatterplot_group_btn = st.sidebar.button(
-                        label="Scatterplot of Frequencies by Group",
+                        label="Generate Scatterplot",
                         key=f"scatterplot_group_btn_{user_session_id}",
                         help="Generate grouped scatterplot for selected variables.",
                         type="secondary",
                         use_container_width=False,
                         icon=":material/manufacturing:"
                     )
+                    st.sidebar.markdown("---")
 
                     if scatterplot_group_btn:
-                        clear_scatterplot_multiselect(user_session_id)
                         clear_scatterplot_multiselect(user_session_id)
                         # Store the selected variables in session state
                         st.session_state[user_session_id]["scatterplot_group_x"] = xaxis1
@@ -485,14 +563,22 @@ def main() -> None:
                 )
 
                 # Sidebar action button
+                st.sidebar.markdown(
+                    body="### Scatterplot of Frequencies",
+                    help=(
+                        "Click the button to generate scatterplots of tag frequencies "
+                        "for the selected variables."
+                        )
+                    )
                 scatterplot_btn = st.sidebar.button(
-                    label="Scatterplot of Frequencies",
+                    label="Generate Scatterplot",
                     key=f"scatterplot_btn_{user_session_id}",
                     help="Generate scatterplot for selected variables.",
                     type="secondary",
                     use_container_width=False,
                     icon=":material/manufacturing:"
                 )
+                st.sidebar.markdown("---")
 
                 if scatterplot_btn:
                     # Optionally clear previous scatterplot state here
@@ -559,10 +645,14 @@ def main() -> None:
         )
 
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### Principal Component Analysis")
-        st.sidebar.markdown("""
-                            Click the button to plot principal compenents.
-                            """)
+        st.sidebar.markdown(
+            body="### Principal Component Analysis",
+            help=(
+                "Click the button to generate a PCA plot of scaled tag frequencies. "
+                "Once generated, you can select principal components "
+                "to visualize the PCA results and variable contributions."
+            )
+        )
         pca_btn = st.sidebar.button(
             label="Generate PCA",
             help="Generate PCA plot for the selected variables.",
@@ -572,6 +662,7 @@ def main() -> None:
             key=f"pca_btn_{user_session_id}",
             icon=":material/manufacturing:"
         )
+        st.sidebar.markdown("---")
 
         if pca_btn:
             generate_pca(user_session_id, df, metadata_target, session)
@@ -634,7 +725,7 @@ def main() -> None:
                     # Use 0-based index for pc_cols
                     pca_x = pc_cols[idx - 1]
                     pca_y = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
-                    pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = update_pca_plot(
+                    pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = update_pca_plot(  # noqa: E501
                         pca_df,
                         contrib_df,
                         ve,
@@ -658,7 +749,7 @@ def main() -> None:
                     st.markdown(
                         body="##### Variable contribution (by %) to principal component:",
                         help=(
-                            "The plots are a Python implementation of [fviz_contrib()](http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining), "
+                            "The plots are a Python implementation of [fviz_contrib()](http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining), "  # noqa: E501
                             "an **R** function that is part of the **factoextra** package."
                         )
                     )
@@ -677,7 +768,7 @@ def main() -> None:
                     idx2 = st.session_state[user_session_id].get('pca_idx', 1)
                     pca_x2 = pc_cols[idx2 - 1]
                     pca_y2 = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
-                    pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = update_pca_plot(
+                    pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = update_pca_plot(  # noqa: E501
                         pca_df,
                         contrib_df,
                         ve,
