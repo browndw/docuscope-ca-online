@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pathlib
+import re
 import sys
 
 import docuscospacy as ds
@@ -523,6 +524,7 @@ def main() -> None:
                         trendline=show_trend
                         )
                     st.plotly_chart(fig, use_container_width=False)
+                    plot_download_link(fig, filename="scatterplot.png")
                     cc_dict = st.session_state[user_session_id]["scatter_correlation"]
                     st.info(correlation_info(cc_dict))
                 else:
@@ -531,54 +533,42 @@ def main() -> None:
     # Handle PCA selection
     elif plot_type == "PCA" and session.get('has_target')[0] is True:
 
-        st.sidebar.markdown("### Tagset")
+        df, cats, tag_radio, tag_type = tagset_selection(
+            user_session_id=user_session_id,
+            session_state=st.session_state,
+            persist_func=lambda key, page, user: f"{key}_{page}_{user}",
+            page_stem="advanced_plotting",
+            tagset_keys={
+                "Parts-of-Speech": {"General": "dtm_pos", "Specific": "dtm_pos"},
+                "DocuScope": "dtm_ds"
+            },
+            simplify_funcs={
+                "Parts-of-Speech": {"General": ds.dtm_simplify, "Specific": None}
+            },
+            tag_filters={
+                "Parts-of-Speech": {
+                    "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),  # noqa: E501
+                    "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])  # noqa: E501
+                },
+                "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])  # noqa: E501
+            },
+            tag_radio_key="tag_radio",
+            tag_type_key="tag_type_radio",
+            on_change=clear_plots,
+            on_change_args=(user_session_id,)
+        )
 
-        # Radio button to select tag type
-        tag_radio_tokens = st.sidebar.radio(
-            "Select tags to display:",
-            ("Parts-of-Speech", "DocuScope"),
-            on_change=clear_plots, args=(user_session_id,),
-            horizontal=True
-            )
-
-        # Handle Parts-of-Speech tag selection
-        if tag_radio_tokens == 'Parts-of-Speech':
-            tag_type = st.sidebar.radio(
-                "Select from general or specific tags",
-                ("General", "Specific"),
-                on_change=clear_plots, args=(user_session_id,),
-                horizontal=True
-                )
-            if tag_type == 'General':
-                df = st.session_state[user_session_id]["target"]["dtm_pos"]
-                df = ds.dtm_simplify(df)
-                df = ds.dtm_weight(df, scheme="prop")
-                df = ds.dtm_weight(df, scheme="scale").to_pandas()
-
-            elif tag_type == 'Specific':
-                df = st.session_state[user_session_id]["target"]["dtm_pos"]
-                df = ds.dtm_weight(df, scheme="prop")
-                df = ds.dtm_weight(df, scheme="scale").to_pandas()
-
-        # Handle DocuScope tag selection
-        elif tag_radio_tokens == 'DocuScope':
-            df = st.session_state[user_session_id]["target"]["dtm_ds"]
-            df = ds.dtm_weight(df, scheme="prop")
-            df = ds.dtm_weight(df, scheme="scale").to_pandas()
-            tag_type = None
-
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("### Principal Component Analysis")
-            st.sidebar.markdown("""
-                                Click the button to plot principal compenents.
-                                """)
-
-        st.markdown("---")
-
-        # Handle PCA button click
-        st.sidebar.markdown("### PCA")
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### Principal Component Analysis")
+        st.sidebar.markdown("""
+                            Click the button to plot principal compenents.
+                            """)
         pca_btn = st.sidebar.button(
-            label="Principal Component Analysis",
+            label="Generate PCA",
+            help="Generate PCA plot for the selected variables.",
+            type="secondary",
+            use_container_width=False,
+            # Use a unique key for the button to avoid conflicts
             key=f"pca_btn_{user_session_id}",
             icon=":material/manufacturing:"
         )
@@ -598,27 +588,36 @@ def main() -> None:
             st.session_state[user_session_id]["target"]["pca_df"].shape[0] > 0
         ):
             pca_df = st.session_state[user_session_id]["target"]["pca_df"]
+            pc_cols = [col for col in pca_df.columns if re.match(r"PC\d+$", col)]
+            # Limit to mathematically valid number of PCs
+            n_variables = len(pc_cols)
+            max_valid_pcs = n_variables - 1 if n_variables > 1 else 1
+            pc_cols = pc_cols[:max_valid_pcs]
+
             if is_valid_df(pca_df, ['PC1', 'PC2']):
                 contrib_df = st.session_state[user_session_id]["target"]["contrib_df"]
                 ve = metadata_target.get("variance")[0]['temp']
 
-                # Get the current PC index from session state, default to 1
+                # Get the current PC index from session state, default to 1 (1-based)
                 current_idx = st.session_state[user_session_id].get('pca_idx', 1)
-                # --- SHARED PC INDEX LOGIC ---
+                if not (1 <= current_idx <= len(pc_cols)):
+                    current_idx = 1
+
                 tab1, tab2 = st.tabs(["PCA Plot", "Variable Contribution"])
 
                 # --- TAB 1 ---
                 with tab1:
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.selectbox(
+                        selected_idx = st.selectbox(
                             "Select principal component to plot",
-                            list(range(1, len(df.columns))),
+                            list(range(1, len(pc_cols) + 1)),
                             key=f"pca_idx_tab1_{user_session_id}",
                             index=current_idx - 1,
                             on_change=update_pca_idx_tab1,
                             args=(user_session_id,)
                         )
+                        st.session_state[user_session_id]['pca_idx'] = selected_idx
                     with col2:
                         if session.get('has_meta')[0] is True:
                             groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
@@ -631,15 +630,15 @@ def main() -> None:
                         else:
                             selected_groups = []
 
-                    # Always use the value from session state for plotting
-                    if 'pca_idx' not in st.session_state[user_session_id]:
-                        st.session_state[user_session_id]['pca_idx'] = 1
                     idx = st.session_state[user_session_id].get('pca_idx', 1)
+                    # Use 0-based index for pc_cols
+                    pca_x = pc_cols[idx - 1]
+                    pca_y = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
                     pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = update_pca_plot(
                         pca_df,
                         contrib_df,
                         ve,
-                        idx
+                        idx  # update_pca_plot expects 1-based index
                     )
                     fig = plot_pca_scatter_highlight(
                         pca_df,
@@ -650,7 +649,8 @@ def main() -> None:
                         x_label=pca_x,
                         y_label=pca_y
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=False)
+                    plot_download_link(fig, filename="pca_scatter.png")
                     st.info(variance_info(pca_x, pca_y, ve_1, ve_2))
 
                 # --- TAB 2 ---
@@ -664,22 +664,24 @@ def main() -> None:
                     )
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.selectbox(
+                        selected_idx2 = st.selectbox(
                             "Select principal component to plot",
-                            list(range(1, len(df.columns))),
+                            list(range(1, len(pc_cols) + 1)),
                             key=f"pca_idx_tab2_{user_session_id}",
-                            index=st.session_state[user_session_id].get('pca_idx', 1) - 1,
+                            index=current_idx - 1,
                             on_change=update_pca_idx_tab2,
                             args=(user_session_id,)
                         )
+                        st.session_state[user_session_id]['pca_idx'] = selected_idx2
 
-                    # Always use the value from session state for plotting
-                    idx = st.session_state[user_session_id].get('pca_idx', 1)
+                    idx2 = st.session_state[user_session_id].get('pca_idx', 1)
+                    pca_x2 = pc_cols[idx2 - 1]
+                    pca_y2 = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
                     pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = update_pca_plot(
                         pca_df,
                         contrib_df,
                         ve,
-                        idx
+                        idx2
                     )
                     with col2:
                         sort_by = st.radio(
@@ -698,6 +700,7 @@ def main() -> None:
                         sort_by=sort_by
                     )
                     st.plotly_chart(fig, use_container_width=True)
+                    plot_download_link(fig, filename="pca_variable_contrib_bar.png")
 
             else:
                 st.info(
