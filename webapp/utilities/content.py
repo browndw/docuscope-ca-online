@@ -57,46 +57,6 @@ def message_collocation_info(collocation_data):
     return coll_info
 
 
-def message_variance_info(pca_x: str,
-                          pca_y: str,
-                          ve_1: str,
-                          ve_2: str) -> str:
-    variance_info = f"""##### Variance explained:
-
-    {pca_x}: {ve_1}\n    {pca_y}: {ve_2}
-    """
-    return variance_info
-
-
-def message_contribution_info(pca_x: str,
-                              pca_y: str,
-                              contrib_x: str,
-                              contrib_y: str) -> str:
-    contrib_info = f"""##### Variables with contribution > mean:
-
-    {pca_x}: {contrib_x}\n    {pca_y}: {contrib_y}
-    """
-    return contrib_info
-
-
-def message_correlation_info(cc_df: str,
-                             cc_r: float,
-                             cc_p: float) -> str:
-    corr_info = f"""##### Pearson's correlation coefficient:
-
-    r({cc_df}) = {cc_r}, p-value = {cc_p}
-    """
-    return corr_info
-
-
-def message_stats_info(stats):
-    stats_info = f"""##### Descriptive statistics:
-
-    {stats}
-    """
-    return stats_info
-
-
 def message_group_info(grp_a: list[str],
                        grp_b: list[str]) -> str:
     grp_a = [s.strip('_') for s in grp_a]
