@@ -41,6 +41,8 @@ from webapp.utilities.ui import (   # noqa: E402
     color_picker_controls,
     contribution_info,
     correlation_info,
+    plot_action_button,
+    show_plot_warning,
     tagset_selection,
     update_grpa,
     update_grpb,
@@ -268,55 +270,64 @@ def main() -> None:
                     )
                 )
 
-                boxplot_group_btn = st.sidebar.button(
+                boxplot_group_btn = plot_action_button(
                     label="Generate Boxplots",
                     key=f"boxplot_group_btn_{user_session_id}",
-                    help="Generate grouped boxplots for selected variables.",
-                    type="secondary",
-                    use_container_width=False,
-                    icon=":material/manufacturing:"
+                    help_text="Generate grouped boxplots for selected variables.",
+                    user_session_id=user_session_id,
+                    attempted_flag="boxplot_group_attempted"
                 )
-
                 st.sidebar.markdown("---")
 
                 # Only update the confirmed selection when the button is pressed
                 if boxplot_group_btn:
-                    st.session_state[user_session_id]["confirmed_box_val1"] = box_val1
-                    st.session_state[user_session_id]["confirmed_grpa"] = grpa
-                    st.session_state[user_session_id]["confirmed_grpb"] = grpb
-                    generate_boxplot_by_group(user_session_id, df, box_val1, grpa, grpb)
-
-                if st.session_state[user_session_id].get("boxplot_group_warning"):
-                    msg, icon = st.session_state[user_session_id]["boxplot_group_warning"]
-                    st.warning(msg, icon=icon)
+                    try:
+                        st.session_state[user_session_id]["confirmed_box_val1"] = box_val1
+                        st.session_state[user_session_id]["confirmed_grpa"] = grpa
+                        st.session_state[user_session_id]["confirmed_grpb"] = grpb
+                        generate_boxplot_by_group(user_session_id, df, box_val1, grpa, grpb)
+                    except Exception:
+                        st.error(
+                            body=(":material/error: Error generating grouped boxplot."
+                                  "Please check your selections."
+                                  )
+                                )
+                if show_plot_warning(
+                    st.session_state,
+                    user_session_id,
+                    "boxplot_group_warning",
+                    "boxplot_group_attempted",
+                    ["boxplot_group_df", "boxplot_group_stats"]
+                ):
+                    return
 
                 if (
                     "boxplot_group_df" in st.session_state[user_session_id] and
-                    st.session_state[user_session_id]["boxplot_group_df"] is not None and
-                    st.session_state[user_session_id]["boxplot_group_df"].shape[0] > 0
+                    is_valid_df(st.session_state[user_session_id]["boxplot_group_df"], ['Group', 'Tag'])  # noqa: E501
                 ):
                     df_plot = st.session_state[user_session_id]["boxplot_group_df"]
-                    if is_valid_df(df_plot, ['Group', 'Tag']):
-                        # Use the confirmed selection for color controls and plotting
-                        confirmed_box_val1 = st.session_state[user_session_id].get("confirmed_box_val1", [])
-                        confirmed_grpa = st.session_state[user_session_id].get("confirmed_grpa", [])
-                        confirmed_grpb = st.session_state[user_session_id].get("confirmed_grpb", [])
-                        color_dict = color_picker_controls(
-                            [", ".join(confirmed_grpa), ", ".join(confirmed_grpb)],
-                            key_prefix=f"color_picker_boxplot_{user_session_id}"
-                        )
-                        fig = plot_grouped_boxplot(df_plot, color=color_dict)
-                        st.plotly_chart(fig, use_container_width=True)
-                        plot_download_link(fig, filename="grouped_boxplots.png")
+                    # Use the confirmed selection for color controls and plotting
+                    confirmed_box_val1 = st.session_state[user_session_id].get("confirmed_box_val1", [])  # noqa: E501, F841
+                    confirmed_grpa = st.session_state[user_session_id].get("confirmed_grpa", [])  # noqa: E501
+                    confirmed_grpb = st.session_state[user_session_id].get("confirmed_grpb", [])  # noqa: E501
+                    color_dict = color_picker_controls(
+                        [", ".join(confirmed_grpa), ", ".join(confirmed_grpb)],
+                        key_prefix=f"color_picker_boxplot_{user_session_id}"
+                    )
+                    fig = plot_grouped_boxplot(df_plot, color=color_dict)
+                    st.plotly_chart(fig, use_container_width=True)
+                    plot_download_link(fig, filename="grouped_boxplots.png")
 
-                        stats = st.session_state[user_session_id]["boxplot_group_stats"]
-                        st.markdown("##### Descriptive statistics:")
-                        st.dataframe(stats, hide_index=True)
-                    else:
-                        st.info(
-                            """
-                            Please select valid variables and ensure data is available.
-                            """
+                    stats = st.session_state[user_session_id]["boxplot_group_stats"]
+                    st.markdown("##### Descriptive statistics:")
+                    st.dataframe(stats, hide_index=True)
+                else:
+                    if st.session_state[user_session_id].get("boxplot_group_attempted"):
+                        st.warning(
+                            body=(
+                                ":material/error: No valid data available for plotting. "
+                                "Please ensure you have selected valid variables."
+                            )
                         )
 
         # Handle plotting without grouping variables
@@ -339,47 +350,59 @@ def main() -> None:
                     "for the selected variables."
                     )
                 )
-            boxplot_btn = st.sidebar.button(
+            boxplot_btn = plot_action_button(
                 label="Generate Boxplots",
                 key=f"boxplot_btn_{user_session_id}",
-                help="Generate boxplots for selected variables.",
-                type="secondary",
-                use_container_width=False,
-                icon=":material/manufacturing:"
+                help_text="Generate boxplots for selected variables.",
+                user_session_id=user_session_id,
+                attempted_flag="boxplot_attempted"
             )
             st.sidebar.markdown("---")
 
             # Only update the confirmed selection when the button is pressed
             if boxplot_btn:
                 st.session_state[user_session_id]["confirmed_box_val2"] = box_val2
-                generate_boxplot(
-                    user_session_id, df, box_val2
-                )
+                try:
+                    generate_boxplot(user_session_id, df, box_val2)
+                except Exception:
+                    st.error(
+                        body=(":material/error: Error generating boxplot. "
+                              "Please check your selections.")
+                        )
 
-            if st.session_state[user_session_id].get("boxplot_warning"):
-                msg, icon = st.session_state[user_session_id]["boxplot_warning"]
-                st.warning(msg, icon=icon)
+            if show_plot_warning(
+                st.session_state,
+                user_session_id,
+                "boxplot_warning",
+                "boxplot_attempted",
+                ["boxplot_df", "boxplot_stats"]
+            ):
+                return
 
             # Plot if available
             if (
                 "boxplot_df" in st.session_state[user_session_id] and
-                st.session_state[user_session_id]["boxplot_df"] is not None and
-                st.session_state[user_session_id]["boxplot_df"].shape[0] > 0
+                is_valid_df(st.session_state[user_session_id]["boxplot_df"], ['Tag', 'RF'])
             ):
                 df_plot = st.session_state[user_session_id]["boxplot_df"]
-                if is_valid_df(df_plot, ['Tag', 'RF']):
-                    # Use the confirmed selection for color controls and plotting
-                    confirmed_box_val2 = st.session_state[user_session_id].get("confirmed_box_val2", [])
-                    color_dict = color_picker_controls(confirmed_box_val2)
-                    fig = plot_general_boxplot(df_plot, color=color_dict)
-                    st.plotly_chart(fig, use_container_width=True)
-                    plot_download_link(fig, filename="boxplots.png")
+                # Use the confirmed selection for color controls and plotting
+                confirmed_box_val2 = st.session_state[user_session_id].get("confirmed_box_val2", [])  # noqa: E501
+                color_dict = color_picker_controls(confirmed_box_val2)
+                fig = plot_general_boxplot(df_plot, color=color_dict)
+                st.plotly_chart(fig, use_container_width=True)
+                plot_download_link(fig, filename="boxplots.png")
 
-                    stats = st.session_state[user_session_id]["boxplot_stats"]
-                    st.markdown("##### Descriptive statistics:")
-                    st.dataframe(stats, hide_index=True)
-                else:
-                    st.info("Please select valid variables and ensure data is available.")
+                stats = st.session_state[user_session_id]["boxplot_stats"]
+                st.markdown("##### Descriptive statistics:")
+                st.dataframe(stats, hide_index=True)
+            else:
+                if st.session_state[user_session_id].get("boxplot_attempted"):
+                    st.warning(
+                        body=(
+                            ":material/error: No valid data available for plotting. "
+                            "Please ensure you have selected valid variables."
+                        )
+                    )
 
     # Handle Scatterplot selection
     elif plot_type == "Scatterplot" and session.get('has_target')[0] is True:
@@ -476,71 +499,86 @@ def main() -> None:
                             "Be sure to select at least one variable and one group."
                         )
                     )
-                    scatterplot_group_btn = st.sidebar.button(
+                    scatterplot_group_btn = plot_action_button(
                         label="Generate Scatterplot",
                         key=f"scatterplot_group_btn_{user_session_id}",
-                        help="Generate grouped scatterplot for selected variables.",
-                        type="secondary",
-                        use_container_width=False,
-                        icon=":material/manufacturing:"
+                        help_text="Generate grouped scatterplot for selected variables.",
+                        user_session_id=user_session_id,
+                        attempted_flag="scatterplot_group_attempted"
                     )
                     st.sidebar.markdown("---")
 
                     if scatterplot_group_btn:
                         clear_scatterplot_multiselect(user_session_id)
-                        # Store the selected variables in session state
-                        st.session_state[user_session_id]["scatterplot_group_x"] = xaxis1
-                        st.session_state[user_session_id]["scatterplot_group_y"] = yaxis1
-                        st.session_state[user_session_id]["scatterplot_group_selected_groups"] = selected_groups  # noqa: E501
-                        generate_scatterplot_with_groups(
-                            user_session_id, df, xaxis1, yaxis1
-                        )
+                        try:
+                            generate_scatterplot_with_groups(
+                                user_session_id, df, xaxis1, yaxis1
+                                )
+                            # Store the selected variables in session state
+                            st.session_state[user_session_id]["scatterplot_group_x"] = xaxis1  # noqa: E501
+                            st.session_state[user_session_id]["scatterplot_group_y"] = yaxis1  # noqa: E501
+                            st.session_state[user_session_id]["scatterplot_group_selected_groups"] = selected_groups  # noqa: E501
+                        except Exception:
+                            st.error(
+                                body=(":material/error: Error generating scatterplot. "
+                                      "Please check your selections.")
+                                )
 
-            if st.session_state[user_session_id].get("scatter_group_warning"):
-                msg, icon = st.session_state[user_session_id]["scatter_group_warning"]
-                st.warning(msg, icon=icon)
+            if show_plot_warning(
+                st.session_state,
+                user_session_id,
+                "scatter_group_warning",
+                "scatterplot_group_attempted",
+                ["scatterplot_group_df", "scatter_group_correlation"]
+            ):
+                return
 
             # Plot if available
+            x_col = st.session_state[user_session_id].get("scatterplot_group_x")
+            y_col = st.session_state[user_session_id].get("scatterplot_group_y")
+            plot_groups = st.session_state[user_session_id].get("scatterplot_group_selected_groups", [])  # noqa: E501
             if (
                 "scatterplot_group_df" in st.session_state[user_session_id] and
-                st.session_state[user_session_id]["scatterplot_group_df"] is not None
+                is_valid_df(st.session_state[user_session_id]["scatterplot_group_df"], ["Group", x_col, y_col])  # noqa: E501
             ):
                 df_plot = st.session_state[user_session_id]["scatterplot_group_df"]
-                x_col = st.session_state[user_session_id].get("scatterplot_group_x")
-                y_col = st.session_state[user_session_id].get("scatterplot_group_y")
-                plot_groups = st.session_state[user_session_id].get("scatterplot_group_selected_groups", [])  # noqa: E501
-                if is_valid_df(df_plot, [x_col, y_col]):
-                    color_dict = color_picker_controls(
-                        ["Highlight", "Non-Highlight"],
-                        key_prefix=f"color_picker_scatter_{user_session_id}"
-                    )
-                    show_trend = st.checkbox(
-                        label="Show linear fit (regression line)",
-                        value=False
+                color_dict = color_picker_controls(
+                    ["Highlight", "Non-Highlight"],
+                    key_prefix=f"color_picker_scatter_{user_session_id}"
+                )
+                show_trend = st.checkbox(
+                    label="Show linear fit (regression line)",
+                    value=False
+                )
+                fig = plot_scatter_highlight(
+                    df=df_plot,
+                    x_col=x_col,
+                    y_col=y_col,
+                    group_col="Group",
+                    selected_groups=plot_groups,
+                    color=color_dict,
+                    trendline=show_trend
+                )
+                st.plotly_chart(fig, use_container_width=False)
+                plot_download_link(fig, filename="scatterplot_highlight.png")
+                cc_dict = st.session_state[user_session_id]["scatter_group_correlation"]
+                cc_dict = correlation_update(
+                    cc_dict,
+                    df_plot,
+                    x_col,
+                    y_col,
+                    group_col="Group",
+                    highlight_groups=plot_groups
+                )
+                st.info(correlation_info(cc_dict))
+            else:
+                if st.session_state[user_session_id].get("scatterplot_group_attempted"):
+                    st.warning(
+                        body=(
+                            ":material/error: No valid data available for plotting. "
+                            "Please ensure you have selected valid variables."
                         )
-                    fig = plot_scatter_highlight(
-                        df=df_plot,
-                        x_col=x_col,
-                        y_col=y_col,
-                        group_col="Group",
-                        selected_groups=plot_groups,
-                        color=color_dict,
-                        trendline=show_trend)
-
-                    st.plotly_chart(fig, use_container_width=False)
-                    plot_download_link(fig, filename="scatterplot_highlight.png")
-                    cc_dict = st.session_state[user_session_id]["scatter_group_correlation"]
-                    cc_dict = correlation_update(
-                        cc_dict,
-                        df_plot,
-                        x_col,
-                        y_col,
-                        group_col="Group",
-                        highlight_groups=selected_groups
                     )
-                    st.info(correlation_info(cc_dict))
-                else:
-                    st.info("Please select valid variables and ensure data is available.")
 
         else:
             with st.expander("Scatterplot Variables", expanded=True):
@@ -570,51 +608,71 @@ def main() -> None:
                         "for the selected variables."
                         )
                     )
-                scatterplot_btn = st.sidebar.button(
+
+                scatterplot_btn = plot_action_button(
                     label="Generate Scatterplot",
                     key=f"scatterplot_btn_{user_session_id}",
-                    help="Generate scatterplot for selected variables.",
-                    type="secondary",
-                    use_container_width=False,
-                    icon=":material/manufacturing:"
+                    help_text="Generate scatterplot for selected variables.",
+                    user_session_id=user_session_id,
+                    attempted_flag="scatterplot_attempted"
                 )
                 st.sidebar.markdown("---")
 
                 if scatterplot_btn:
                     # Optionally clear previous scatterplot state here
-                    clear_scatterplot_multiselect(user_session_id)
-                    generate_scatterplot(user_session_id, df, xaxis2, yaxis2)
-                    # Store the selected variables in session state
-                    st.session_state[user_session_id]["scatterplot_nongrouped_x"] = xaxis2
-                    st.session_state[user_session_id]["scatterplot_nongrouped_y"] = yaxis2
+                    try:
+                        clear_scatterplot_multiselect(user_session_id)
+                        generate_scatterplot(user_session_id, df, xaxis2, yaxis2)
+                        # Store the selected variables in session state
+                        st.session_state[user_session_id]["scatterplot_nongrouped_x"] = xaxis2  # noqa: E501
+                        st.session_state[user_session_id]["scatterplot_nongrouped_y"] = yaxis2  # noqa: E501
+                    except Exception:
+                        st.error(
+                            body=(":material/error: Error generating scatterplot. "
+                                  "Please check your selections.")
+                            )
+
+            if show_plot_warning(
+                st.session_state,
+                user_session_id,
+                "scatter_warning",
+                "scatterplot_attempted",
+                ["scatterplot_df", "scatter_correlation"]
+            ):
+                return
 
             # Only display the plot if it has been generated
+            x_col = st.session_state[user_session_id].get("scatterplot_nongrouped_x")
+            y_col = st.session_state[user_session_id].get("scatterplot_nongrouped_y")
             if (
                 "scatterplot_df" in st.session_state[user_session_id] and
-                st.session_state[user_session_id]["scatterplot_df"] is not None
+                is_valid_df(st.session_state[user_session_id]["scatterplot_df"], [x_col, y_col])  # noqa: E501
             ):
                 df_plot = st.session_state[user_session_id]["scatterplot_df"]
-                x_col = st.session_state[user_session_id].get("scatterplot_nongrouped_x")
-                y_col = st.session_state[user_session_id].get("scatterplot_nongrouped_y")
-                if is_valid_df(df_plot, [x_col, y_col]):
-                    color_dict = color_picker_controls(["All Points"])
-                    show_trend = st.checkbox(
-                        label="Show linear fit (regression line)",
-                        value=False
+                color_dict = color_picker_controls(["All Points"])
+                show_trend = st.checkbox(
+                    label="Show linear fit (regression line)",
+                    value=False
+                    )
+                fig = plot_scatter(
+                    df_plot,
+                    x_col,
+                    y_col,
+                    color=color_dict,
+                    trendline=show_trend
+                    )
+                st.plotly_chart(fig, use_container_width=False)
+                plot_download_link(fig, filename="scatterplot.png")
+                cc_dict = st.session_state[user_session_id]["scatter_correlation"]
+                st.info(correlation_info(cc_dict))
+            else:
+                if st.session_state[user_session_id].get("scatterplot_attempted"):
+                    st.warning(
+                        body=(
+                            ":material/error: No valid data available for plotting. "
+                            "Please ensure you have selected valid variables."
                         )
-                    fig = plot_scatter(
-                        df_plot,
-                        x_col,
-                        y_col,
-                        color=color_dict,
-                        trendline=show_trend
-                        )
-                    st.plotly_chart(fig, use_container_width=False)
-                    plot_download_link(fig, filename="scatterplot.png")
-                    cc_dict = st.session_state[user_session_id]["scatter_correlation"]
-                    st.info(correlation_info(cc_dict))
-                else:
-                    st.info("Please select valid variables and ensure data is available.")
+                    )
 
     # Handle PCA selection
     elif plot_type == "PCA" and session.get('has_target')[0] is True:
@@ -653,30 +711,38 @@ def main() -> None:
                 "to visualize the PCA results and variable contributions."
             )
         )
-        pca_btn = st.sidebar.button(
+        pca_btn = plot_action_button(
             label="Generate PCA",
-            help="Generate PCA plot for the selected variables.",
-            type="secondary",
-            use_container_width=False,
-            # Use a unique key for the button to avoid conflicts
             key=f"pca_btn_{user_session_id}",
-            icon=":material/manufacturing:"
+            help_text="Generate PCA plot for the selected variables.",
+            user_session_id=user_session_id,
+            attempted_flag="pca_attempted"
         )
         st.sidebar.markdown("---")
 
         if pca_btn:
-            generate_pca(user_session_id, df, metadata_target, session)
+            try:
+                generate_pca(user_session_id, df, metadata_target, session)
+            except Exception:
+                st.error(
+                    body=(":material/error: Error generating PCA. "
+                          "Please check your selections.")
+                    )
 
-        if st.session_state[user_session_id].get("pca_warning"):
-            msg, icon = st.session_state[user_session_id]["pca_warning"]
-            st.warning(msg, icon=icon)
+        if show_plot_warning(
+            st.session_state,
+            user_session_id,
+            "pca_warning",
+            "pca_attempted",
+            [("target", "pca_df"), ("target", "contrib_df")]
+        ):
+            return
 
         # Plot PCA results if PCA has been performed
         if (
             session.get('pca')[0] is True and
             "pca_df" in st.session_state[user_session_id]["target"] and
-            st.session_state[user_session_id]["target"]["pca_df"] is not None and
-            st.session_state[user_session_id]["target"]["pca_df"].shape[0] > 0
+            is_valid_df(st.session_state[user_session_id]["target"]["pca_df"], ['PC1', 'PC2'])  # noqa: E501
         ):
             pca_df = st.session_state[user_session_id]["target"]["pca_df"]
             pc_cols = [col for col in pca_df.columns if re.match(r"PC\d+$", col)]
@@ -685,122 +751,121 @@ def main() -> None:
             max_valid_pcs = n_variables - 1 if n_variables > 1 else 1
             pc_cols = pc_cols[:max_valid_pcs]
 
-            if is_valid_df(pca_df, ['PC1', 'PC2']):
-                contrib_df = st.session_state[user_session_id]["target"]["contrib_df"]
-                ve = metadata_target.get("variance")[0]['temp']
+            contrib_df = st.session_state[user_session_id]["target"]["contrib_df"]
+            ve = metadata_target.get("variance")[0]['temp']
 
-                # Get the current PC index from session state, default to 1 (1-based)
-                current_idx = st.session_state[user_session_id].get('pca_idx', 1)
-                if not (1 <= current_idx <= len(pc_cols)):
-                    current_idx = 1
+            # Get the current PC index from session state, default to 1 (1-based)
+            current_idx = st.session_state[user_session_id].get('pca_idx', 1)
+            if not (1 <= current_idx <= len(pc_cols)):
+                current_idx = 1
 
-                tab1, tab2 = st.tabs(["PCA Plot", "Variable Contribution"])
+            tab1, tab2 = st.tabs(["PCA Plot", "Variable Contribution"])
 
-                # --- TAB 1 ---
-                with tab1:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        selected_idx = st.selectbox(
-                            "Select principal component to plot",
-                            list(range(1, len(pc_cols) + 1)),
-                            key=f"pca_idx_tab1_{user_session_id}",
-                            index=current_idx - 1,
-                            on_change=update_pca_idx_tab1,
-                            args=(user_session_id,)
+            # --- TAB 1 ---
+            with tab1:
+                col1, col2 = st.columns(2)
+                with col1:
+                    selected_idx = st.selectbox(
+                        "Select principal component to plot",
+                        list(range(1, len(pc_cols) + 1)),
+                        key=f"pca_idx_tab1_{user_session_id}",
+                        index=current_idx - 1,
+                        on_change=update_pca_idx_tab1,
+                        args=(user_session_id,)
+                    )
+                    st.session_state[user_session_id]['pca_idx'] = selected_idx
+                with col2:
+                    if session.get('has_meta')[0] is True:
+                        groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
+                        selected_groups = st.multiselect(
+                            "Highlight categories in PCA plot:",
+                            groups,
+                            default=[],
+                            key=f"highlight_pca_groups_{user_session_id}"
                         )
-                        st.session_state[user_session_id]['pca_idx'] = selected_idx
-                    with col2:
-                        if session.get('has_meta')[0] is True:
-                            groups = sorted(set(metadata_target.get('doccats')[0]['cats']))
-                            selected_groups = st.multiselect(
-                                "Highlight categories in PCA plot:",
-                                groups,
-                                default=[],
-                                key=f"highlight_pca_groups_{user_session_id}"
-                            )
-                        else:
-                            selected_groups = []
+                    else:
+                        selected_groups = []
 
-                    idx = st.session_state[user_session_id].get('pca_idx', 1)
-                    # Use 0-based index for pc_cols
-                    pca_x = pc_cols[idx - 1]
-                    pca_y = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
-                    pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = update_pca_plot(  # noqa: E501
-                        pca_df,
-                        contrib_df,
-                        ve,
-                        idx  # update_pca_plot expects 1-based index
+                idx = st.session_state[user_session_id].get('pca_idx', 1)
+                # Use 0-based index for pc_cols
+                pca_x = pc_cols[idx - 1]
+                pca_y = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
+                pca_x, pca_y, contrib_x, contrib_y, ve_1, ve_2, contrib_1_plot, contrib_2_plot = update_pca_plot(  # noqa: E501
+                    pca_df,
+                    contrib_df,
+                    ve,
+                    idx  # update_pca_plot expects 1-based index
+                )
+                fig = plot_pca_scatter_highlight(
+                    pca_df,
+                    pca_x,
+                    pca_y,
+                    'Group',
+                    selected_groups,
+                    x_label=pca_x,
+                    y_label=pca_y
+                )
+                st.plotly_chart(fig, use_container_width=False)
+                plot_download_link(fig, filename="pca_scatter.png")
+                st.info(variance_info(pca_x, pca_y, ve_1, ve_2))
+
+            # --- TAB 2 ---
+            with tab2:
+                st.markdown(
+                    body="##### Variable contribution (by %) to principal component:",
+                    help=(
+                        "The plots are a Python implementation of [fviz_contrib()](http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining), "  # noqa: E501
+                        "an **R** function that is part of the **factoextra** package."
                     )
-                    fig = plot_pca_scatter_highlight(
-                        pca_df,
-                        pca_x,
-                        pca_y,
-                        'Group',
-                        selected_groups,
-                        x_label=pca_x,
-                        y_label=pca_y
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    selected_idx2 = st.selectbox(
+                        "Select principal component to plot",
+                        list(range(1, len(pc_cols) + 1)),
+                        key=f"pca_idx_tab2_{user_session_id}",
+                        index=current_idx - 1,
+                        on_change=update_pca_idx_tab2,
+                        args=(user_session_id,)
                     )
-                    st.plotly_chart(fig, use_container_width=False)
-                    plot_download_link(fig, filename="pca_scatter.png")
-                    st.info(variance_info(pca_x, pca_y, ve_1, ve_2))
+                    st.session_state[user_session_id]['pca_idx'] = selected_idx2
 
-                # --- TAB 2 ---
-                with tab2:
-                    st.markdown(
-                        body="##### Variable contribution (by %) to principal component:",
-                        help=(
-                            "The plots are a Python implementation of [fviz_contrib()](http://www.sthda.com/english/wiki/fviz-contrib-quick-visualization-of-row-column-contributions-r-software-and-data-mining), "  # noqa: E501
-                            "an **R** function that is part of the **factoextra** package."
-                        )
-                    )
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        selected_idx2 = st.selectbox(
-                            "Select principal component to plot",
-                            list(range(1, len(pc_cols) + 1)),
-                            key=f"pca_idx_tab2_{user_session_id}",
-                            index=current_idx - 1,
-                            on_change=update_pca_idx_tab2,
-                            args=(user_session_id,)
-                        )
-                        st.session_state[user_session_id]['pca_idx'] = selected_idx2
-
-                    idx2 = st.session_state[user_session_id].get('pca_idx', 1)
-                    pca_x2 = pc_cols[idx2 - 1]
-                    pca_y2 = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
-                    pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = update_pca_plot(  # noqa: E501
-                        pca_df,
-                        contrib_df,
-                        ve,
-                        idx2
-                    )
-                    with col2:
-                        sort_by = st.radio(
-                            "Sort variables by:",
-                            (pca_x2, pca_y2),
-                            index=0,
-                            horizontal=True,
-                            key=f"sort_by_{user_session_id}"
-                        )
-
-                    st.info(contribution_info(pca_x2, pca_y2, contrib_x2, contrib_y2))
-
-                    fig = plot_pca_variable_contrib_bar(
-                        contrib_1_plot2, contrib_2_plot2,
-                        pc1_label=pca_x2, pc2_label=pca_y2,
-                        sort_by=sort_by
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    plot_download_link(fig, filename="pca_variable_contrib_bar.png")
-
-            else:
-                st.info(
-                    """
-                    PCA data is not available or required components are missing.
-                    """
+                idx2 = st.session_state[user_session_id].get('pca_idx', 1)
+                pca_x2 = pc_cols[idx2 - 1]
+                pca_y2 = pc_cols[1] if len(pc_cols) > 1 else pc_cols[0]
+                pca_x2, pca_y2, contrib_x2, contrib_y2, ve_1_2, ve_2_2, contrib_1_plot2, contrib_2_plot2 = update_pca_plot(  # noqa: E501
+                    pca_df,
+                    contrib_df,
+                    ve,
+                    idx2
+                )
+                with col2:
+                    sort_by = st.radio(
+                        "Sort variables by:",
+                        (pca_x2, pca_y2),
+                        index=0,
+                        horizontal=True,
+                        key=f"sort_by_{user_session_id}"
                     )
 
-            st.sidebar.markdown("---")
+                st.info(contribution_info(pca_x2, pca_y2, contrib_x2, contrib_y2))
+
+                fig = plot_pca_variable_contrib_bar(
+                    contrib_1_plot2, contrib_2_plot2,
+                    pc1_label=pca_x2, pc2_label=pca_y2,
+                    sort_by=sort_by
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                plot_download_link(fig, filename="pca_variable_contrib_bar.png")
+
+        else:
+            if st.session_state[user_session_id].get("pca_attempted"):
+                st.warning(
+                    body=(
+                        ":material/error: No valid data available for plotting. "
+                        "Please ensure you have selected valid variables."
+                    )
+                )
 
 
 if __name__ == "__main__":
