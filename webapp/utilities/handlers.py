@@ -974,17 +974,21 @@ def generate_clusters(
 
 def generate_pca(
         user_session_id: str,
-        df: pd.DataFrame,
+        df: pl.DataFrame,
         metadata_target: dict,
         session: dict
         ) -> None:
     # --- User input validation ---
-    if df is None or df.empty:
+    if df is None or df.is_empty():
         st.session_state[user_session_id]["pca_warning"] = (
             "No data available for PCA. Please process your corpus and select valid tags.",
             ":material/info:"
         )
         return
+
+    # --- Always scale the data before PCA ---
+    df = ds.dtm_weight(df, scheme="prop")
+    df = ds.dtm_weight(df, scheme="scale")
 
     # --- Check for metadata grouping ---
     if session.get('has_meta', [False])[0]:
@@ -994,19 +998,20 @@ def generate_pca(
 
     # --- Drop unwanted columns ---
     to_drop = ['Other', 'FU', 'Untagged']
-    df = df.drop([x for x in to_drop if x in df.columns], axis=1)
+    df = df.drop([col for col in to_drop if col in df.columns])
 
     # --- Check if enough columns remain for PCA ---
-    if df.shape[1] < 2:
+    if df.width < 2:
         st.session_state[user_session_id]["pca_warning"] = (
             "Not enough variables for PCA after dropping excluded columns.",
             ":material/info:"
         )
         return
 
-    # --- Compute PCA ---
+    # --- Convert to pandas only if needed ---
     try:
-        pca_df, contrib_df, ve = analysis.pca_contributions(df, grouping)
+        df_pd = df.to_pandas()
+        pca_df, contrib_df, ve = analysis.pca_contributions(df_pd, grouping)
     except Exception as e:
         st.session_state[user_session_id]["pca_warning"] = (
             f"PCA computation failed: {e}",
