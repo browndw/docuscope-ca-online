@@ -23,7 +23,6 @@ import tomli
 
 import docuscospacy as ds
 import streamlit as st
-import pandas as pd
 import polars as pl
 
 # Ensure project root is in sys.path for both desktop and online
