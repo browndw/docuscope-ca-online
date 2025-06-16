@@ -655,13 +655,17 @@ def plot_scatter(
             ticktext=ticktext
         )
     else:
+        # Force both axes to have the same range, but let Plotly pick ticks
+        axis_max = math.ceil(axis_max)  # round up to nearest integer for safety
         xaxis_kwargs = dict(
+            range=[0, axis_max],
             showgrid=False,
             zeroline=True,
             zerolinewidth=2,
             zerolinecolor='black'
         )
         yaxis_kwargs = dict(
+            range=[0, axis_max],
             showgrid=False,
             zeroline=True,
             zerolinewidth=2,
@@ -720,6 +724,7 @@ def plot_scatter(
         height=500,
         width=500
     )
+    fig.update_yaxes(**yaxis_kwargs, title_standoff=20)
     return fig
 
 
@@ -776,7 +781,7 @@ def plot_scatter_highlight(
             if n_ticks >= 4:
                 return interval
         return None  # fallback: let Plotly decide
-
+    # Get tick interval
     tick_interval = get_tick_interval(axis_max)
     if tick_interval:
         axis_max = math.ceil(axis_max / tick_interval) * tick_interval
@@ -802,13 +807,16 @@ def plot_scatter_highlight(
             ticktext=ticktext
         )
     else:
+        axis_max = math.ceil(axis_max)  # round up for safety
         xaxis_kwargs = dict(
+            range=[0, axis_max],
             showgrid=False,
             zeroline=True,
             zerolinewidth=2,
             zerolinecolor='black'
         )
         yaxis_kwargs = dict(
+            range=[0, axis_max],
             showgrid=False,
             zeroline=True,
             zerolinewidth=2,
@@ -891,6 +899,7 @@ def plot_scatter_highlight(
         height=500,
         width=500
     )
+    fig.update_yaxes(**yaxis_kwargs, title_standoff=20)
     return fig
 
 
@@ -906,6 +915,7 @@ def plot_pca_scatter_highlight(
     """
     Create a scatter plot for PCA results with optional highlighting of groups.
     Highlighted points are plotted on top of non-highlighted points.
+    Ensures both axes have the same range and tick marks.
     """
     # Convert to pandas if needed
     if hasattr(df, "to_pandas"):
@@ -934,7 +944,22 @@ def plot_pca_scatter_highlight(
         abs(df[x_col].min()), abs(df[x_col].max()),
         abs(df[y_col].min()), abs(df[y_col].max())
     )
-    max_abs = (int(max_abs) + 1) if max_abs == int(max_abs) else round(max_abs + 0.5, 2)
+
+    # Use only "nice" intervals for PCA
+    candidates = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+    axis_max = max_abs
+    for interval in candidates:
+        if axis_max <= interval * 4:
+            axis_max = math.ceil(axis_max / interval) * interval
+            tick_interval = interval
+            break
+    else:
+        tick_interval = candidates[-1]
+        axis_max = math.ceil(axis_max / tick_interval) * tick_interval
+
+    n_ticks = int((2 * axis_max) // tick_interval) + 1
+    tickvals = [round(-axis_max + i * tick_interval, 2) for i in range(n_ticks)]
+    ticktext = [str(v) for v in tickvals]
 
     # Split data
     df_non_highlight = df[df['Highlight'] == False]
@@ -989,11 +1014,11 @@ def plot_pca_scatter_highlight(
     # Add zero axes
     fig.add_shape(type="line",
                   x0=0, x1=0,
-                  y0=-max_abs, y1=max_abs,
+                  y0=-axis_max, y1=axis_max,
                   line=dict(color="black", width=1, dash="dash"),
                   layer="below")
     fig.add_shape(type="line",
-                  x0=-max_abs, x1=max_abs,
+                  x0=-axis_max, x1=axis_max,
                   y0=0, y1=0,
                   line=dict(color="black", width=1, dash="dash"),
                   layer="below")
@@ -1006,8 +1031,21 @@ def plot_pca_scatter_highlight(
         height=500,
         width=500
     )
-    fig.update_xaxes(showgrid=False, range=[-max_abs, max_abs], zeroline=False)
-    fig.update_yaxes(showgrid=False, range=[-max_abs, max_abs], zeroline=False)
+    fig.update_xaxes(
+        showgrid=False,
+        range=[-axis_max, axis_max],
+        zeroline=False,
+        tickvals=tickvals,
+        ticktext=ticktext
+    )
+    fig.update_yaxes(
+        showgrid=False,
+        range=[-axis_max, axis_max],
+        zeroline=False,
+        tickvals=tickvals,
+        ticktext=ticktext,
+        title_standoff=20
+    )
     return fig
 
 
@@ -1144,7 +1182,7 @@ def plot_pca_variable_contrib_bar(
         height=30 * len(merged) + 100,
         margin=dict(l=0, r=0, t=30, b=40),
         xaxis_title="Contribution",
-        yaxis_title="Variable",
+        yaxis_title="",
         xaxis=dict(
             tickvals=tickvals,
             ticktext=ticktext,
