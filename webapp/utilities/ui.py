@@ -354,7 +354,7 @@ def sidebar_action_button(
         otherwise show in the main area.
     """
     container = st.sidebar if sidebar else st
-    if container.button(button_label, icon=button_icon, type="primary"):
+    if container.button(button_label, icon=button_icon, type="secondary"):
         if not all(preconditions):
             st.error(
                     body=(
@@ -378,6 +378,30 @@ def sidebar_action_button(
         with container:
             with st.spinner(spinner_message):
                 action()
+
+
+def plot_action_button(
+    label,
+    key,
+    help_text,
+    user_session_id=None,
+    attempted_flag=None,
+    clear_func=None
+):
+    pressed = st.sidebar.button(
+        label=label,
+        key=key,
+        help=help_text,
+        type="secondary",
+        use_container_width=False,
+        icon=":material/manufacturing:"
+    )
+    if pressed:
+        if clear_func and user_session_id:
+            clear_func(user_session_id)
+        if user_session_id and attempted_flag:
+            st.session_state[user_session_id][attempted_flag] = True
+    return pressed
 
 
 def sidebar_keyness_options(
@@ -921,7 +945,8 @@ def clear_boxplot_multiselect(user_session_id: str) -> None:
     """
     Clear the boxplot multiselects and reset related session state.
     This function resets the boxplot variable selections and clears
-    any associated DataFrames, statistics, and widget state in the session state.
+    any associated DataFrames, statistics, confirmed selections,
+    and widget state in the session state.
     """
     if user_session_id not in st.session_state:
         return
@@ -929,7 +954,9 @@ def clear_boxplot_multiselect(user_session_id: str) -> None:
     # Clear DataFrames, stats, warnings, and selected variables/groups
     keys = [
         "boxplot_df", "boxplot_stats", "boxplot_warning",
-        "boxplot_group_df", "boxplot_group_stats", "boxplot_group_warning"
+        "boxplot_group_df", "boxplot_group_stats", "boxplot_group_warning",
+        # Add confirmed selections for new logic:
+        "confirmed_box_val2", "confirmed_box_val1", "confirmed_grpa", "confirmed_grpb"
     ]
     for key in keys:
         st.session_state[user_session_id][key] = None
@@ -951,6 +978,11 @@ def clear_boxplot_multiselect(user_session_id: str) -> None:
     for wkey in widget_keys:
         if wkey in st.session_state:
             del st.session_state[wkey]
+
+    # --- Clear persistent color map for boxplots if present ---
+    color_map_key = f"boxplot_color_map_{user_session_id}"
+    if color_map_key in st.session_state:
+        del st.session_state[color_map_key]
 
 
 def clear_scatterplot_multiselect(user_session_id: str) -> None:
@@ -1037,7 +1069,9 @@ def clear_plots(
             "boxplot_df", "boxplot_stats", "boxplot_warning",
             "boxplot_group_df", "boxplot_group_stats", "boxplot_group_warning",
             "scatterplot_df", "scatter_correlation", "scatter_warning",
-            "scatterplot_group_df", "scatter_group_correlation", "scatter_group_warning"
+            "scatterplot_group_df", "scatter_group_correlation", "scatter_group_warning",
+            # Add confirmed selections for new logic:
+            "confirmed_box_val2", "confirmed_box_val1", "confirmed_grpa", "confirmed_grpb"
         ]
         for key in keys_to_clear:
             st.session_state[session_id][key] = None
@@ -1057,9 +1091,49 @@ def clear_plots(
                       if any(k.startswith(prefix) for prefix in widget_prefixes)]
     for k in keys_to_remove:
         del st.session_state[k]
+
+    # --- Clear persistent color map for boxplots if present ---
+    color_map_key = f"boxplot_color_map_{session_id}"
+    if color_map_key in st.session_state:
+        del st.session_state[color_map_key]
+
+    # --- Clear attempted flags ---
+    for flag in [
+        "boxplot_attempted",
+        "boxplot_group_attempted",
+        "scatterplot_attempted",
+        "scatterplot_group_attempted",
+        "pca_attempted"
+    ]:
+        st.session_state[session_id][flag] = False
+
     # --- Clear boxplot and scatterplot multiselects ---
     clear_boxplot_multiselect(session_id)
     clear_scatterplot_multiselect(session_id)
+
+
+def show_plot_warning(
+        session,
+        user_session_id,
+        warning_key,
+        attempted_flag,
+        df_keys=None
+        ) -> bool:
+    if session[user_session_id].get(warning_key) and session[user_session_id].get(attempted_flag):  # noqa: E501
+        if df_keys:
+            for k in df_keys:
+                if isinstance(k, tuple):
+                    # Nested key, e.g. ("target", "pca_df")
+                    d = session[user_session_id]
+                    for subkey in k[:-1]:
+                        d = d.get(subkey, {})
+                    d[k[-1]] = None
+                else:
+                    session[user_session_id][k] = None
+        msg, icon = session[user_session_id][warning_key]
+        st.warning(msg, icon=icon)
+        return True
+    return False
 
 
 # Functions for storing values associated with specific apps
@@ -1115,7 +1189,7 @@ def color_picker_controls(
         cats: list[str] = None,
         default_hex: str = "#133955",
         default_palette: str = "Plotly",
-        expander_label: str = "Plot Colors",
+        expander_label: str = "Select Plot Colors",
         key_prefix: str = "color_picker_form",
         non_highlight_default: str = "#d3d3d3",
         reference_corpus_default: str = "#e67e22"
@@ -1153,7 +1227,10 @@ def color_picker_controls(
 
     color_dict = {}
 
-    with st.expander(expander_label):
+    with st.expander(
+        label=expander_label,
+        icon=":material/palette:"
+    ):
         color_mode = st.radio(
             "Color mode",
             ["Default colors", "Plotly palette", "Custom (pick colors)"],
@@ -1201,11 +1278,11 @@ def color_picker_controls(
             palette = st.selectbox(
                 "Plotly palette",
                 plotly_palettes,
-                index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,
+                index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,  # noqa: E501
                 key=palette_key
             )
-            palette_colors_raw = getattr(plotly.colors.qualitative, palette, None) or getattr(plotly.colors.sequential, palette, None)
-            palette_colors = [rgb_to_hex(c) for c in palette_colors_raw] if palette_colors_raw else [default_hex]
+            palette_colors_raw = getattr(plotly.colors.qualitative, palette, None) or getattr(plotly.colors.sequential, palette, None)  # noqa: E501
+            palette_colors = [rgb_to_hex(c) for c in palette_colors_raw] if palette_colors_raw else [default_hex]  # noqa: E501
             prev_color = palette_colors[0] if palette_colors else default_hex
             seen_keys = set()
             for idx, cat in enumerate(cats):
