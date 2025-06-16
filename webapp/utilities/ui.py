@@ -161,16 +161,6 @@ def contribution_info(
     return contrib_info
 
 
-def message_stats_info(
-        stats: str | None = None
-        ) -> str:
-    stats_info = f"""##### Descriptive statistics:
-
-    {stats}
-    """
-    return stats_info
-
-
 def group_info(
         grp_a: list[str],
         grp_b: list[str]
@@ -1166,16 +1156,27 @@ def color_picker_controls(
     with st.expander(expander_label):
         color_mode = st.radio(
             "Color mode",
-            ["Custom (pick colors)", "Plotly palette"],
+            ["Default colors", "Plotly palette", "Custom (pick colors)"],
             horizontal=True,
             key=color_mode_key
         )
 
-        if color_mode == "Custom (pick colors)":
+        if color_mode == "Default colors":
+            # Use default hex for all, with special cases
+            prev_color = default_hex
+            for idx, cat in enumerate(cats):
+                if cat.lower() == "non-highlight":
+                    color = non_highlight_default
+                elif cat.lower() == "reference corpus":
+                    color = reference_corpus_default
+                else:
+                    color = prev_color
+                color_dict[cat] = color
+                prev_color = color
+        elif color_mode == "Custom (pick colors)":
             prev_color = default_hex
             seen_keys = set()
             for idx, cat in enumerate(cats):
-                # Set special defaults for certain categories
                 if cat.lower() == "non-highlight":
                     color_default = non_highlight_default
                 elif cat.lower() == "reference corpus":
@@ -1185,7 +1186,6 @@ def color_picker_controls(
                 safe_cat = str(cat).replace(" ", "_").replace(",", "_").replace("/", "_")
                 if not safe_cat:
                     safe_cat = f"cat_{idx}"
-                # Ensure uniqueness even if cats has duplicates or empty strings
                 color_key = f"{key_prefix}_{safe_cat}_{idx}"
                 while color_key in seen_keys:
                     color_key = f"{key_prefix}_{safe_cat}_{idx}_{len(seen_keys)}"
@@ -1196,16 +1196,16 @@ def color_picker_controls(
                     key=color_key
                 )
                 color_dict[cat] = color
-                prev_color = color  # Default next color to previous
-        else:
+                prev_color = color
+        else:  # Plotly palette
             palette = st.selectbox(
                 "Plotly palette",
                 plotly_palettes,
-                index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,  # noqa: E501
+                index=plotly_palettes.index(default_palette) if default_palette in plotly_palettes else 0,
                 key=palette_key
             )
-            palette_colors_raw = getattr(plotly.colors.qualitative, palette, None) or getattr(plotly.colors.sequential, palette, None)  # noqa: E501
-            palette_colors = [rgb_to_hex(c) for c in palette_colors_raw] if palette_colors_raw else [default_hex]  # noqa: E501
+            palette_colors_raw = getattr(plotly.colors.qualitative, palette, None) or getattr(plotly.colors.sequential, palette, None)
+            palette_colors = [rgb_to_hex(c) for c in palette_colors_raw] if palette_colors_raw else [default_hex]
             prev_color = palette_colors[0] if palette_colors else default_hex
             seen_keys = set()
             for idx, cat in enumerate(cats):
@@ -1229,6 +1229,6 @@ def color_picker_controls(
                     key=color_key
                 )
                 color_dict[cat] = color
-                prev_color = color  # Default next color to previous
+                prev_color = color
 
     return color_dict
