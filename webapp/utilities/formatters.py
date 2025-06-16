@@ -381,17 +381,17 @@ def plot_general_boxplot(
     elif isinstance(color, str) and color.lower().startswith("#"):
         color_map = {cat: color for cat in tag_order}
     elif palette:
-        palette_colors = palette if isinstance(palette, list) else px.colors.qualitative.Set1
-        color_map = {cat: palette_colors[i % len(palette_colors)] for i, cat in enumerate(tag_order)}
+        palette_colors = palette if isinstance(palette, list) else px.colors.qualitative.Set1  # noqa: E501
+        color_map = {cat: palette_colors[i % len(palette_colors)] for i, cat in enumerate(tag_order)}  # noqa: E501
     else:
         palette_colors = px.colors.qualitative.Set1
-        color_map = {cat: palette_colors[i % len(palette_colors)] for i, cat in enumerate(tag_order)}
+        color_map = {cat: palette_colors[i % len(palette_colors)] for i, cat in enumerate(tag_order)}  # noqa: E501
 
     # Compute summary stats for hover
     stats = (
         df.groupby(tag_col)[value_col]
-        .agg(['mean', 'median', lambda s: s.quantile(0.75) - s.quantile(0.25), 'min', 'max'])
-        .rename(columns={'mean': 'Mean', 'median': 'Median', '<lambda_0>': 'IQR', 'min': 'Min', 'max': 'Max'})
+        .agg(['mean', 'median', lambda s: s.quantile(0.75) - s.quantile(0.25), 'min', 'max'])  # noqa: E501
+        .rename(columns={'mean': 'Mean', 'median': 'Median', '<lambda_0>': 'IQR', 'min': 'Min', 'max': 'Max'})  # noqa: E501
         .reset_index()
     )
 
@@ -435,7 +435,7 @@ def plot_general_boxplot(
             'bar': False,
         },
     ).update_traces(opacity=0.01,  # nearly invisible, but hoverable
-                    hovertemplate="<b>%{y}</b><br>Min: %{customdata[3]:.2f}%<br>IQR: %{customdata[2]:.2f}%<br>Median: %{customdata[1]:.2f}%<br>Mean: %{customdata[0]:.2f}%<br>Max: %{customdata[4]:.2f}%<extra></extra>")
+                    hovertemplate="<b>%{y}</b><br>Min: %{customdata[3]:.2f}%<br>IQR: %{customdata[2]:.2f}%<br>Median: %{customdata[1]:.2f}%<br>Mean: %{customdata[0]:.2f}%<br>Max: %{customdata[4]:.2f}%<extra></extra>")  # noqa: E501
 
     # Add bar traces to boxplot
     for trace in fig2.data:
@@ -447,7 +447,7 @@ def plot_general_boxplot(
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=-0.25,
+            y=-0.5,
             xanchor="left",
             x=0
         ),
@@ -499,8 +499,8 @@ def plot_grouped_boxplot(
     # Compute summary stats for hover (per tag+group)
     stats = (
         df.groupby([tag_col, group_col])[value_col]
-        .agg(['mean', 'median', lambda s: s.quantile(0.75) - s.quantile(0.25), 'min', 'max'])
-        .rename(columns={'mean': 'Mean', 'median': 'Median', '<lambda_0>': 'IQR', 'min': 'Min', 'max': 'Max'})
+        .agg(['mean', 'median', lambda s: s.quantile(0.75) - s.quantile(0.25), 'min', 'max'])  # noqa: E501
+        .rename(columns={'mean': 'Mean', 'median': 'Median', '<lambda_0>': 'IQR', 'min': 'Min', 'max': 'Max'})  # noqa: E501
         .reset_index()
     )
 
@@ -553,7 +553,7 @@ def plot_grouped_boxplot(
         },
     ).update_traces(
         opacity=0.01,  # nearly invisible, but hoverable
-        hovertemplate="<b>%{y} | %{customdata[5]}</b><br>Min: %{customdata[3]:.2f}%<br>IQR: %{customdata[2]:.2f}%<br>Median: %{customdata[1]:.2f}%<br>Mean: %{customdata[0]:.2f}%<br>Max: %{customdata[4]:.2f}%<extra></extra>"
+        hovertemplate="<b>%{y} | %{customdata[5]}</b><br>Min: %{customdata[3]:.2f}%<br>IQR: %{customdata[2]:.2f}%<br>Median: %{customdata[1]:.2f}%<br>Mean: %{customdata[0]:.2f}%<br>Max: %{customdata[4]:.2f}%<extra></extra>"  # noqa: E501
     )
 
     # Add bar traces to boxplot
@@ -567,7 +567,7 @@ def plot_grouped_boxplot(
         legend=dict(
             orientation="h",
             yanchor="top",
-            y=-0.25,  # Move legend well below the plot
+            y=-0.5,  # Move legend well below the plot
             xanchor="left",
             x=0
         ),
@@ -842,7 +842,7 @@ def plot_scatter_highlight(
                 line=dict(width=0)
             ),
             name="Non-Highlight",
-            text=df_non_highlight[group_col] if group_col in df_non_highlight.columns else None,
+            text=df_non_highlight[group_col] if group_col in df_non_highlight.columns else None,  # noqa: E501
             hovertemplate=(
                 f"<b>{group_col}:</b> %{{text}}<br>"
                 f"<b>{x_col}:</b> %{{x:.2f}}%<br>"
@@ -962,8 +962,8 @@ def plot_pca_scatter_highlight(
     ticktext = [str(v) for v in tickvals]
 
     # Split data
-    df_non_highlight = df[df['Highlight'] == False]
-    df_highlight = df[df['Highlight'] == True]
+    df_non_highlight = df[df['Highlight'] == False]  # noqa: E712
+    df_highlight = df[df['Highlight'] == True]  # noqa: E712
 
     fig = go.Figure()
 
@@ -980,7 +980,7 @@ def plot_pca_scatter_highlight(
                 line=dict(width=0)
             ),
             name="Non-Highlight",
-            text=df_non_highlight[group_col] if group_col in df_non_highlight.columns else None,
+            text=df_non_highlight[group_col] if group_col in df_non_highlight.columns else None,  # noqa: E501
             hovertemplate=(
                 f"<b>{group_col}:</b> %{{text}}<br>"
                 f"<b>{x_col}:</b> %{{x:.2f}}<br>"
