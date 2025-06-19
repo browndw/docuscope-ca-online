@@ -13,50 +13,144 @@
 # limitations under the License.
 
 import pathlib
-import sys
-
 import docuscospacy as ds
 import polars as pl
 import streamlit as st
 
-# Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from webapp.utilities.analysis import (
+    generate_tags_table, load_metadata
+)
+from webapp.utilities.session import (
+    get_or_init_user_session, validate_session_state
+    )
+from webapp.utilities.ui import (
+    render_table_generation_interface, sidebar_help_link,
+    tagset_selection, color_picker_controls,
+    tag_filter_multiselect, target_info,
+    get_page_base_filename, render_data_table_interface
+    )
+from webapp.utilities.plotting import (
+    plot_download_link, plot_tag_frequencies_bar
+    )
+from webapp.utilities.state import (
+    load_widget_state, persist
+)
+from webapp.menu import (
+    menu, require_login
+    )
+from webapp.config.session_keys import (
+    CorpusKeys, SessionKeys,
+    TargetKeys, WarningKeys
+    )
 
-from webapp.utilities.handlers import (  # noqa: E402
-    generate_tags_table,
-    get_or_init_user_session,
-    load_metadata
-    )
-from webapp.utilities.ui import (   # noqa: E402
-    load_widget_state,
-    persist,
-    render_dataframe,
-    sidebar_action_button,
-    sidebar_help_link,
-    tag_filter_multiselect,
-    tagset_selection,
-    target_info,
-    toggle_download
-    )
-from webapp.utilities.formatters import (  # noqa: E402
-    convert_to_excel,
-    plot_download_link,
-    plot_tag_frequencies_bar
-    )
-from webapp.menu import (   # noqa: E402
-    menu,
-    require_login
-    )
 
 TITLE = "Tag Frequencies"
 ICON = ":material/table_view:"
+
+# Configuration constants
+DEFAULT_WIDGET_STATE_PATH = pathlib.Path(__file__).stem
+TAGSET_CONFIG = {
+    "Parts-of-Speech": {
+        "General": TargetKeys.DTM_POS,
+        "Specific": TargetKeys.TT_POS
+    },
+    "DocuScope": TargetKeys.TT_DS
+}
+SIMPLIFY_CONFIG = {
+    "Parts-of-Speech": {
+        "General": ds.tags_simplify,
+        "Specific": None
+    }
+}
+TAG_FILTERS_CONFIG = {
+    "Parts-of-Speech": {
+        "Specific": lambda df: df.filter(pl.col("Tag") != "FU")
+    },
+    "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
+}
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
+    """Render the tag frequency interface with tabs for table and plot."""
+    try:
+        # Validate session state first
+        if not validate_session_state(user_session_id):
+            st.error("Invalid session state. Please reload the page or reset your data.")
+            return
+
+        # Load the widget state and metadata for the target
+        load_widget_state(DEFAULT_WIDGET_STATE_PATH, user_session_id)
+        metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+
+        if not metadata_target:
+            st.error("Could not load target corpus metadata.")
+            return
+
+        # Generate the tags table
+        df, tag_options, tag_radio, tag_type = tagset_selection(
+            user_session_id=user_session_id,
+            session_state=st.session_state,
+            persist_func=persist,
+            page_stem=DEFAULT_WIDGET_STATE_PATH,
+            tagset_keys=TAGSET_CONFIG,
+            simplify_funcs=SIMPLIFY_CONFIG,
+            tag_filters=TAG_FILTERS_CONFIG,
+            tag_radio_key="tt_radio",
+            tag_type_key="tt_type_radio"
+        )
+
+        # Create tabs for table and plot display
+        tab1, tab2 = st.tabs(["Table", "Plot"])
+
+        # Render the table in the first tab with custom key handling
+        with tab1:
+            # Use generalized data table interface (filtering applied inside)
+            base_filename = get_page_base_filename(__file__)
+            render_data_table_interface(
+                df=df,
+                metadata_target=metadata_target,
+                base_filename=base_filename,
+                no_data_message="No frequency data available to display.",
+                apply_tag_filter=True
+            )
+
+        # Plot the tag frequencies in the second tab
+        with tab2:
+            render_tag_frequency_plot(df, metadata_target)
+
+    except Exception as e:
+        st.error(f"Error loading tag frequency table: {str(e)}", icon=":material/error:")
+        st.info("Try regenerating the tag frequency table if this error persists.")
+
+
+def render_tag_frequency_plot(df, metadata_target: dict) -> None:
+    """Render the tag frequency plot with color controls."""
+    # Display the target information
+    st.info(target_info(metadata_target))
+
+    # Apply tag filtering with unique key for plot tab
+    filtered_df = tag_filter_multiselect(df, key="plot_tag_filter")
+
+    if filtered_df is None or getattr(filtered_df, "height", 0) == 0:
+        st.warning("No tags to plot.", icon=":material/info:")
+        return
+
+    # Color picker for bar color
+    color_dict = color_picker_controls(
+        ["Bar Color"],
+        key_prefix="tag_freq_bar_"
+    )
+    bar_color = color_dict.get("Bar Color", "#133955")
+
+    # Plot the tag frequencies bar chart
+    fig = plot_tag_frequencies_bar(filtered_df, color=bar_color)
+    st.plotly_chart(fig, use_container_width=True)
+    plot_download_link(fig, filename="tag_frequency_plot.png")
 
 
 def main():
@@ -82,110 +176,20 @@ def main():
     sidebar_help_link("tag-frequencies.html")
 
     # Check if the tags table is available in the session
-    if session.get('tags_table')[0] is True:
-        # Load the widget state and metadata for the target
-        load_widget_state(
-            pathlib.Path(__file__).stem,
-            user_session_id
-        )
-        metadata_target = load_metadata(
-            'target',
-            user_session_id
-        )
-        # Generate the tags table
-        df, tag_options, tag_radio, tag_type = tagset_selection(
-            user_session_id=user_session_id,
-            session_state=st.session_state,
-            persist_func=persist,
-            page_stem=pathlib.Path(__file__).stem,
-            tagset_keys={
-                "Parts-of-Speech": {"General": "dtm_pos", "Specific": "tt_pos"},
-                "DocuScope": "tt_ds"
-            },
-            simplify_funcs={
-                "Parts-of-Speech": {"General": ds.tags_simplify, "Specific": None}
-            },
-            tag_filters={
-                "Parts-of-Speech": {"Specific": lambda df: df.filter(pl.col("Tag") != "FU")},  # noqa: E501
-                "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
-            },
-            tag_radio_key="tt_radio",
-            tag_type_key="tt_type_radio"
-        )
-
-        # Display the target information and the tag frequencies
-        st.info(target_info(metadata_target))
-
-        # Create tabs for table and plot display
-        tab1, tab2 = st.tabs(["Table", "Plot"])
-        # Render the DataFrame in the first tab
-        with tab1:
-            # Display the tagset selection radio buttons
-            df = tag_filter_multiselect(df)
-            render_dataframe(df)
-        # Plot the tag frequencies in the second tab
-        with tab2:
-            if df is None or getattr(df, "height", 0) == 0:
-                st.warning("No tags to plot.")
-            else:
-                fig = plot_tag_frequencies_bar(df)
-                st.plotly_chart(fig, use_container_width=True)
-                plot_download_link(fig, filename="tag_frequency_plot.png")
-
-        st.sidebar.markdown("---")
-        # Add a download button for the tag frequencies table
-        toggle_download(
-            label="Excel",
-            convert_func=convert_to_excel,
-            convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
-            file_name="tag_frequencies.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            location=st.sidebar
-        )
-
-        st.sidebar.markdown("---")
-
+    if session.get(SessionKeys.TAGS_TABLE, [False])[0] is True:
+        render_tag_frequency_interface(user_session_id, session)
     else:
-        st.markdown(
-            body=(
-                ":material/manufacturing: Use the button in the sidebar to **generate a tag frequency table**.\n\n"  # noqa: E501
-                ":material/priority: A **target corpus** must be loaded first.\n\n"
-                ":material/priority: After the table has been generated, "
-                "you will be able to **toggle between the tagsets**."
-                )
-        )
-
-        # Display the sidebar header for generating frequency table
-        st.sidebar.markdown(
-            body=(
-                "### Generate table\n\n"
-                "Use the button to process a table."
-                ),
-            help=(
-                "Tables are generated based on the loaded target corpus. "
-                "You can filter the table after it has been generated. "
-                "The table will include tag frequencies for the selected tagsets.\n\n"
-                "Click on the **Help** button for more information on how to use this app."
-                )
-            )
-        # Add a sidebar button to generate the tags table
-        sidebar_action_button(
+        render_table_generation_interface(
+            user_session_id=user_session_id,
+            session=session,
+            table_type="tags table",
             button_label="Tags Table",
-            button_icon=":material/manufacturing:",
-            preconditions=[
-                session.get('has_target')[0],
-            ],
-            action=lambda: generate_tags_table(
-                user_session_id
-            ),
-            spinner_message="Processing frequencies..."
+            generation_func=generate_tags_table,
+            session_key=SessionKeys.TAGS_TABLE,
+            warning_key=WarningKeys.TAGS
         )
-        # Check if there is a warning message for the tags table
-        if st.session_state[user_session_id].get("tags_warning"):
-            msg, icon = st.session_state[user_session_id]["tags_warning"]
-            st.warning(msg, icon=icon)
 
-        st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
 
 
 if __name__ == "__main__":

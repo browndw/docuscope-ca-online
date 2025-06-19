@@ -12,22 +12,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pathlib
-import sys
-
-import altair as alt
 import pandas as pd
 import polars as pl
 import streamlit as st
 import streamlit.components.v1 as components
 
-# Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-import webapp.utilities as _utils   # noqa: E402
-from webapp.menu import menu, require_login   # noqa: E402
+from webapp.utilities.session import (  # noqa: E402
+    load_metadata,
+    get_or_init_user_session,
+    update_session,
+    )
+from webapp.utilities.exports import (  # noqa: E402
+    convert_to_word,
+    )
+from webapp.utilities.ui import (  # noqa: E402
+    generate_tag_html_legend,
+    plot_tag_density,
+    sidebar_action_button,
+    tagset_selection,
+    toggle_download,
+    update_tags
+)
+from webapp.utilities.state import (  # noqa: E402
+    load_widget_state,
+    persist
+)
+# Temporary import for functions not yet migrated
+from webapp.utilities.processing import generate_document_html  # noqa: E402
+from webapp.config.session_keys import (  # noqa: E402
+    SessionKeys,
+    CorpusKeys,
+    TargetKeys,
+    WarningKeys
+    )
+from webapp.menu import (   # noqa: E402
+    menu,
+    require_login
+    )
 
 HEX_HIGHLIGHTS = ['#5fb7ca', '#e35be5', '#ffc701', '#fe5b05', '#cb7d60']
 
@@ -39,14 +60,27 @@ st.set_page_config(
     layout="wide"
     )
 
-
-def main():
+def main() -> None:
+    """
+    Main function to render the Single Document page.
+    This function sets up the page, handles user sessions,
+    and manages the selection and display of individual documents
+    with their associated tags and statistics.
+    """
     # Set login requirements for navigaton
     require_login()
     menu()
-    st.markdown(f"## {TITLE}")
+    st.markdown(
+        body=f"## {TITLE}",
+        help=(
+            "This page allows you to explore individual documents "
+            "from your target corpus. You can select tags to highlight "
+            "in the text, visualize their distribution, and download "
+            "the results in a Word document."
+            )
+        )
     # Get or initialize user session
-    user_session_id, session = _utils.handlers.get_or_init_user_session()
+    user_session_id, session = get_or_init_user_session()
 
     st.sidebar.link_button(
         label="Help",
@@ -56,12 +90,12 @@ def main():
 
     if session.get('doc')[0] is True:
 
-        _utils.handlers.load_widget_state(
+        load_widget_state(
             pathlib.Path(__file__).stem,
             user_session_id
             )
-        metadata_target = _utils.handlers.load_metadata(
-            'target',
+        metadata_target = load_metadata(
+            CorpusKeys.TARGET,
             user_session_id
             )
 
@@ -71,113 +105,90 @@ def main():
                             up to **5 tags** you would like to highlight.
                             """)
 
-        with st.sidebar.expander("About general tags"):
-            st.markdown(_utils.content.message_general_tags)
+        # Use the reusable tagset selection function
+        tag_loc, tag_options, tag_radio, tag_type = tagset_selection(
+            user_session_id=user_session_id,
+            session_state=st.session_state,
+            persist_func=persist,
+            page_stem=pathlib.Path(__file__).stem,
+            tagset_keys={
+                "Parts-of-Speech": {
+                    "General": TargetKeys.DOC_SIMPLE,
+                    "Specific": TargetKeys.DOC_POS
+                    },
+                "DocuScope": TargetKeys.DOC_DS
+                },
+            tag_filters={
+                "Parts-of-Speech": {
+                    "Specific": lambda df: df.filter(pl.col("Tag") != "Y"),
+                    "General": lambda df: df.filter(pl.col("Tag") != "Other")
+                },
+                "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
+                },
+            tag_radio_key="sd_radio",
+            tag_type_key="sd_tag_type"
+        )
 
-        tag_radio = st.sidebar.radio(
-            "Select tags to display:",
-            ("Parts-of-Speech", "DocuScope"),
-            key=_utils.handlers.persist(
-                "sd_radio", pathlib.Path(__file__).stem,
-                user_session_id
-                ),
-            horizontal=True)
-
-        if tag_radio == 'Parts-of-Speech':
-            tag_type = st.sidebar.radio(
-                "Select from general or specific tags",
-                ("General", "Specific"),
-                horizontal=True
-                )
-            if tag_type == 'General':
-                tag_loc = st.session_state[
-                    user_session_id
-                    ]["target"]["doc_simple"]
-                html_simple = ''.join(tag_loc.get_column("Text").to_list())
-                doc_key = tag_loc.get_column("doc_id").unique().to_list()
-
-                tag_list = st.sidebar.multiselect(
-                    'Select tags to highlight',
-                    [
-                        'Adjective',
-                        'Adverb',
-                        'Conjunction',
-                        'NounCommon',
-                        'NounOther',
-                        'Preposition',
-                        'Pronoun',
-                        'VerbBe',
-                        'VerbLex',
-                        'VerbOther'
-                    ],
-                    on_change=_utils.handlers.update_tags(
-                        html_simple,
-                        user_session_id
-                        ),
-                    key=f"tags_{user_session_id}"
-                    )
-                tag_colors = HEX_HIGHLIGHTS[:len(tag_list)]
-                tag_html = zip(tag_colors, tag_list)
-                tag_html = list(map('">'.join, tag_html))
-                tag_html = ['<span style="background-color: ' +
-                            item + '</span>' for item in tag_html]
-                tag_html = '; '.join(tag_html)
-                df = (tag_loc
-                      .filter(pl.col("Tag") != "Other")
-                      .group_by("Tag").len("AF")
-                      .with_columns(
-                          pl.col("AF")
-                          .truediv(pl.sum("AF")).mul(100).alias("RF")
-                          )
-                      .sort(["AF", "Tag"], descending=[True, False])
-                      ).to_pandas()
-            else:
-                tag_loc = st.session_state[
-                    user_session_id
-                    ]["target"]["doc_pos"]
-                html_pos = ''.join(tag_loc.get_column("Text").to_list())
-                doc_key = tag_loc.get_column("doc_id").unique().to_list()
-
-                tag_list = st.sidebar.multiselect(
-                    'Select tags to highlight',
-                    metadata_target.get('tags_pos')[0]['tags'],
-                    on_change=_utils.handlers.update_tags(
-                        html_pos, user_session_id),
-                    key=f"tags_{user_session_id}")
-                tag_colors = HEX_HIGHLIGHTS[:len(tag_list)]
-                tag_html = zip(tag_colors, tag_list)
-                tag_html = list(map('">'.join, tag_html))
-                tag_html = ['<span style="background-color: ' +
-                            item + '</span>' for item in tag_html]
-                tag_html = '; '.join(tag_html)
-                df = (tag_loc
-                      .filter(pl.col("Tag") != "Y")
-                      .group_by("Tag").len("AF")
-                      .with_columns(
-                          pl.col("AF")
-                          .truediv(pl.sum("AF")).mul(100).alias("RF")
-                          )
-                      .sort(["AF", "Tag"], descending=[True, False])
-                      ).to_pandas()
-        else:
-            tag_loc = st.session_state[user_session_id]["target"]["doc_ds"]
-            html_ds = ''.join(tag_loc.get_column("Text").to_list())
+        # Get document data
+        if tag_loc is not None:
+            html_content = ''.join(tag_loc.get_column("Text").to_list())
             doc_key = tag_loc.get_column("doc_id").unique().to_list()
+        else:
+            html_content = ""
+            doc_key = []
 
-            tag_list = st.sidebar.multiselect(
-                'Select tags to highlight',
-                metadata_target.get('tags_ds')[0]['tags'],
-                on_change=_utils.handlers.update_tags(
-                    html_ds, user_session_id),
-                key=f"tags_{user_session_id}")
-            tag_colors = HEX_HIGHLIGHTS[:len(tag_list)]
-            tag_html = zip(tag_colors, tag_list)
-            tag_html = list(map('">'.join, tag_html))
-            tag_html = ['<span style="background-color: ' +
-                        item + '</span>' for item in tag_html]
-            tag_html = '; '.join(tag_html)
+        # Tag selection using segmented control in main area (modern pattern)
+        # Move tag selection from sidebar to main area with segmented control
+        with st.expander(
+            label="Select tags to highlight",
+            icon=":material/filter_alt:",
+            expanded=True
+        ):
+            st.markdown(
+                "Use the controls to select up to **5 tags** "
+                "you would like to highlight."
+            )
+
+            # Deselect all button
+            if st.button(
+                label="Deselect All",
+                key=f"sd_deselect_{user_session_id}",
+                type="tertiary"
+            ):
+                st.session_state[f"sd_tags_{user_session_id}"] = []
+
+            # Use tag_options from tagset_selection
+            tag_list = st.segmented_control(
+                "Select tags:",
+                options=tag_options,
+                selection_mode="multi",
+                key=f"sd_tags_{user_session_id}",
+                help=(
+                    "Click to select tags for highlighting. "
+                    "Click again to deselect. Maximum 5 tags."
+                )
+            )
+
+            # Convert None to empty list and limit to 5 tags
+            if tag_list is None:
+                tag_list = []
+            elif len(tag_list) > 5:
+                tag_list = tag_list[:5]
+                st.warning("Only the first 5 selected tags will be used for highlighting.")
+
+        # Generate colors and HTML legend
+        tag_colors = HEX_HIGHLIGHTS[:len(tag_list)]
+        tag_html = generate_tag_html_legend(tag_list, tag_colors)
+
+        # Update HTML content with selected tags
+        if html_content:
+            # Store tags in the session state key that update_tags expects
+            st.session_state[f"tags_{user_session_id}"] = tag_list if tag_list else []
+            update_tags(html_content, user_session_id)
+
+        # Generate DataFrame for statistics (now handled by tag_filters)
+        if tag_loc is not None:
             df = (tag_loc
-                  .filter(pl.col("Tag") != "Untagged")
                   .group_by("Tag").len("AF")
                   .with_columns(
                       pl.col("AF")
@@ -185,11 +196,8 @@ def main():
                       )
                   .sort(["AF", "Tag"], descending=[True, False])
                   ).to_pandas()
-
-        if len(tag_list) == 5:
-            st.sidebar.markdown(""":warning: You can hightlight
-                                a maximum of 5 tags.
-                                """)
+        else:
+            df = pd.DataFrame()
 
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Plot tag locations")
@@ -215,51 +223,14 @@ def main():
             elif len(tag_list) == 0:
                 st.write('There are no tags to plot.')
             else:
-                plot_colors = tag_html.replace(
-                    '<span style="background-color: ', ''
-                    )
-                plot_colors = plot_colors.replace(
-                    '</span>', ''
-                    )
-                plot_colors = plot_colors.replace(
-                    '">', '; '
-                    )
-                plot_colors = plot_colors.split("; ")
-                plot_colors = list(zip(plot_colors[1::2], plot_colors[::2]))
-                plot_colors = pd.DataFrame(plot_colors,
-                                           columns=['Tag', 'Color'])
-                plot_colors = plot_colors.sort_values(by=['Tag'])
-                plot_colors = plot_colors['Color'].unique()
-
+                # Prepare data for plotting
                 df_plot = tag_loc.to_pandas()
                 df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
                 df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
 
-                base = alt.Chart(
-                    df_plot,
-                    height={"step": 45}).mark_tick(size=35).encode(
-                    x=alt.X(
-                        'X:Q',
-                        axis=alt.Axis(
-                            values=[0, .25, .5, .75, 1],
-                            format='%'
-                            ), title=None
-                        ),
-                    y=alt.Y(
-                        'Tag:O',
-                        title=None,
-                        sort=tag_list
-                        )
-                    )
-
-                lex_density = base.encode(
-                    color=alt.Color(
-                        'Tag',
-                        scale=alt.Scale(range=plot_colors),
-                        legend=None),
-                )
-
-                st.altair_chart(lex_density, use_container_width=True)
+                # Create and display the plotly chart
+                fig = plot_tag_density(df_plot, tag_list, tag_colors)
+                st.plotly_chart(fig, use_container_width=True)
 
         st.markdown(f"""
                     ##### Tags:  {tag_html}
@@ -279,23 +250,20 @@ def main():
         st.dataframe(df, hide_index=True)
 
         st.sidebar.markdown("---")
-        download_doc = st.sidebar.toggle("Download to Word?")
-        if download_doc is True:
-            st.sidebar.markdown(_utils.content.message_download)
-            with st.sidebar:
-                download_file = _utils.formatters.convert_to_word(
-                    st.session_state[user_session_id]['html_str'],
-                    tag_html,
-                    doc_key,
-                    df
-                    )
 
-                st.download_button(
-                    label="Download to Word",
-                    data=download_file,
-                    file_name="document_tags.docx",
-                    mime="docx",
-                        )
+        # Use the reusable toggle_download function
+        toggle_download(
+            label="Word",
+            convert_func=convert_to_word,
+            convert_args=(
+                st.session_state[user_session_id]['html_str'],
+                tag_html,
+                doc_key,
+                df
+            ),
+            file_name="document_tags.docx",
+            mime="docx"
+        )
 
         st.sidebar.markdown("---")
 
@@ -305,20 +273,21 @@ def main():
                             """)
         if st.sidebar.button("Select a new document"):
             _TAGS = f"tags_{user_session_id}"
+            target_session = st.session_state[user_session_id][CorpusKeys.TARGET]
 
-            if "doc_pos" not in st.session_state[user_session_id]["target"]:
-                st.session_state[user_session_id]["target"]["doc_pos"] = {}
-            st.session_state[user_session_id]["target"]["doc_pos"] = {}
+            if TargetKeys.DOC_POS not in target_session:
+                target_session[TargetKeys.DOC_POS] = {}
+            target_session[TargetKeys.DOC_POS] = {}
 
-            if "doc_simple" not in st.session_state[user_session_id]["target"]:
-                st.session_state[user_session_id]["target"]["doc_simple"] = {}
-            st.session_state[user_session_id]["target"]["doc_simple"] = {}
+            if TargetKeys.DOC_SIMPLE not in target_session:
+                target_session[TargetKeys.DOC_SIMPLE] = {}
+            target_session[TargetKeys.DOC_SIMPLE] = {}
 
-            if "doc_ds" not in st.session_state[user_session_id]["target"]:
-                st.session_state[user_session_id]["target"]["doc_ds"] = {}
-            st.session_state[user_session_id]["target"]["doc_ds"] = {}
+            if TargetKeys.DOC_DS not in target_session:
+                target_session[TargetKeys.DOC_DS] = {}
+            target_session[TargetKeys.DOC_DS] = {}
 
-            _utils.handlers.update_session('doc', False, user_session_id)
+            update_session(SessionKeys.DOC, False, user_session_id)
 
             if _TAGS in st.session_state:
                 del st.session_state[_TAGS]
@@ -328,11 +297,11 @@ def main():
 
     else:
 
-        st.markdown(_utils.content.message_single_document)
+        st.markdown("_utils.content.message_single_document")
 
         try:
-            metadata_target = _utils.handlers.load_metadata(
-                'target',
+            metadata_target = load_metadata(
+                CorpusKeys.TARGET,
                 user_session_id
                 )
         except Exception:
@@ -354,24 +323,23 @@ def main():
                 (['No documents to view'])
                 )
 
-        _utils.handlers.sidebar_action_button(
+        sidebar_action_button(
             button_label="Process Document",
             button_icon=":material/manufacturing:",
             preconditions=[
                 session.get('has_target')[0],
             ],
-            action=lambda: _utils.handlers.generate_document_html(
+            action=lambda: generate_document_html(
                 user_session_id, doc_key
             ),
             spinner_message="Processing document..."
         )
 
-        if st.session_state[user_session_id].get("doc_warning"):
-            msg, icon = st.session_state[user_session_id]["doc_warning"]
+        if st.session_state[user_session_id].get(WarningKeys.DOC):
+            msg, icon = st.session_state[user_session_id][WarningKeys.DOC]
             st.warning(msg, icon=icon)
 
         st.sidebar.markdown("---")
-
 
 if __name__ == "__main__":
     main()

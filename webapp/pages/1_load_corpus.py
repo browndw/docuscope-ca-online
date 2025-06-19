@@ -15,27 +15,52 @@
 # Copyright (C) 2025 David West Brown
 
 import pathlib
-import sys
-
 import spacy
 import streamlit as st
-from collections import Counter
 
-# Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+# Path setup is inherited from index.py entrypoint
+project_root = pathlib.Path(__file__).parent.parents[1].resolve()  # Inherited path setup
 
-import webapp.utilities as _utils   # noqa: E402
-from webapp.menu import menu, require_login   # noqa: E402
+from webapp.utilities.session import (  # noqa: E402
+    get_or_init_user_session, init_session,
+    generate_temp
+    )
+from webapp.utilities.session.metadata_handlers import (  # noqa: E402
+    handle_target_metadata_processing
+    )
+from webapp.utilities.analysis import (  # noqa: E402
+    find_saved, find_saved_reference
+    )
+from webapp.utilities.configuration import (  # noqa: E402
+    import_options_general
+    )
+from webapp.utilities.processing import (  # noqa: E402
+    process_external, process_internal,
+    process_new, handle_uploaded_parquet,
+    handle_uploaded_text, sidebar_process_section
+    )
+from webapp.utilities.ui import (  # noqa: E402
+    load_and_display_target_corpus, render_corpus_info_expanders
+)
+from webapp.config.session_keys import (  # noqa: E402
+    CorpusKeys,
+    LoadCorpusKeys,
+    MetadataKeys,
+    SessionKeys,
+    WarningKeys
+    )
+from webapp.menu import (   # noqa: E402
+    menu,
+    require_login
+    )
 
 # Set up paths for models and options
 MODEL_LARGE = str(project_root.joinpath("webapp/_models/en_docusco_spacy"))
 MODEL_SMALL = str(project_root.joinpath("webapp/_models/en_docusco_spacy_cd"))
-OPTIONS = str(project_root.joinpath("webapp/options.toml"))
+OPTIONS = str(project_root.joinpath("webapp/config/options.toml"))
 
 # Import global options from config file
-_options = _utils.handlers.import_options_general(OPTIONS)
+_options = import_options_general(OPTIONS)
 
 # Set global flags and limits
 DESKTOP = _options['global']['desktop_mode']
@@ -44,47 +69,38 @@ ENABLE_DETECT = _options['global']['check_language']
 MAX_TEXT = _options['global']['max_bytes_text']
 MAX_POLARS = _options['global']['max_bytes_polars']
 
-
 TITLE = "Manage Corpus Data"
 ICON = ":material/database:"
 
-# --- Constants ---
-KEY_READY_TO_PROCESS = 'ready_to_process'
-KEY_WARNING = 'warning'
-KEY_HAS_META = 'has_meta'
-KEY_HAS_TARGET = 'has_target'
-KEY_HAS_REFERENCE = 'has_reference'
-KEY_EXCEPTIONS = 'exceptions'
-KEY_REF_EXCEPTIONS = 'ref_exceptions'
-KEY_MODEL = 'model'
-KEY_DOCIDS = 'docids'
-KEY_DOCCATS = 'doccats'
-KEY_TARGET_DB = 'target_db'
-
-CORPUS_TARGET = 'target'
-CORPUS_REFERENCE = 'reference'
+# Define labels and options for the app
 CORPUS_SOURCES = ["Internal", "External", "New"]
 
+# Button and form labels
 LABEL_PROCESS_TARGET = "Process Target"
 LABEL_PROCESS_REFERENCE = "Process Reference"
 LABEL_UPLOAD_TARGET = "UPLOAD TARGET"
 LABEL_UPLOAD_REFERENCE = "UPLOAD REFERENCE"
 LABEL_RESET_CORPUS = "Reset Corpus"
 
-ICON_PROCESS_TARGET = ":material/manufacturing:"
-ICON_PROCESS_REFERENCE = ":material/manufacturing:"
-ICON_RESET = ":material/refresh:"
-
+# Model configuration
 MODEL_LARGE_LABEL = "Large Dictionary"
 MODEL_SMALL_LABEL = "Common Dictionary"
 MODEL_OPTIONS = [MODEL_LARGE_LABEL, MODEL_SMALL_LABEL]
 
+# Session state initialization template
 STATES = {
-    'metadata_target': {},
-    'metadata_reference': {},
-    'session': {},
-    'data': {},
-    'warning': 0,
+    SessionKeys.METADATA_TARGET: {},
+    SessionKeys.METADATA_REFERENCE: {},
+    SessionKeys.SESSION_DATAFRAME: {},  # Container for SessionKeys DataFrame
+    # 'data': {},     # Legacy key - consider removing if unused
+    WarningKeys.LOAD_CORPUS: 0,
+    LoadCorpusKeys.READY_TO_PROCESS: False,
+    LoadCorpusKeys.CORPUS_DF: None,
+    LoadCorpusKeys.EXCEPTIONS: None,
+    LoadCorpusKeys.MODEL: None,
+    LoadCorpusKeys.REF_READY_TO_PROCESS: False,
+    LoadCorpusKeys.REF_CORPUS_DF: None,
+    LoadCorpusKeys.REF_EXCEPTIONS: None,
 }
 
 st.set_page_config(
@@ -96,6 +112,7 @@ st.set_page_config(
 # Cache spaCy models for efficiency
 @st.cache_resource(show_spinner=False)
 def load_models():
+    """Load and cache spaCy models for efficient reuse."""
     large_model = spacy.load(MODEL_LARGE)
     small_model = spacy.load(MODEL_SMALL)
     models = {MODEL_LARGE_LABEL: large_model,
@@ -104,15 +121,27 @@ def load_models():
 
 
 def main() -> None:
+    """
+    Main function for the Load Corpus page.
+
+    Handles corpus loading, processing, and management including:
+    - Loading existing target and reference corpora
+    - Processing new corpora from text files
+    - Uploading external corpora (parquet files)
+    - Managing corpus metadata and categories
+    - Resetting corpus data
+    """
     # Set login requirements for navigaton
     require_login()
     menu()
     st.markdown(f"## {TITLE}")
-    # Get or initialize user session
-    user_session_id, session = _utils.handlers.get_or_init_user_session()
 
-    if KEY_READY_TO_PROCESS not in st.session_state[user_session_id]:
-        st.session_state[user_session_id][KEY_READY_TO_PROCESS] = False
+    # Get or initialize user session
+    user_session_id, session = get_or_init_user_session()
+
+    # Initialize processing state if not exists
+    if LoadCorpusKeys.READY_TO_PROCESS not in st.session_state[user_session_id]:
+        st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = False
 
     st.sidebar.link_button(
         label="Help",
@@ -121,137 +150,19 @@ def main() -> None:
         )
 
     # If a target corpus is already loaded
-    if session.get('has_target')[0] is True:
-        # Load target corpus metadata
-        # Note that metadata is stored as a Polars DataFrame
-        # and converted to a dictionary for easier access
-        metadata_target = st.session_state[user_session_id]['metadata_target'].to_dict()  # noqa: E501
+    if session.get('has_target', [False])[0] is True:
+        # Load and display corpus information
+        load_and_display_target_corpus(session, user_session_id)
 
-        # Check if reference is loaded
-        has_reference = session.get('has_reference')[0] is True
-        if has_reference:
-            metadata_reference = _utils.handlers.load_metadata(
-                CORPUS_REFERENCE,
-                user_session_id
-            )
+        # Get metadata for sidebar operations
+        metadata_target = st.session_state[user_session_id]['metadata_target'].to_dict()
 
-        # Create tabs for Target and Reference
-        tab_labels = ["Target corpus"]
-        if has_reference:
-            tab_labels.append("Reference corpus")
-        tabs = st.tabs(tab_labels)
-
-        # --- Target Tab ---
-        with tabs[0]:
-            st.info(_utils.ui.target_info(metadata_target))
-            with st.expander("Documents:"):
-                st.write(metadata_target.get(KEY_DOCIDS)[0]['ids'])
-            if session.get(KEY_HAS_META)[0] is True:
-                st.markdown('##### Target corpus metadata:')
-                cat_counts = Counter(metadata_target.get(KEY_DOCCATS)[0]['cats'])
-                cat_df = _utils.formatters.add_category_description(
-                    cat_counts,
-                    session,
-                    corpus_type="target")
-                st.dataframe(cat_df, hide_index=True)
-
-        # --- Reference Tab (if loaded) ---
-        if has_reference:
-            with tabs[1]:
-                st.info(_utils.content.message_reference_info(metadata_reference))
-                with st.expander("Documents in reference corpus:"):
-                    st.write(metadata_reference.get(KEY_DOCIDS)[0]['ids'])
-
-                # Try to process and display reference metadata if target has metadata
-                if session.get(KEY_HAS_META)[0]:
-                    try:
-                        st.markdown('##### Reference corpus metadata:')
-                        # Extract categories from doc ids using get_doc_cats
-                        ref_doc_ids = metadata_reference.get(KEY_DOCIDS)[0]['ids']
-                        doc_cats_ref = _utils.process.get_doc_cats(ref_doc_ids)
-                        if doc_cats_ref:
-                            cat_counts_ref = Counter(doc_cats_ref)
-                            cat_df_ref = _utils.formatters.add_category_description(
-                                cat_counts_ref,
-                                session,
-                                corpus_type="reference")
-                            st.dataframe(cat_df_ref, hide_index=True)
-                        else:
-                            st.warning(
-                                "Not categories found in reference corpus file names.",
-                                icon=":material/info:"
-                            )
-                    except Exception:
-                        st.warning(
-                            "Could not process metadata for the reference corpus. "
-                            "This may be due to missing or malformed category information.",
-                            icon=":material/info:"
-                        )
-
-        if not session.get(KEY_HAS_META)[0]:
-            st.sidebar.markdown('### Target corpus metadata:')
-            load_cats = st.sidebar.radio(
-                "Do you have categories in your file names to process?",
-                ("No", "Yes"),
-                horizontal=True,
-                help=(
-                    "Metadata can be encoded into your file names, "
-                    "which can be used for further analysis. "
-                    "The tool can detect information that comes before "
-                    "the first underscore in the file name, and will "
-                    "use that information to assign categories to your "
-                    "documents. For example, if your file names are "
-                    "`cat1_doc1.txt`, `cat2_doc2.txt`, etc., "
-                    "the tool will assign `cat1` and `cat2` as categories. "
-                    )
-            )
-            if load_cats == 'Yes':
-                if st.sidebar.button(
-                    label="Process Document Metadata",
-                    icon=ICON_PROCESS_TARGET
-                ):
-                    with st.spinner('Processing metadata...'):
-                        doc_cats = _utils.process.get_doc_cats(
-                            metadata_target.get(KEY_DOCIDS)[0]['ids']
-                        )
-                        if (
-                            len(set(doc_cats)) > 1 and
-                            len(set(doc_cats)) < 21
-                        ):
-                            _utils.handlers.update_metadata(
-                                CORPUS_TARGET,
-                                KEY_DOCCATS,
-                                doc_cats,
-                                user_session_id)
-                            _utils.handlers.update_session(
-                                KEY_HAS_META,
-                                True,
-                                user_session_id)
-                            st.success('Processing complete!')
-                            st.rerun()
-                        elif len(doc_cats) != 0:
-                            st.sidebar.warning(
-                                """
-                                Your data should contain at least 2 and
-                                no more than 20 categories. You can either proceed
-                                without assigning categories, or reset the corpus,
-                                fix your file names, and try again.
-                                """,
-                                icon="material/info"
-                            )
-                        else:
-                            st.sidebar.warning(
-                                """
-                                Your categories don't seem to be formatted correctly.
-                                You can either proceed without assigning categories,
-                                or reset the corpus, fix your file names, and try again.
-                                """,
-                                icon=":material/info:"
-                                )
-
-            st.sidebar.markdown("---")
+        # Sidebar: Target corpus management
+        if not session.get(SessionKeys.HAS_META, [False])[0]:
+            handle_target_metadata_processing(metadata_target, user_session_id)
 
         # If reference corpus is loaded, show info and warnings
+        has_reference = session.get(SessionKeys.HAS_REFERENCE, [False])[0] is True
         if not has_reference:
             # Reference corpus not loaded: offer options to load one
             st.markdown("---")
@@ -312,22 +223,21 @@ def main() -> None:
                         a previously processed corpus.
                         """
                         )
-                    saved_corpora, saved_ref = _utils.process.find_saved_reference(  # noqa: E501
-                        metadata_target.get(KEY_MODEL)[0],
-                        session.get(KEY_TARGET_DB)[0]
+                    saved_corpora, saved_ref = find_saved_reference(  # noqa: E501
+                        metadata_target.get(LoadCorpusKeys.MODEL)[0],
+                        session.get(SessionKeys.TARGET_DB)[0]
                         )
                     to_load = st.sidebar.selectbox(
                         'Select a saved corpus to load:',
                         (sorted(saved_ref))
                         )
-                    _utils.process.sidebar_process_section(
+                    sidebar_process_section(
                         section_title=LABEL_PROCESS_REFERENCE,
                         button_label=LABEL_PROCESS_REFERENCE,
-                        button_icon=ICON_PROCESS_REFERENCE,
-                        process_fn=lambda: _utils.process.process_internal(
+                        process_fn=lambda: process_internal(
                                 saved_corpora.get(to_load),
                                 user_session_id,
-                                CORPUS_REFERENCE
+                                CorpusKeys.REFERENCE
                                 ))
 
                 # Option 2: Upload external reference corpus (parquet)
@@ -356,24 +266,24 @@ def main() -> None:
                             )
 
                     if submitted:
-                        st.session_state[user_session_id][KEY_WARNING] = 0
+                        st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
 
                     # Use the helper function for upload and validation
-                    tok_pl, ready = _utils.process.handle_uploaded_parquet(
+                    tok_pl, ready = handle_uploaded_parquet(
                         ref_file, CHECK_SIZE, MAX_POLARS,
-                        target_docs=metadata_target.get(KEY_DOCIDS)[0]['ids']
+                        target_docs=metadata_target.get(MetadataKeys.DOCIDS)[0]['ids']
                     )
 
                     if ready:
-                        st.session_state[user_session_id][KEY_READY_TO_PROCESS] = True  # noqa: E501
+                        st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = True  # noqa: E501
 
                     # Sidebar UI for processing reference corpus
-                    if st.session_state[user_session_id][KEY_READY_TO_PROCESS]:
-                        _utils.process.sidebar_process_section(
+                    if st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS]:
+                        sidebar_process_section(
                             section_title=LABEL_PROCESS_REFERENCE,
                             button_label=LABEL_UPLOAD_REFERENCE,
-                            process_fn=lambda: _utils.process.process_external(
-                                tok_pl, user_session_id, CORPUS_REFERENCE
+                            process_fn=lambda: process_external(
+                                tok_pl, user_session_id, CorpusKeys.REFERENCE
                             ))
 
                 # Option 3: Process new reference corpus from text files
@@ -401,6 +311,9 @@ def main() -> None:
                         """
                         )
 
+                    # Initialize variables with default values
+                    corp_df, ready, exceptions = None, False, []
+
                     with st.form("ref-form", clear_on_submit=True):
                         ref_files = st.file_uploader(
                             "Upload your reference corpus",
@@ -413,38 +326,47 @@ def main() -> None:
                             )
 
                         if submitted:
-                            st.session_state[user_session_id][KEY_WARNING] = 0
+                            st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
 
                         # Check text files to ensure they are valid
                         # and ready for processing
-                        corp_df, ready, exceptions = _utils.process.handle_uploaded_text(  # noqa: E501
-                            ref_files,
-                            CHECK_SIZE,
-                            MAX_TEXT,
-                            check_language_flag=ENABLE_DETECT,
-                            check_ref=True,
-                            target_docs=metadata_target.get(KEY_DOCIDS)[0]['ids']  # noqa: E501
-                        )
+                        if submitted:  # Only process if form was submitted
+                            corp_df, ready, exceptions = handle_uploaded_text(  # noqa: E501
+                                ref_files,
+                                CHECK_SIZE,
+                                MAX_TEXT,
+                                check_language_flag=ENABLE_DETECT,
+                                check_ref=True,
+                                target_docs=metadata_target.get(MetadataKeys.DOCIDS)[0]['ids']  # noqa: E501
+                            )
+
+                            # Store the reference corpus dataframe and exceptions
+                            if ready and corp_df is not None:
+                                st.session_state[user_session_id][LoadCorpusKeys.REF_CORPUS_DF] = corp_df  # noqa: E501
+                                st.session_state[user_session_id][LoadCorpusKeys.REF_EXCEPTIONS] = exceptions  # noqa: E501
 
                     if ready:
-                        st.session_state[user_session_id][KEY_READY_TO_PROCESS] = True  # noqa: E501
+                        st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS] = True  # noqa: E501
 
                     # Sidebar UI for processing reference corpus
-                    if st.session_state[user_session_id][KEY_READY_TO_PROCESS]:  # noqa: E501
+                    if st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS]:  # noqa: E501
+                        # Retrieve stored reference corpus data from session state
+                        stored_ref_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.REF_CORPUS_DF)  # noqa: E501
+                        stored_ref_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.REF_EXCEPTIONS)  # noqa: E501
+
                         models = load_models()
                         selected_dict = metadata_target.get('model')[0]
                         nlp = models[selected_dict]
 
-                        _utils.process.sidebar_process_section(
+                        sidebar_process_section(
                             section_title=LABEL_PROCESS_REFERENCE,
                             button_label=LABEL_PROCESS_REFERENCE,
-                            button_icon=ICON_PROCESS_REFERENCE,
-                            process_fn=lambda: _utils.process.process_new(
-                                corp_df,
+                            process_fn=lambda: process_new(
+                                stored_ref_corp_df,
                                 nlp,
                                 user_session_id,
-                                CORPUS_REFERENCE,
-                                exceptions
+                                CorpusKeys.REFERENCE,
+                                stored_ref_exceptions
                             ))
 
         # Sidebar: Reset all tools and files
@@ -461,13 +383,14 @@ def main() -> None:
                 "that you'd like to retain, "
                 "go back and save them before resetting."
             ))
-        if st.sidebar.button(label=LABEL_RESET_CORPUS, icon=ICON_RESET):
+        if st.sidebar.button(label=LABEL_RESET_CORPUS,
+                             icon=":material/refresh:"):
             st.session_state[user_session_id] = {}
-            _utils.handlers.generate_temp(
+            generate_temp(
                 STATES.items(),
                 user_session_id
                 )
-            _utils.handlers.init_session(
+            init_session(
                 user_session_id
                 )
             st.rerun()
@@ -489,45 +412,8 @@ def main() -> None:
             """
             )
 
-        st.markdown("##### :material/lightbulb: Learn more...")
-        col_1, col_2, col_3, col_4 = st.columns(4)
-        with col_1:
-            # Expanders for corpus info
-            with st.expander("About internal corpora", icon=":material/database:"):
-                st.link_button(
-                    label="MICUSP",
-                    url="https://browndw.github.io/docuscope-docs/datasets/micusp.html",
-                    icon=":material/quick_reference:")
-                st.link_button(
-                    label="BAWE",
-                    url="https://browndw.github.io/docuscope-docs/datasets/bawe.html",
-                    icon=":material/quick_reference:")
-                st.link_button(
-                    label="ELSEVIER",
-                    url="https://browndw.github.io/docuscope-docs/datasets/elsevier.html",
-                    icon=":material/quick_reference:")
-                st.link_button(
-                    label="HAP-E",
-                    url="https://browndw.github.io/docuscope-docs/datasets/hape.html",
-                    icon=":material/quick_reference:")
-        with col_2:
-            with st.expander("About external corpora", icon=":material/upload:"):
-                st.link_button(
-                    label="Preparing an external corpus",
-                    url="https://browndw.github.io/docuscope-docs/vignettes/external-corpus.html",  # noqa: E501
-                    icon=":material/quick_reference:")
-        with col_3:
-            with st.expander("About new corpora", icon=":material/library_books:"):
-                st.link_button(
-                    label="Preparing a new corpus",
-                    url="https://browndw.github.io/docuscope-docs/vignettes/new-corpus.html",  # noqa: E501
-                    icon=":material/quick_reference:")
-        with col_4:
-            with st.expander("About the models", icon=":material/modeling:"):
-                st.link_button(
-                    label="Compare models",
-                    url="https://browndw.github.io/docuscope-docs/tagsets/model-comparison.html",  # noqa: E501
-                    icon=":material/quick_reference:")
+        render_corpus_info_expanders()
+
         st.markdown("---")
         st.markdown("### Process a corpus:")
 
@@ -575,25 +461,24 @@ def main() -> None:
                 key='corpora_to_load'
                 )
             if from_model == 'Large Dictionary':
-                saved_corpora = _utils.process.find_saved('ld')
+                saved_corpora = find_saved('ld')
                 to_load = st.sidebar.selectbox(
                     'Select a saved corpus to load:',
                     (sorted(saved_corpora))
                     )
             if from_model == 'Common Dictionary':
-                saved_corpora = _utils.process.find_saved('cd')
+                saved_corpora = find_saved('cd')
                 to_load = st.sidebar.selectbox(
                     'Select a saved corpus to load:',
                     (sorted(saved_corpora))
                     )
-            _utils.process.sidebar_process_section(
+            sidebar_process_section(
                 section_title=LABEL_PROCESS_TARGET,
                 button_label=LABEL_PROCESS_TARGET,
-                button_icon=ICON_PROCESS_TARGET,
-                process_fn=lambda: _utils.process.process_internal(
+                process_fn=lambda: process_internal(
                         saved_corpora.get(to_load),
                         user_session_id,
-                        CORPUS_TARGET
+                        CorpusKeys.TARGET
                         ))
 
         # Option 2: Upload external target corpus (parquet)
@@ -622,24 +507,23 @@ def main() -> None:
                 submitted = st.form_submit_button(LABEL_UPLOAD_TARGET)
 
                 if submitted:
-                    st.session_state[user_session_id][KEY_WARNING] = 0
+                    st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
 
                 # Use the helper function for upload and validation
-                tok_pl, ready = _utils.process.handle_uploaded_parquet(
+                tok_pl, ready = handle_uploaded_parquet(
                     corp_file, CHECK_SIZE, MAX_POLARS
                 )
 
             if ready:
-                st.session_state[user_session_id][KEY_READY_TO_PROCESS] = True
+                st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = True
 
             # Sidebar UI for processing target corpus
-            if st.session_state[user_session_id][KEY_READY_TO_PROCESS]:
-                _utils.process.sidebar_process_section(
+            if st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS]:
+                sidebar_process_section(
                     section_title=LABEL_PROCESS_TARGET,
                     button_label=LABEL_PROCESS_TARGET,
-                    button_icon=ICON_PROCESS_TARGET,
-                    process_fn=lambda: _utils.process.process_external(
-                        tok_pl, user_session_id, CORPUS_TARGET
+                    process_fn=lambda: process_external(
+                        tok_pl, user_session_id, CorpusKeys.TARGET
                     ))
 
         # Option 3: Process new target corpus from text files
@@ -673,6 +557,9 @@ def main() -> None:
                 """
                 )
 
+            # Initialize variables with default values
+            corp_df, ready, exceptions = None, False, []
+
             with st.form("corpus-form", clear_on_submit=True):
                 corp_files = st.file_uploader(
                     "Upload your target corpus",
@@ -682,7 +569,7 @@ def main() -> None:
                 submitted = st.form_submit_button(LABEL_UPLOAD_TARGET)
 
                 if submitted:
-                    st.session_state[user_session_id][KEY_WARNING] = 0
+                    st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
                 if submitted and not corp_files:
                     st.warning(
                         "Please select at least one file to upload.",
@@ -690,15 +577,21 @@ def main() -> None:
 
                 # Check text files to ensure they are valid
                 # and ready for processing
-                corp_df, ready, exceptions = _utils.process.handle_uploaded_text(  # noqa: E501
-                    corp_files,
-                    CHECK_SIZE,
-                    MAX_TEXT,
-                    check_language_flag=ENABLE_DETECT
-                )
+                if submitted:  # Only process if form was submitted
+                    corp_df, ready, exceptions = handle_uploaded_text(  # noqa: E501
+                        corp_files,
+                        CHECK_SIZE,
+                        MAX_TEXT,
+                        check_language_flag=ENABLE_DETECT
+                    )
+
+                    # Store the corpus dataframe and exceptions in session state
+                    if ready and corp_df is not None:
+                        st.session_state[user_session_id][LoadCorpusKeys.CORPUS_DF] = corp_df  # noqa: E501
+                        st.session_state[user_session_id][LoadCorpusKeys.EXCEPTIONS] = exceptions  # noqa: E501
 
             if ready:
-                st.session_state[user_session_id][KEY_READY_TO_PROCESS] = True
+                st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = True
 
             # Sidebar UI for model selection and processing
             st.sidebar.markdown("### Models")
@@ -709,24 +602,24 @@ def main() -> None:
                 help="The Large Dictionary model has a more eleaborated tagset than the Common Dictionary model. Click 'About the models' (on the right) to learn more.",  # noqa: E501
                 )
             nlp = models[selected_dict]
-            st.session_state[user_session_id][KEY_MODEL] = selected_dict
-
-            with st.sidebar.expander("Which model do I choose?"):
-                st.markdown(_utils.content.message_models)
+            st.session_state[user_session_id][LoadCorpusKeys.MODEL] = selected_dict
 
             st.sidebar.markdown("---")
 
-            if st.session_state[user_session_id][KEY_READY_TO_PROCESS]:
-                _utils.process.sidebar_process_section(
+            if st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS]:
+                # Retrieve stored corpus data from session state
+                stored_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.CORPUS_DF)  # noqa: E501
+                stored_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.EXCEPTIONS)  # noqa: E501
+
+                sidebar_process_section(
                     section_title=LABEL_PROCESS_TARGET,
                     button_label=LABEL_PROCESS_TARGET,
-                    button_icon=ICON_PROCESS_TARGET,
-                    process_fn=lambda: _utils.process.process_new(
-                        corp_df,
+                    process_fn=lambda: process_new(
+                        stored_corp_df,
                         nlp,
                         user_session_id,
-                        CORPUS_TARGET,
-                        exceptions
+                        CorpusKeys.TARGET,
+                        stored_exceptions
                     ))
 
 

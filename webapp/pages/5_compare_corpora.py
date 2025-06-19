@@ -13,58 +13,239 @@
 # limitations under the License.
 
 import pathlib
-import sys
-
 import polars as pl
 import streamlit as st
 
-# Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-from webapp.utilities.handlers import (  # noqa: E402
-    generate_keyness_tables,
-    get_or_init_user_session,
-    load_metadata,
-    update_session
+from webapp.utilities.session import (
+    get_or_init_user_session, load_metadata,
+    update_session, validate_session_state
     )
-from webapp.utilities.ui import (   # noqa: E402
-    keyness_sort_controls,
-    load_widget_state,
-    persist,
-    reference_info,
-    render_dataframe,
-    sidebar_action_button,
-    sidebar_help_link,
-    sidebar_keyness_options,
-    tag_filter_multiselect,
-    tagset_selection,
-    target_info,
-    toggle_download
-    )
-from webapp.utilities.formatters import (  # noqa: E402
-    convert_to_excel,
-    plot_compare_corpus_bar,
-    plot_download_link
-    )
-from webapp.utilities.analysis import (   # noqa: E402
+from webapp.utilities.ui import (
+    keyness_sort_controls, keyness_settings_info,
+    reference_info, render_dataframe,
+    sidebar_help_link, tag_filter_multiselect,
+    tagset_selection, target_info,
+    toggle_download, sidebar_keyness_options
+)
+from webapp.utilities.state import (
+    load_widget_state, persist
+)
+from webapp.utilities.analysis import (
+    has_target_corpus, has_reference_corpus,
+    render_corpus_not_loaded_error, generate_keyness_tables,
     freq_simplify_pl
+)
+from webapp.utilities.plotting import (
+    plot_compare_corpus_bar, plot_download_link
+)
+from webapp.menu import (
+    menu, require_login
     )
-from webapp.menu import (   # noqa: E402
-    menu,
-    require_login
+from webapp.config.session_keys import (
+    CorpusKeys, SessionKeys,
+    TargetKeys, WarningKeys
     )
+
 
 TITLE = "Compare Corpora"
 ICON = ":material/compare_arrows:"
 
 TOKEN_LIMIT = 1_500_000
 
+# Configuration constants
+DEFAULT_WIDGET_STATE_PATH = pathlib.Path(__file__).stem
+KEYNESS_TOKEN_TAGSET_CONFIG = {
+    "Parts-of-Speech": {"General": TargetKeys.KW_POS, "Specific": TargetKeys.KW_POS},
+    "DocuScope": TargetKeys.KW_DS
+}
+KEYNESS_TAG_TAGSET_CONFIG = {
+    "Parts-of-Speech": TargetKeys.KT_POS,
+    "DocuScope": TargetKeys.KT_DS
+}
+KEYNESS_SIMPLIFY_CONFIG = {
+    "Parts-of-Speech": {"General": freq_simplify_pl, "Specific": None}
+}
+KEYNESS_TAG_FILTERS_CONFIG = {
+    "Parts-of-Speech": lambda df: df.filter(pl.col("Tag") != "FU"),
+    "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
+}
+
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def render_corpus_info_headers(user_session_id: str) -> None:
+    """Render target and reference corpus information headers."""
+    # Load target and reference metadata
+    metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+    metadata_reference = load_metadata(CorpusKeys.REFERENCE, user_session_id)
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.info(target_info(metadata_target))
+    with col2:
+        st.info(reference_info(metadata_reference))
+
+
+def render_keyness_settings_info(user_session_id: str) -> None:
+    """Display current keyness table settings using utility function."""
+    st.info(keyness_settings_info(user_session_id))
+
+
+def render_tokens_keyness_interface(user_session_id: str) -> None:
+    """Render the tokens keyness table interface."""
+    df, tag_options, tag_radio, tag_type = tagset_selection(
+        user_session_id=user_session_id,
+        session_state=st.session_state,
+        persist_func=persist,
+        page_stem=DEFAULT_WIDGET_STATE_PATH,
+        tagset_keys=KEYNESS_TOKEN_TAGSET_CONFIG,
+        simplify_funcs=KEYNESS_SIMPLIFY_CONFIG,
+        tag_filters={
+            # Add filters here if needed
+        },
+        tag_radio_key="kt_radio2",
+        tag_type_key="kt_type_radio2"
+    )
+
+    sort_by, reverse = keyness_sort_controls(
+        sort_options=["Keyness (LL)", "Effect Size (LR)"],
+        default="Keyness (LL)",
+        reverse_default=True,
+        key_prefix="kt_"  # or something unique per page/tab
+    )
+
+    df = tag_filter_multiselect(df)
+
+    # Map UI label to actual DataFrame column
+    sort_col_map = {
+        "Keyness (LL)": "LL",
+        "Effect Size (LR)": "LR"
+    }
+    sort_col = sort_col_map[sort_by]
+
+    if df is not None and getattr(df, "height", 0) > 0:
+        df = df.sort(sort_col, descending=reverse)
+    render_dataframe(df)
+
+    st.sidebar.markdown("---")
+    # Add download button for the DataFrame
+    toggle_download(
+        label="Excel",
+        convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
+        file_name="keywords_tokens.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        location=st.sidebar
+    )
+
+
+def render_tags_keyness_interface(user_session_id: str) -> None:
+    """Render the tags keyness table interface with tabs."""
+    df, tag_options, tag_radio, tag_type = tagset_selection(
+        user_session_id=user_session_id,
+        session_state=st.session_state,
+        persist_func=persist,
+        page_stem=DEFAULT_WIDGET_STATE_PATH,
+        tagset_keys=KEYNESS_TAG_TAGSET_CONFIG,
+        tag_filters=KEYNESS_TAG_FILTERS_CONFIG,
+        tag_radio_key="kt_radio3"
+    )
+
+    # Tabs for displaying keyness table and plot
+    tab1, tab2 = st.tabs(["Keyness Table", "Keyness Plot"])
+
+    with tab1:
+        filter_vals = st.multiselect("Select tags to filter:", tag_options)
+        if filter_vals and df is not None:
+            df = df.filter(pl.col("Tag").is_in(filter_vals))
+        render_dataframe(df)
+
+    with tab2:
+        if df is not None and getattr(df, "height", 0) > 0:
+            fig = plot_compare_corpus_bar(df)
+            st.plotly_chart(fig, use_container_width=True)
+            plot_download_link(fig, filename="compare_corpus_bar.png")
+
+    st.sidebar.markdown("---")
+    # Add download button for the DataFrame
+    toggle_download(
+        label="Excel",
+        convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
+        file_name="keywords_tags.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        location=st.sidebar
+    )
+
+
+def render_keyness_reset_controls(user_session_id: str) -> None:
+    """Render controls for resetting keyness table."""
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        body=(
+            "### Generate new table\n\n"
+            "Use the button to reset the keyness table and start over."
+            )
+        )
+    if st.sidebar.button("Generate New Keyness Table", icon=":material/refresh:"):
+        # Clear keyness tables for this session using session keys
+        keyness_keys = [
+            TargetKeys.KW_POS, TargetKeys.KW_DS,
+            TargetKeys.KT_POS, TargetKeys.KT_DS
+        ]
+        for key in keyness_keys:
+            if key not in st.session_state[user_session_id][CorpusKeys.TARGET]:
+                st.session_state[user_session_id][CorpusKeys.TARGET][key] = {}
+            st.session_state[user_session_id][CorpusKeys.TARGET][key] = {}
+
+        # Reset keyness_table state using session key
+        update_session(SessionKeys.KEYNESS_TABLE, False, user_session_id)
+        # Clear warnings using session key
+        st.session_state[user_session_id][WarningKeys.KEYNESS] = None
+        st.rerun()
+
+
+def render_keyness_interface(user_session_id: str, session: dict) -> None:
+    """Render the main keyness interface with validation."""
+    try:
+        # Validate session state first
+        if not validate_session_state(user_session_id):
+            st.error("Invalid session state. Please reload the page or reset your data.")
+            return
+
+        # Load the widget state for the current user session
+        load_widget_state(DEFAULT_WIDGET_STATE_PATH, user_session_id)
+
+        # Render corpus info headers
+        render_corpus_info_headers(user_session_id)
+
+        # Show user selections
+        render_keyness_settings_info(user_session_id)
+
+        st.sidebar.markdown("### Comparison")
+        table_radio = st.sidebar.radio(
+            "Select the keyness table to display:",
+            ("Tokens", "Tags Only"),
+            key=persist("kt_radio1", DEFAULT_WIDGET_STATE_PATH, user_session_id),
+            horizontal=True
+        )
+
+        st.sidebar.markdown("---")
+
+        # Route to appropriate interface based on table type
+        if table_radio == 'Tokens':
+            render_tokens_keyness_interface(user_session_id)
+        else:
+            render_tags_keyness_interface(user_session_id)
+
+        # Add reset controls
+        render_keyness_reset_controls(user_session_id)
+        st.sidebar.markdown("---")
+
+    except Exception as e:
+        st.error(f"Error loading keyness interface: {str(e)}", icon=":material/error:")
+        st.info("Try regenerating the keyness table if this error persists.")
 
 
 def main():
@@ -73,7 +254,7 @@ def main():
     It initializes the user session, loads the necessary data,
     and provides the UI for generating and displaying keyness tables.
     """
-    # Set login requirements for navigaton
+    # Set login requirements for navigation
     require_login()
     menu()
     st.markdown(
@@ -84,181 +265,16 @@ def main():
             "select p-value thresholds, and download the results."
             )
         )
+
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
-
     sidebar_help_link("compare-corpora.html")
-    # --- Check if keyness table is already generated ---
-    if session.get('keyness_table')[0] is True:
-        # Load the widget state for the current user session
-        load_widget_state(
-            pathlib.Path(__file__).stem,
-            user_session_id
-            )
-        # Load target and reference metadata
-        metadata_target = load_metadata('target', user_session_id)
-        metadata_reference = load_metadata('reference', user_session_id)
 
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.info(target_info(metadata_target))
-        with col2:
-            st.info(reference_info(metadata_reference))
-
-        # --- Show user selections ---
-        st.info(
-            f"**p-value threshold:** {st.session_state[user_session_id]['pval_threshold']} &nbsp;&nbsp; "  # noqa: E501
-            f"**Swapped:** {'Yes' if st.session_state[user_session_id]['swap_target'] else 'No'}"  # noqa: E501
-        )
-
-        st.sidebar.markdown("### Comparison")
-        table_radio = st.sidebar.radio(
-            "Select the keyness table to display:",
-            ("Tokens", "Tags Only"),
-            key=persist(
-                "kt_radio1", pathlib.Path(__file__).stem,
-                user_session_id),
-            horizontal=True)
-
-        st.sidebar.markdown("---")
-        # Set up the tagset selection based on the radio button choice
-        if table_radio == 'Tokens':
-            df, tag_options, tag_radio, tag_type = tagset_selection(
-                user_session_id=user_session_id,
-                session_state=st.session_state,
-                persist_func=persist,
-                page_stem=pathlib.Path(__file__).stem,
-                tagset_keys={
-                    "Parts-of-Speech": {"General": "kw_pos", "Specific": "kw_pos"},
-                    "DocuScope": "kw_ds"
-                },
-                simplify_funcs={
-                    "Parts-of-Speech": {"General": freq_simplify_pl, "Specific": None}
-                },
-                tag_filters={
-                    # Add filters here if needed
-                },
-                tag_radio_key="kt_radio2",
-                tag_type_key="kt_type_radio2"
-            )
-
-            sort_by, reverse = keyness_sort_controls(
-                sort_options=["Keyness (LL)", "Effect Size (LR)"],
-                default="Keyness (LL)",
-                reverse_default=True,
-                key_prefix="kt_"  # or something unique per page/tab
-            )
-
-            df = tag_filter_multiselect(df)
-
-            # Map UI label to actual DataFrame column
-            sort_col_map = {
-                "Keyness (LL)": "LL",
-                "Effect Size (LR)": "LR"
-            }
-            sort_col = sort_col_map[sort_by]
-
-            if df is not None and getattr(df, "height", 0) > 0:
-                df = df.sort(sort_col, descending=reverse)
-            render_dataframe(df)
-
-            st.sidebar.markdown("---")
-            # Add download button for the DataFrame
-            toggle_download(
-                label="Excel",
-                convert_func=convert_to_excel,
-                convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
-                file_name="keywords_tokens.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                location=st.sidebar
-            )
-
-            st.sidebar.markdown("---")
-            st.sidebar.markdown(
-                body=(
-                    "### Generate new table\n\n"
-                    "Use the button to reset the keyness table and start over."
-                    )
-                )
-            if st.sidebar.button("Generate New Keyness Table", icon=":material/refresh:"):
-                # Clear keyness tables for this session
-                for key in ["kw_pos", "kw_ds", "kt_pos", "kt_ds"]:
-                    if key not in st.session_state[user_session_id]["target"]:
-                        st.session_state[user_session_id]["target"][key] = {}
-                    st.session_state[user_session_id]["target"][key] = {}
-                # Reset keyness_table state
-                update_session('keyness_table', False, user_session_id)
-                # Optionally clear warnings
-                st.session_state[user_session_id]["keyness_warning"] = None
-                st.rerun()
-
-            st.sidebar.markdown("---")
-
-        else:
-            df, tag_options, tag_radio, tag_type = tagset_selection(
-                user_session_id=user_session_id,
-                session_state=st.session_state,
-                persist_func=persist,
-                page_stem=pathlib.Path(__file__).stem,
-                tagset_keys={
-                    "Parts-of-Speech": "kt_pos",
-                    "DocuScope": "kt_ds"
-                },
-                tag_filters={
-                    "Parts-of-Speech": lambda df: df.filter(pl.col("Tag") != "FU"),
-                    "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
-                },
-                tag_radio_key="kt_radio3"
-            )
-            # Tabs for displaying keyness table and plot
-            tab1, tab2 = st.tabs(["Keyness Table", "Keyness Plot"])
-            with tab1:
-                filter_vals = st.multiselect("Select tags to filter:", tag_options)
-                if filter_vals and df is not None:
-                    df = df.filter(pl.col("Tag").is_in(filter_vals))
-
-                render_dataframe(df)
-
-            with tab2:
-                if df.height > 0 and df is not None:
-                    fig = plot_compare_corpus_bar(df)
-                    st.plotly_chart(fig, use_container_width=True)
-                    plot_download_link(fig, filename="compare_corpus_bar.png")
-
-            st.sidebar.markdown("---")
-            # Add download button for the DataFrame
-            toggle_download(
-                label="Excel",
-                convert_func=convert_to_excel,
-                convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
-                file_name="keywords_tags.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                location=st.sidebar
-            )
-
-            st.sidebar.markdown("---")
-            st.sidebar.markdown(
-                body=(
-                    "### Generate new table\n\n"
-                    "Use the button to reset the keyness table and start over."
-                    )
-                )
-            if st.sidebar.button("Generate New Keyness Table", icon=":material/refresh:"):
-                # Clear keyness tables for this session
-                for key in ["kw_pos", "kw_ds", "kt_pos", "kt_ds"]:
-                    if key not in st.session_state[user_session_id]["target"]:
-                        st.session_state[user_session_id]["target"][key] = {}
-                    st.session_state[user_session_id]["target"][key] = {}
-                # Reset keyness_table state
-                update_session('keyness_table', False, user_session_id)
-                # Optionally clear warnings
-                st.session_state[user_session_id]["keyness_warning"] = None
-                st.rerun()
-
-            st.sidebar.markdown("---")
-
+    # Route to appropriate interface based on whether keyness table exists
+    if session.get(SessionKeys.KEYNESS_TABLE, [False])[0]:
+        render_keyness_interface(user_session_id, session)
     else:
-
+        # Display instructions and options for keyness generation
         st.markdown(
             body=(
                 ":material/manufacturing: Use the button in the sidebar to **generate keywords**.\n\n"  # noqa: E501
@@ -268,45 +284,60 @@ def main():
                 )
         )
 
+        # Get the sidebar options that will be used for generation
         pval_selected, swap_selected = sidebar_keyness_options(
             user_session_id,
             load_metadata_func=load_metadata
         )
 
-        # Display the sidebar header for generating frequency table
-        st.sidebar.markdown(
-            body=(
-                "### Generate table\n\n"
-                "Use the button to process a table."
-                ),
-            help=(
-                "Tables are generated based on the loaded target and reference corpora. "
-                "You can filter the table after it has been generated. "
-                "The table will include frequencies and hypothesis testing for the selected tagsets.\n\n"  # noqa: E501
-                "Click on the **Help** button for more information on how to use this app."  # noqa: E501
-                )
-            )
-        # Action button to generate keyness tables
-        sidebar_action_button(
-            button_label="Keyness Table",
-            button_icon=":material/manufacturing:",
-            preconditions=[
-                session.get('has_target')[0],
-                session.get('has_reference')[0]
-            ],
-            action=lambda: generate_keyness_tables(
+        # Store the options in a lambda for the generation function
+        def keyness_generation_action():
+            # Check preconditions specific to keyness generation
+            if not has_target_corpus(session):
+                render_corpus_not_loaded_error("target")
+                return
+
+            if not has_reference_corpus(session):
+                render_corpus_not_loaded_error("reference")
+                return
+
+            # If all validations pass, generate the keyness tables
+            generate_keyness_tables(
                 user_session_id,
                 threshold=pval_selected,
                 swap_target=swap_selected
+            )
+
+        # Use a custom table generation interface that handles keyness specifics
+        st.sidebar.markdown(
+            body=(
+                "### Generate keyness table\n\n"
+                "Use the button to process a table."
             ),
-            spinner_message="Generating keywords..."
+            help=(
+                "Keyness tables are generated based on the loaded target and "
+                "reference corpora. You can filter the table by tags after it has "
+                "been generated. The table will include frequencies and hypothesis "
+                "testing for the selected tagsets.\n\n"
+                "Click on the **Help** button for more information on how to use this app."
+            )
         )
 
-        if st.session_state[user_session_id].get("keyness_warning"):
-            msg, icon = st.session_state[user_session_id]["keyness_warning"]
+        # Custom action button that handles keyness-specific validation
+        if st.sidebar.button(
+            "Keyness Table",
+            icon=":material/manufacturing:",
+            type="secondary"
+        ):
+            with st.sidebar.status("Generating keywords...", expanded=True):
+                keyness_generation_action()
+
+        # Display warnings if there are any
+        if st.session_state[user_session_id].get(WarningKeys.KEYNESS):
+            msg, icon = st.session_state[user_session_id][WarningKeys.KEYNESS]
             st.error(msg, icon=icon)
 
-        st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
 
 
 if __name__ == "__main__":
