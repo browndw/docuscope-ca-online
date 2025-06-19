@@ -1,14 +1,17 @@
 import base64
 import pathlib
+
 import streamlit as st
 
-import utilities as _utils
+# Ensure project root is in sys.path for both desktop and online
+project_root = pathlib.Path(__file__).parent.parent.resolve()
 
-HERE = pathlib.Path(__file__).parent.resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-GOOGLE_LOGO = str(HERE.joinpath("_static/web_light_rd_na.svg"))
+from webapp.utilities.configuration import import_options_general  # noqa: E402
 
-_options = _utils.handlers.import_options_general(OPTIONS)
+OPTIONS = str(project_root.joinpath("webapp/config/options.toml"))
+GOOGLE_LOGO = str(project_root.joinpath("webapp/_static/web_light_rd_na.svg"))
+
+_options = import_options_general(OPTIONS)
 DESKTOP = _options['global']['desktop_mode']
 
 
@@ -101,9 +104,47 @@ def menu():
         authenticated_menu()
         st.sidebar.markdown("---")
         return
-    if hasattr(st, "user") and getattr(st.user, "is_logged_in", False):
+    
+    # Check current login state
+    current_login_state = hasattr(st, "user") and getattr(st.user, "is_logged_in", False)
+    
+    if current_login_state:
+        # Ensure session_id is properly stored
+        if "session_id" not in st.session_state:
+            # Get the actual session ID from Streamlit's script run context
+            try:
+                user_session = (
+                    st.runtime.scriptrunner_utils.script_run_context
+                    .get_script_run_ctx()
+                )
+                st.session_state["session_id"] = user_session.session_id
+            except Exception:
+                # Fallback to a generated session ID
+                import uuid
+                st.session_state["session_id"] = str(uuid.uuid4())
+        
+        # Check if this is a new login (state changed from False to True)
+        previous_login_state = st.session_state.get("previous_login_state", False)
+        
+        if not previous_login_state:
+            # User just logged in - record the login
+            from webapp.utilities.storage import add_login
+            try:
+                add_login(
+                    user_id=st.user.email,
+                    session_id=st.session_state["session_id"]
+                )
+            except Exception:
+                # Silently handle any errors
+                pass
+        
+        # Update the login state
+        st.session_state["previous_login_state"] = True
+        
         authenticated_menu()
         st.sidebar.markdown("---")
         return
     else:
+        # User is not logged in
+        st.session_state["previous_login_state"] = False
         unauthenticated_menu()
