@@ -1,4 +1,4 @@
-# Copyright (C) 2025 David West Brown
+# Copyright 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,13 +22,13 @@ from google.cloud import firestore
 from google.oauth2 import service_account
 
 # Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
+project_root = pathlib.Path(__file__).parent.parents[2].resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from webapp.utilities.handlers import import_options_general  # noqa: E402
+from webapp.utilities.configuration import import_options_general  # noqa: E402
 
-OPTIONS = str(project_root.joinpath("webapp/options.toml"))
+OPTIONS = str(project_root.joinpath("webapp/config/options.toml"))
 
 # import options
 _options = import_options_general(OPTIONS)
