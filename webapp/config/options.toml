@@ -1,0 +1,24 @@
+[global]
+check_size = false
+check_language = false
+desktop_mode = true
+max_bytes_text = 20000000
+max_bytes_polars = 150000000
+
+[llm]
+llm_parameters = { temperature = 0.7, top_p = 0.7, max_tokens = 500, frequency_penalty = 0, presence_penalty = 0 }
+llm_model = "gpt-4o-mini"
+quota = 100
+
+[cache]
+cache_mode = false
+cache_location = "firestore"
+
+[session]
+# Inactivity timeout in minutes (user hasn't interacted)
+inactivity_timeout_minutes = 90
+inactivity_warning_minutes = 85
+
+# Absolute session timeout in hours (since login)
+absolute_timeout_hours = 24
+absolute_warning_hours = 23.5
