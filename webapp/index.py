@@ -20,22 +20,15 @@ import sys
 
 import streamlit as st
 
-# Tauri-compatible path setup - finds project root reliably
-project_root = pathlib.Path(__file__).resolve()
-for _ in range(10):  # Search up to 10 levels
-    if (project_root / 'webapp').exists() or (project_root / 'pyproject.toml').exists():
-        break
-    project_root = project_root.parent
-else:
-    raise RuntimeError("Could not find project root")
-
+# Ensure project root is in sys.path for both desktop and online
+project_root = pathlib.Path(__file__).parent.parent.resolve()
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from webapp.menu import menu   # noqa: E402
-from webapp.utilities.configuration import import_options_general, get_version_from_pyproject   # noqa: E402, E501
+from webapp.utilities.handlers import import_options_general, get_version_from_pyproject   # noqa: E402, E501
 
-OPTIONS = str(project_root.joinpath("webapp/config/options.toml"))
+OPTIONS = str(project_root.joinpath("webapp/options.toml"))
 TITLE_LOGO = str(project_root.joinpath("webapp/_static/docuscope-logo.png"))
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
 PL_LOGO = str(project_root.joinpath("webapp/_static/porpoise_badge.svg"))
