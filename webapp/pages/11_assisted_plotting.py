@@ -13,303 +13,531 @@
 # limitations under the License.
 
 import base64
+import io
 import pathlib
+import sys
+
+import polars as pl
 import streamlit as st
 
-from webapp.utilities.session import (  # noqa: E402
-    get_or_init_user_session
-)
-from webapp.utilities.configuration import (  # noqa: E402
-    get_ai_configuration
-)
-from webapp.utilities.ai import (   # noqa: E402
-    clear_plotbot,
-    previous_code_chunk,
-    plotbot_user_query,
-    setup_ai_session_state,
-    get_api_key,
-    render_api_key_input,
-    render_data_selection_interface,
-    render_data_preview_controls
-)
-from webapp.utilities.analysis import (   # noqa: E402
-    generate_tags_table
-)
-from webapp.utilities.ui import (  # noqa: E402
-    sidebar_help_link,
-    render_table_generation_interface
-)
-from webapp.utilities.state import (  # noqa: E402
-    load_widget_state,
-    persist
-)
-from webapp.config.session_keys import (  # noqa: E402
-    SessionKeys,
-    WarningKeys
-)
-from webapp.menu import (   # noqa: E402
-    menu,
-    require_login
-)
+# Ensure project root is in sys.path for both desktop and online
+project_root = pathlib.Path(__file__).parent.parents[1].resolve()
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+import webapp.utilities as _utils   # noqa: E402
+from webapp.menu import menu, require_login   # noqa: E402
 
 TITLE = "AI-Assisted Plotting"
 ICON = ":material/smart_toy:"
 
-# Configuration constants
-DEFAULT_WIDGET_STATE_PATH = pathlib.Path(__file__).stem
-
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
-)
-
-# Get AI configuration
-_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
-
-
-def render_plotting_library_selection(user_session_id: str) -> str:
-    """Render the plotting library selection interface."""
-    st.markdown(
-        body="### Plotting Library",
-        help=(
-            "To create plots, I can use the following libraries:\n\n"
-            "* [Plotly express](https://plotly.com/python/plotly-express/)\n"
-            "* [Matplotlib](https://matplotlib.org/)\n"
-            "* [Seaborn](https://seaborn.pydata.org/)\n\n"
-            "Each library has its own aesthetics and features. "
-            "If you're unfamiliar with them, you should check out their "
-            "documentation, as well as examples of their use."
-        )
     )
 
-    plot_lib = st.radio(
-        "Select the plotting library:",
-        ("plotly.express", "matplotlib", "seaborn"),
-        key=persist("plot_radio", DEFAULT_WIDGET_STATE_PATH, user_session_id),
-        on_change=clear_plotbot,
-        args=(user_session_id, False,),
-        horizontal=True
-    )
+OPTIONS = str(project_root.joinpath("webapp/options.toml"))
+_options = _utils.handlers.import_options_general(OPTIONS)
 
-    return plot_lib
+DESKTOP = _options['global']['desktop_mode']
+LLM_PARAMS = _options['llm']['llm_parameters']
+LLM_MODEL = _options['llm']['llm_model']
+QUOTA = _options['llm']['quota']
 
-
-def render_plotbot_chat_interface(
-    user_session_id: str,
-    api_key: str,
-    df,
-    selected_query: str,
-    plot_lib: str
-) -> None:
-    """Render the chat interface for Plotbot."""
-    # Display chat history
-    for message in st.session_state[user_session_id]["plotbot"]:
-        with st.chat_message(message["role"]):
-            if message["type"] == "string":
-                st.markdown(message["value"])
-            elif message["type"] == "code":
-                st.code(message["value"], language="python")
-            elif message["type"] == "error":
-                st.error(message["value"], icon=":material/error:")
-            elif message["type"] == "plot":
-                # Handle different plot types
-                if plot_lib in ["matplotlib", "seaborn"]:
-                    st.image(message['value'])
-                    # Add download link
-                    img_bytes = message['value'].getvalue()
-                    b64 = base64.b64encode(img_bytes).decode()
-                    href = (f'<a href="data:image/png;base64,{b64}" '
-                            'download="plot.png">Download PNG</a>')
-                    st.markdown(href, unsafe_allow_html=True)
-                elif plot_lib == "plotly.express":
-                    fig = message['value']
-                    fig.update_xaxes(automargin=True)
-                    fig.update_yaxes(automargin=True)
-                    img_bytes = fig.to_image(format="png", scale=2)
-                    st.image(img_bytes)
-                    # Add download link
-                    b64 = base64.b64encode(img_bytes).decode()
-                    href = (f'<a href="data:image/png;base64,{b64}" '
-                            'download="plot.png">Download PNG</a>')
-                    st.markdown(href, unsafe_allow_html=True)
-
-    # Get last code chunk
-    last_code = previous_code_chunk(st.session_state[user_session_id]["plotbot"])
-
-    # Chat input
-    if last_code is None or len(last_code) == 0:
-        input_prompt = st.chat_input(
-            "Please describe what kind of plot you'd like to create."
-        )
-
-        if input_prompt:
-            with st.spinner(":sparkles: Generating response..."):
-                st.session_state[user_session_id]["plotbot"].append(
-                    {"role": "user", "type": "string", "value": input_prompt}
-                )
-                # Increment user prompt count
-                prompt_count_key = "plotbot_user_prompt_count"
-                if prompt_count_key not in st.session_state[user_session_id]:
-                    st.session_state[user_session_id][prompt_count_key] = 1
-                else:
-                    st.session_state[user_session_id][prompt_count_key] += 1
-
-                # Generate response
-                plotbot_user_query(
-                    session_id=user_session_id,
-                    df=df.to_pandas() if hasattr(df, 'to_pandas') else df,
-                    plot_lib=plot_lib,
-                    user_input=input_prompt,
-                    api_key=api_key,
-                    llm_params=LLM_PARAMS,
-                    prompt_position=st.session_state[user_session_id][prompt_count_key],
-                    cache_mode=CACHE
-                )
-                st.rerun()
-    else:
-        # Show refinement input
-        input_refine = st.chat_input("How would you like me to refine this plot?")
-
-        if input_refine:
-            with st.spinner(":sparkles: Refining plot..."):
-                st.session_state[user_session_id]["plotbot"].append(
-                    {"role": "user", "type": "string", "value": input_refine}
-                )
-                st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1
-
-                # Generate refined response
-                plotbot_user_query(
-                    session_id=user_session_id,
-                    df=df.to_pandas() if hasattr(df, 'to_pandas') else df,
-                    plot_lib=plot_lib,
-                    user_input=input_refine,
-                    api_key=api_key,
-                    llm_params=LLM_PARAMS,
-                    prompt_position=st.session_state[user_session_id][
-                        "plotbot_user_prompt_count"
-                    ],
-                    cache_mode=CACHE
-                )
-                st.rerun()
-
-
-def render_plotbot_interface(user_session_id: str, session: dict) -> None:
-    """Render the main Plotbot interface with data selection and plotting."""
-    try:
-        # Initialize session state
-        setup_ai_session_state(user_session_id, "plotbot")
-
-        # Get API key first
-        api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
-
-        # Introduction
-        st.markdown(
-            body=(
-                ":robot_face: Plotbot is an **interactive** chat assistant "
-                "designed to help you create and refine plots from your data.\n\n"
-                ":material/priority: I remember your previous messages "
-                "and use them to generate new responses.\n\n"
-                ":material/priority: I am not a general-purpose chatbot, "
-                "so I can not answer questions that are not related to plotting."
-            )
-        )
-
-        # Only show data interfaces if user has valid API key
-        if api_key:
-            # Add clear chat button to sidebar
-            st.sidebar.markdown(
-                body="### Chat Controls",
-                help=(
-                    "You can clear the chat history to start a new conversation. "
-                    "This will remove all previous messages and plots."
-                ))
-            if st.sidebar.button(
-                "Clear Chat History",
-                icon=":material/delete:"
-            ):
-                clear_plotbot(user_session_id)
-                st.rerun()
-
-            # Get metadata if available
-            metadata_target = None
-            if session.get(SessionKeys.HAS_TARGET, [False])[0]:
-                metadata_target = (
-                    st.session_state[user_session_id]['metadata_target'].to_dict()
-                )
-
-            # Load widget state
-            load_widget_state(DEFAULT_WIDGET_STATE_PATH, user_session_id)
-
-            # Data selection interface
-            selected_corpus, selected_query, df = render_data_selection_interface(
-                user_session_id, session, "plotbot", DEFAULT_WIDGET_STATE_PATH,
-                clear_plotbot, metadata_target
-            )
-
-            # Data preview with controls
-            if df is not None:
-                df = render_data_preview_controls(
-                    df, selected_query, DEFAULT_WIDGET_STATE_PATH, user_session_id
-                )
-
-            # Plotting library selection
-            plot_lib = render_plotting_library_selection(user_session_id)
-
-            # Chat interface
-            render_plotbot_chat_interface(
-                user_session_id, api_key, df, selected_query, plot_lib
-            )
-        else:
-            # Show API key input if no valid key available
-            render_api_key_input(user_session_id)
-
-    except Exception as e:
-        st.error(f"Error loading Plotbot interface: {str(e)}", icon=":material/error:")
+if DESKTOP:
+    CACHE = False
+else:
+    CACHE = _options['cache']['cache_mode']
 
 
 def main():
-    """Main function to run the Streamlit app for AI-assisted plotting."""
-    # Set login requirements for navigation
+    # Set login requirements for navigaton
     require_login()
     menu()
-    st.markdown(
-        body=f"## {TITLE}",
-        help=(
-            "To use Plotbot, you need to load tables from the sidebar, "
-            "then select one from the interface. "
-            "Once you have selected a table, you can enter your prompt "
-            "in the chat input box. "
-            "Plotbot will then generate a response based on the table you selected.\n\n"
-            "If you are using the online version, you can use the API key "
-            "provided by CMU, though there is a daily quota limit. "
-            "If you're using the desktop version or you reach your quota, "
-            "you can enter your own OpenAI API key to use Plotbot "
-            "without any quota limits."
-        )
-    )
-
+    st.markdown(f"## {TITLE}")
     # Get or initialize user session
-    user_session_id, session = get_or_init_user_session()
+    user_session_id, session = _utils.handlers.get_or_init_user_session()
 
-    # Add help link
-    sidebar_help_link("assisted-plotting.html")
-
-    # Check if tags table is available
-    if session.get(SessionKeys.TAGS_TABLE, [False])[0]:
-        render_plotbot_interface(user_session_id, session)
-    else:
-        # Show generation interface for tags table
-        render_table_generation_interface(
-            user_session_id=user_session_id,
-            session=session,
-            table_type="tags table",
-            button_label="Tags Table",
-            generation_func=generate_tags_table,
-            session_key=SessionKeys.TAGS_TABLE,
-            warning_key=WarningKeys.TAGS
+    st.sidebar.link_button(
+        label="Help",
+        url="https://browndw.github.io/docuscope-docs/guide/assisted-plotting.html",
+        icon=":material/help:"
         )
 
-    st.sidebar.markdown("---")
+    if session.get('has_target')[0] is True:
+        metadata_target = st.session_state[
+            user_session_id
+            ]['metadata_target'].to_dict()
+
+    # Initialize chat history
+    if "plotbot" not in st.session_state[user_session_id]:
+        st.session_state[user_session_id]["plotbot"] = []
+
+    if "plotbot_user_prompt_count" not in st.session_state[user_session_id]:
+        st.session_state[user_session_id]["plotbot_user_prompt_count"] = 0
+
+    if "user_key" not in st.session_state[user_session_id]:
+        st.session_state[user_session_id]["user_key"] = None
+
+    if DESKTOP is False:
+        try:
+            community_key = st.secrets["openai"]["api_key"]
+        except Exception:
+            community_key = None
+    else:
+        community_key = None
+
+    if CACHE:
+        daily_tokens = _utils.cache.get_query_count(st.user.email)
+        if daily_tokens >= QUOTA:
+            community_key = None
+
+    if community_key is not None:
+        api_key = community_key
+    else:
+        api_key = st.session_state[user_session_id]["user_key"]
+
+    if session.get('tags_table')[0] is True:
+
+        st.markdown(_utils.content.message_plotbot_home)
+
+        _utils.handlers.load_widget_state(
+            pathlib.Path(__file__).stem,
+            user_session_id
+            )
+
+        st.markdown("### Data Selection")
+
+        with st.expander("About data",
+                         icon=":material/table:",
+                         expanded=False):
+
+            st.markdown(_utils.content.message_plotbot_data)
+
+        plotbot_corpus = st.radio(
+            "Select corpus:",
+            ("Target", "Reference", "Keywords", "Grouped"),
+            key=_utils.handlers.persist(
+                "plotbot_corpus", pathlib.Path(__file__).stem,
+                user_session_id),
+            on_change=_utils.llms.clear_plotbot,
+            args=(user_session_id,),
+            index=0,
+            horizontal=True
+                )
+
+        if session.get('has_meta')[0] is True:
+            groups = metadata_target.get('doccats')[0]['cats']
+        elif session.get('has_meta')[0] is False:
+            groups = []
+
+        plotbot_query = st.selectbox(
+                "Select data to plot:",
+                (_utils.llms.tables_to_list(session_id=user_session_id,
+                                            corpus=plotbot_corpus,
+                                            categories=groups)),
+                key=_utils.handlers.persist(
+                    "plotbot_query", pathlib.Path(__file__).stem,
+                    user_session_id),
+                on_change=_utils.llms.clear_plotbot,
+                args=(user_session_id,),
+                index=None,
+                placeholder="Select data..."
+                )
+
+        st.markdown("### Data Preview")
+        df = _utils.llms.table_from_list(user_session_id,
+                                         plotbot_corpus,
+                                         plotbot_query,
+                                         categories=groups)
+
+        if df is not None and df.shape[0] > 0:
+            if (
+                df.get_column("Group", default=None) is not None or
+                str("Document-Term Matrix") in plotbot_query
+            ):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    pivot_table = st.toggle(
+                        "Pivot Table",
+                        key=_utils.handlers.persist(
+                            "pivot_table", pathlib.Path(__file__).stem,
+                            user_session_id)
+                    )
+                    if (
+                        pivot_table and
+                        str("Document-Term Matrix") in plotbot_query and
+                        df.get_column("Group", default=None) is None
+                    ):
+                        df = df.pivot(
+                            "Tag",
+                            index="doc_id",
+                            values="RF"
+                            )
+                    elif (
+                        pivot_table and
+                        str("Document-Term Matrix") in plotbot_query and
+                        df.get_column("Group", default=None) is not None
+                    ):
+                        df = df.pivot(
+                            "Tag",
+                            index=["doc_id", "Group"],
+                            values="RF"
+                            )
+                    elif pivot_table:
+                        df = df.pivot(
+                            "Tag",
+                            index="Group",
+                            values="RF"
+                            )
+
+                with col2:
+                    make_percent = st.toggle(
+                        "Make Percent",
+                        key=_utils.handlers.persist(
+                            "make_percent", pathlib.Path(__file__).stem,
+                            user_session_id),
+                        value=False
+                    )
+                    if (
+                        make_percent and
+                        str("Document-Term Matrix") in plotbot_query
+                    ):
+                        df = df.with_columns(
+                            (
+                                pl.selectors.numeric().mul(100)
+                                )
+                        )
+                    elif (
+                        make_percent and
+                        str("Tags Table") in plotbot_query
+                    ):
+                        df = df.with_columns(
+                            (
+                                pl.selectors.numeric()
+                                .exclude(["AF", "Range"]).mul(100)
+                                )
+                        )
+
+            st.dataframe(df.head(10), use_container_width=True)
+
+        st.markdown("### Plotting Library")
+
+        with st.expander("About libraries",
+                         icon=":material/add_chart:",
+                         expanded=False):
+
+            st.markdown(_utils.content.message_plotbot_libraries)
+
+        plot_lib = st.radio(
+            "Select the plotting library:",
+            ("plotly.express", "matplotlib", "seaborn"),
+            key=_utils.handlers.persist(
+                "plot_radio", pathlib.Path(__file__).stem,
+                user_session_id),
+            on_change=_utils.llms.clear_plotbot,
+            args=(user_session_id, False,),
+            horizontal=True
+                )
+
+        if st.session_state[user_session_id]["plotbot"]:
+            for i, message in enumerate(
+                st.session_state[user_session_id]["plotbot"]
+            ):
+                with st.chat_message(message["role"]):
+                    if message['type'] == 'string':
+                        st.markdown(
+                            message['value'],
+                            unsafe_allow_html=True
+                            )
+                    elif message['type'] == 'error':
+                        st.markdown(
+                            message['value'],
+                            unsafe_allow_html=True
+                            )
+                    elif message['type'] == 'code':
+                        st.code(
+                            message['value'],
+                            language='python'
+                            )
+                    # Render plots consitently as static images
+                    # rather than interactive HTML.
+                    # This ensures that what users download
+                    # is consistent with what's rendered in streamlit.
+                    elif message['type'] == 'plot':
+                        if (
+                            plot_lib == "matplotlib" or
+                            plot_lib == "seaborn"
+                        ):
+                            # Save the matplotlib figure to a BytesIO buffer
+                            scale = 2  # or any desired scale factor
+                            dpi = 100 * scale  # base dpi (e.g., 100) x scale
+
+                            buf = io.BytesIO()
+                            message['value'].savefig(
+                                buf,
+                                format="png",
+                                bbox_inches="tight",
+                                dpi=dpi
+                                )
+                            buf.seek(0)
+                            img_bytes = buf.getvalue()
+
+                            st.image(img_bytes)
+
+                            # Add download link
+                            b64 = base64.b64encode(img_bytes).decode()
+                            href = f'<a href="data:image/png;base64,{b64}" download="plot.png">Download PNG</a>'  # noqa: E501
+                            st.markdown(href, unsafe_allow_html=True)
+
+                        elif (
+                            plot_lib == "plotly.express"
+                        ):
+                            # Set desired resolution (scale)
+                            scale = 2
+                            fig = message['value']
+                            fig.update_xaxes(automargin=True)
+                            fig.update_yaxes(automargin=True)
+                            img_bytes = fig.to_image(
+                                format="png",
+                                scale=scale
+                            )
+                            st.image(img_bytes)
+
+                            # Add download link
+                            b64 = base64.b64encode(img_bytes).decode()
+                            href = f'<a href="data:image/png;base64,{b64}" download="plot.png">Download PNG</a>'  # noqa: E501
+                            st.markdown(href, unsafe_allow_html=True)
+
+        last_code = _utils.llms.previous_code_chunk(
+            st.session_state[user_session_id]["plotbot"]
+            )
+
+        if st.session_state[user_session_id]["plotbot"]:
+            prompt_position = st.session_state[user_session_id]["plotbot_user_prompt_count"]
+        else:
+            prompt_position = 1
+
+        if (
+            api_key is not None and
+            (last_code is None or len(last_code) == 0)
+        ):
+            input_initial = st.chat_input(
+                """Please describe what kind of plot you'd like to create.
+                """)
+
+            if input_initial:
+                if input_initial:
+                    with st.spinner(":sparkles: Generating response..."):
+                        st.session_state[user_session_id]["plotbot"].append(
+                            {"role": "user", "type": "string", "value": input_initial}
+                        )
+                        # Increment user prompt count
+                        if "plotbot_user_prompt_count" not in st.session_state[user_session_id]:  # noqa: E501
+                            st.session_state[user_session_id]["plotbot_user_prompt_count"] = 1  # noqa: E501
+                        else:
+                            st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1  # noqa: E501
+
+                    if (
+                        df is not None and
+                        df.height > 0
+                    ):
+                        _utils.llms.plotbot_user_query(
+                            session_id=user_session_id,
+                            df=df.to_pandas(),
+                            plot_lib=plot_lib,
+                            user_input=input_initial,
+                            api_key=api_key,
+                            llm_params=LLM_PARAMS,
+                            prompt_position=prompt_position,
+                            cache_mode=CACHE
+                            )
+                    else:
+                        error_message = """
+                        :confused: I don't have any data to plot.
+                        Please select a table from the drop down list above.
+                        """
+                        st.session_state[user_session_id]["plotbot"].append(
+                            {"role": "assistant",
+                             "type": "string",
+                             "value": error_message}
+                            )
+
+                    st.rerun()
+
+        elif (
+            api_key is not None and
+            (last_code is not None and len(last_code) > 0)
+        ):
+
+            input_update = st.chat_input(
+                """Please describe how you'd like to update the plot.
+                """)
+
+            if input_update:
+                with st.spinner(":sparkles: Generating response..."):
+                    st.session_state[user_session_id]["plotbot"].append(
+                        {"role": "user", "type": "string", "value": input_update}
+                    )
+                    # Increment user prompt count
+                    if "plotbot_user_prompt_count" not in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]["plotbot_user_prompt_count"] = 1
+                    else:
+                        st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1
+
+                    _utils.llms.plotbot_user_query(
+                        session_id=user_session_id,
+                        df=df.to_pandas(),
+                        plot_lib=plot_lib,
+                        user_input=input_update,
+                        api_key=api_key,
+                        llm_params=LLM_PARAMS,
+                        prompt_position=prompt_position,
+                        cache_mode=CACHE,
+                        code_chunk=last_code
+                        )
+
+                st.rerun()
+        else:
+            st.markdown(
+                """
+                You need to enter your OpenAI API key
+                to use Pandabot.
+                If you don't have one, you can get it
+                from [OpenAI](https://platform.openai.com/signup).
+                """
+            )
+
+            user_api_key = st.text_input(
+                "Enter your OpenAI API key:",
+                type='password'
+                )
+
+            if st.button("Check API Key"):
+                if user_api_key:
+                    if _utils.llms.is_openai_key_valid(user_api_key):
+                        st.success("API key is valid!")
+                        st.session_state[user_session_id]["user_key"] = user_api_key
+                        st.rerun()
+                    else:
+                        st.error(
+                            "API key is invalid. Please check and try again."
+                            )
+                else:
+                    st.warning("Please enter an API key.")
+
+        if CACHE:
+            remaining_tokens = max(0, QUOTA - daily_tokens)
+            used_tokens_pct = int((daily_tokens / QUOTA) * 100)
+
+            st.sidebar.markdown(
+                f" ##### Daily queries - used: `{min(QUOTA, daily_tokens)}` - remaining: `{remaining_tokens}`"  # noqa: E501
+                )
+            st.sidebar.progress(min(used_tokens_pct / 100, 1.0))
+
+            if remaining_tokens < 10 and remaining_tokens > 0:
+                st.warning(
+                    f"""
+                    You have only `{remaining_tokens}` queries left
+                    for today using the community API.
+                    When these run out, you will need login
+                    with your own OpenAI API key.
+                    If you don't have one, you can get it
+                    from [OpenAI](https://platform.openai.com/signup).
+                    """,
+                    icon=":material/warning:"
+                    )
+
+            elif remaining_tokens <= 0:
+                st.error(
+                    """
+                    You have used all your queries for today
+                    using the community API.
+                    Please login with your own OpenAI API key
+                    to continue using the AI-assisted tools.
+                    If you don't have one, you can get it
+                    from [OpenAI](https://platform.openai.com/signup).
+                    """,
+                    icon=":material/hourglass_disabled:"
+                    )
+
+        st.sidebar.markdown("""
+                            ### Clear Plotbot History
+
+                            :robot_face:
+                            Plotbot is an **interative** chat assistant.
+                            I remember your previous messages and use them
+                            to generate new responses.
+                            If I'm not generating anything useful,
+                            it can be helpul to start over.
+                            Click the button below.
+                            This will remove all previous messages and
+                            start a new conversation.
+                            """)
+
+        if st.sidebar.button("Clear chat history"):
+            if "plotbot" not in st.session_state[user_session_id]:
+                st.session_state[user_session_id]["plotbot"] = []
+            _utils.llms.clear_plotbot(user_session_id)
+
+            if "plotbot_corpus" in st.session_state:
+                try:
+                    del st.session_state.plotbot_corpus
+                except KeyError:
+                    pass
+            if "plotbot_query" in st.session_state:
+                try:
+                    del st.session_state.plotbot_query
+                except KeyError:
+                    pass
+            st.session_state.plotbot_corpus = 'Target'
+            st.session_state.plotbot_query = None
+
+            st.rerun()
+
+        st.sidebar.markdown("---")
+
+        with st.sidebar.expander(
+            "Plotbot Tips",
+            icon=":material/lightbulb_2:",
+            expanded=False
+        ):
+            st.markdown(_utils.content.message_plotbot_tips)
+
+        st.sidebar.markdown("---")
+
+        with st.sidebar.expander(
+            "Current LLM Parameters",
+            icon=":material/build:",
+            expanded=False
+        ):
+            st.markdown(_utils.llms.print_settings(LLM_PARAMS))
+
+        st.sidebar.markdown("---")
+
+    else:
+
+        st.markdown(_utils.content.message_plotbot)
+
+        st.sidebar.markdown(_utils.content.message_generate_table)
+        _utils.handlers.sidebar_action_button(
+            button_label="Load Tables",
+            button_icon=":material/manufacturing:",
+            preconditions=[
+                session.get('has_target')[0],
+            ],
+            action=lambda: _utils.handlers.generate_tags_table(
+                user_session_id
+            ),
+            spinner_message="Loading tables..."
+        )
+
+        if st.session_state[user_session_id].get("tags_warning"):
+            msg, icon = st.session_state[user_session_id]["tags_warning"]
+            st.warning(msg, icon=icon)
+
+        st.sidebar.markdown("---")
 
 
 if __name__ == "__main__":
