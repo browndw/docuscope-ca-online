@@ -12,20 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
-import pathlib
-import sys
-
-import polars as pl
 import streamlit as st
 
-# Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-import webapp.utilities as _utils   # noqa: E402
-from webapp.menu import menu, require_login   # noqa: E402
+from webapp.utilities.session import (  # noqa: E402
+    get_or_init_user_session
+)
+from webapp.utilities.configuration import (  # noqa: E402
+    get_ai_configuration
+)
+from webapp.utilities.ai import (   # noqa: E402
+    clear_pandasai, pandabot_user_query,
+    setup_ai_session_state, get_api_key,
+    render_api_key_input, render_data_selection_interface,
+    render_data_preview_controls
+)
+from webapp.utilities.analysis import (   # noqa: E402
+    generate_tags_table
+)
+from webapp.utilities.ui import (  # noqa: E402
+    sidebar_help_link, render_table_generation_interface
+)
+from webapp.utilities.state import (  # noqa: E402
+    load_widget_state
+)
+from webapp.config.session_keys import (  # noqa: E402
+    SessionKeys, WarningKeys
+)
+from webapp.menu import (   # noqa: E402
+    menu, require_login
+)
 
 TITLE = "AI-Assisted Analysis"
 ICON = ":material/smart_toy:"
@@ -33,401 +48,179 @@ ICON = ":material/smart_toy:"
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
+)
+
+# Get AI configuration
+_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
+
+
+def render_pandabot_chat_interface(
+    user_session_id: str,
+    api_key: str,
+    df,
+    selected_query: str
+) -> None:
+    """Render the chat interface for Pandabot."""
+    # Display chat history
+    for message in st.session_state[user_session_id]["pandasai"]:
+        with st.chat_message(message["role"]):
+            if message["type"] == "string":
+                st.markdown(message["value"])
+            elif message["type"] == "code":
+                st.code(message["value"], language="python")
+            elif message["type"] == "error":
+                st.error(message["value"], icon=":material/error:")
+            elif message["type"] == "plot":
+                # Display plot image
+                st.image(message["value"])
+            elif message["type"] == "dataframe":
+                st.dataframe(
+                    message["value"], use_container_width=True
+                )
+
+    # Chat input
+    user_prompt = st.chat_input(
+        "Ask a question about your data or request an analysis."
     )
 
-OPTIONS = str(project_root.joinpath("webapp/options.toml"))
-_options = _utils.handlers.import_options_general(OPTIONS)
+    if user_prompt:
+        with st.spinner(":sparkles: Analyzing data..."):
+            st.session_state[user_session_id]["pandasai"].append(
+                {"role": "user", "type": "string", "value": user_prompt}
+            )
+            # Increment user prompt count
+            prompt_count_key = "pandabot_user_prompt_count"
+            if prompt_count_key not in st.session_state[user_session_id]:
+                st.session_state[user_session_id][prompt_count_key] = 1
+            else:
+                st.session_state[user_session_id][prompt_count_key] += 1
 
-DESKTOP = _options['global']['desktop_mode']
-LLM_PARAMS = _options['llm']['llm_parameters']
-LLM_MODEL = _options['llm']['llm_model']
-QUOTA = _options['llm']['quota']
+            # Generate response
+            pandabot_user_query(
+                df=df.to_pandas() if hasattr(df, 'to_pandas') else df,
+                api_key=api_key,
+                prompt=user_prompt,
+                session_id=user_session_id,
+                prompt_position=st.session_state[user_session_id][prompt_count_key],
+                cache_mode=CACHE
+            )
+            st.rerun()
 
-if DESKTOP:
-    CACHE = False
-else:
-    CACHE = _options['cache']['cache_mode']
+
+def render_pandabot_interface(user_session_id: str, session: dict) -> None:
+    """Render the main Pandabot interface with data selection and analysis."""
+    try:
+        # Initialize session state
+        setup_ai_session_state(user_session_id, "pandasai")
+
+        # Get API key
+        # Get API key first
+        api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
+
+        # Introduction
+        st.markdown(
+            body=(
+                ":panda_face: Pandabot is a chat assistant designed to work "
+                "with tabular data (or data frames).\n\n"
+                ":material/priority: I can help you analyze, filter, and "
+                "summarize your data using natural language.\n\n"
+                ":material/priority: Ask me questions about patterns, "
+                "statistics, or trends in your data."
+            )
+        )
+
+        # Only show data interfaces if user has valid API key
+        if api_key:
+            # Add clear chat button to sidebar
+            st.sidebar.markdown(
+                body="### Chat Controls",
+                help=(
+                    "You can clear the chat history to start a new conversation. "
+                    "This will remove all previous messages and plots."
+                ))
+            if st.sidebar.button(
+                "Clear Chat History",
+                icon=":material/delete:"
+            ):
+                clear_pandasai(user_session_id)
+                st.rerun()
+
+            # Get metadata if available
+            metadata_target = None
+            if session.get(SessionKeys.HAS_TARGET, [False])[0]:
+                metadata_target = (
+                    st.session_state[user_session_id]['metadata_target'].to_dict()
+                )
+
+            # Load widget state
+            load_widget_state(user_session_id)
+
+            # Data selection interface
+            selected_corpus, selected_query, df = render_data_selection_interface(
+                user_session_id, session, "pandasai", "12_assisted_analysis",
+                clear_pandasai, metadata_target
+            )
+
+            # Data preview with controls
+            if df is not None:
+                df = render_data_preview_controls(
+                    df, selected_query, "12_assisted_analysis", user_session_id
+                )
+
+            # Chat interface
+            render_pandabot_chat_interface(
+                user_session_id, api_key, df, selected_query
+            )
+        else:
+            # Show API key input if no valid key available
+            render_api_key_input(user_session_id)
+
+    except Exception as e:
+        st.error(f"Error loading Pandabot interface: {str(e)}", icon=":material/error:")
 
 
 def main():
-    # Set login requirements for navigaton
+    """Main function to run the Streamlit app for AI-assisted analysis."""
+    # Set login requirements for navigation
     require_login()
     menu()
-    st.markdown(f"## {TITLE}")
+    st.markdown(
+        body=f"## {TITLE}",
+        help=(
+            "To use Pandabot, you need to select a table from the sidebar. "
+            "Once you have selected a table, you can enter your prompt "
+            "in the chat input box. "
+            "Pandabot will then generate a response based on the table you selected.\n\n"
+            "If you are using the online version, you can use the API key "
+            "provided by CMU, though there is a daily quota limit. "
+            "If you're using the desktop version or you reach your quota, "
+            "you can enter your own OpenAI API key to use Pandabot "
+            "without any quota limits."
+        )
+    )
+
     # Get or initialize user session
-    user_session_id, session = _utils.handlers.get_or_init_user_session()
+    user_session_id, session = get_or_init_user_session()
 
-    st.sidebar.link_button(
-        label="Help",
-        url="https://browndw.github.io/docuscope-docs/guide/assisted-analysis.html",
-        icon=":material/help:"
+    # Add help link
+    sidebar_help_link("assisted-analysis.html")
+
+    # Check if tags table is available
+    if session.get(SessionKeys.TAGS_TABLE, [False])[0]:
+        render_pandabot_interface(user_session_id, session)
+    else:
+        # Show generation interface for tags table
+        render_table_generation_interface(
+            user_session_id=user_session_id,
+            session=session,
+            table_type="tags table",
+            button_label="Tags Table",
+            generation_func=generate_tags_table,
+            session_key=SessionKeys.TAGS_TABLE,
+            warning_key=WarningKeys.TAGS
         )
 
-    if session.get('has_target')[0] is True:
-        metadata_target = st.session_state[
-            user_session_id
-            ]['metadata_target'].to_dict()
-
-    if "pandasai" not in st.session_state[user_session_id]:
-        st.session_state[user_session_id]["pandasai"] = []
-
-    if "pandabot_user_prompt_count" not in st.session_state[user_session_id]:
-        st.session_state[user_session_id]["pandabot_user_prompt_count"] = 0
-
-    if "user_key" not in st.session_state[user_session_id]:
-        st.session_state[user_session_id]["user_key"] = None
-
-    if DESKTOP is False:
-        try:
-            community_key = st.secrets["openai"]["api_key"]
-        except Exception:
-            community_key = None
-    else:
-        community_key = None
-
-    if CACHE:
-        daily_tokens = _utils.cache.get_query_count(st.user.email)
-        if daily_tokens >= QUOTA:
-            community_key = None
-
-    if community_key is not None:
-        api_key = community_key
-    else:
-        api_key = st.session_state[user_session_id]["user_key"]
-
-    if session.get('tags_table')[0] is True:
-
-        st.markdown(_utils.content.message_pandabot_home)
-
-        _utils.handlers.load_widget_state(
-            pathlib.Path(__file__).stem,
-            user_session_id
-            )
-
-        st.markdown("### Data Selection")
-
-        with st.expander("About data",
-                         icon=":material/table:",
-                         expanded=False):
-
-            st.markdown(_utils.content.message_plotbot_data)
-
-        pandasai_corpus = st.radio(
-            "Select corpus:",
-            ("Target", "Reference", "Keywords", "Grouped"),
-            key=_utils.handlers.persist(
-                "pandasai_corpus", pathlib.Path(__file__).stem,
-                user_session_id),
-            horizontal=True
-                )
-
-        if session.get('has_meta')[0] is True:
-            groups = metadata_target.get('doccats')[0]['cats']
-        elif session.get('has_meta')[0] is False:
-            groups = []
-
-        pandasai_query = st.selectbox(
-                "Select data to analyze:",
-                (_utils.llms.tables_to_list(session_id=user_session_id,
-                                            corpus=pandasai_corpus,
-                                            categories=groups)),
-                key=_utils.handlers.persist(
-                    "pandasai_query", pathlib.Path(__file__).stem,
-                    user_session_id),
-                index=None,
-                placeholder="Select data..."
-                )
-
-        st.markdown("### Data Preview")
-        df = _utils.llms.table_from_list(user_session_id,
-                                         pandasai_corpus,
-                                         pandasai_query,
-                                         categories=groups)
-
-        if df is not None and df.shape[0] > 0:
-            if (
-                df.get_column("Group", default=None) is not None or
-                str("Document-Term Matrix") in pandasai_query
-            ):
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    pivot_table = st.toggle(
-                        "Pivot Table",
-                        key=_utils.handlers.persist(
-                            "pivot_table", pathlib.Path(__file__).stem,
-                            user_session_id)
-                    )
-                    if (
-                        pivot_table and
-                        str("Document-Term Matrix") in pandasai_query and
-                        df.get_column("Group", default=None) is None
-                    ):
-                        df = df.pivot(
-                            "Tag",
-                            index="doc_id",
-                            values="RF"
-                            )
-                    elif (
-                        pivot_table and
-                        str("Document-Term Matrix") in pandasai_query and
-                        df.get_column("Group", default=None) is not None
-                    ):
-                        df = df.pivot(
-                            "Tag",
-                            index=["doc_id", "Group"],
-                            values="RF"
-                            )
-                    elif pivot_table:
-                        df = df.pivot(
-                            "Tag",
-                            index="Group",
-                            values="RF"
-                            )
-
-                with col2:
-                    make_percent = st.toggle(
-                        "Make Percent",
-                        key=_utils.handlers.persist(
-                            "make_percent", pathlib.Path(__file__).stem,
-                            user_session_id),
-                        value=False
-                    )
-                    if (
-                        make_percent and
-                        str("Document-Term Matrix") in pandasai_query
-                    ):
-                        df = df.with_columns(
-                            (
-                                pl.selectors.numeric().mul(100)
-                                )
-                        )
-                    elif (
-                        make_percent and
-                        str("Tags Table") in pandasai_query
-                    ):
-                        df = df.with_columns(
-                            (
-                                pl.selectors.numeric()
-                                .exclude(["AF", "Range"]).mul(100)
-                                )
-                        )
-
-            st.dataframe(df.head(10), use_container_width=True)
-
-        if st.session_state[user_session_id]["pandasai"]:
-            for i, message in enumerate(
-                st.session_state[user_session_id]["pandasai"]
-            ):
-                with st.chat_message(message["role"]):
-                    if message['type'] == 'dataframe':
-                        st.dataframe(
-                            message['value'],
-                            use_container_width=True
-                            )
-                    elif message['type'] == 'number':
-                        st.markdown(
-                            str(message['value']),
-                            unsafe_allow_html=True
-                            )
-                    elif message['type'] == 'string':
-                        st.markdown(
-                            message['value'],
-                            unsafe_allow_html=True
-                            )
-                    elif message['type'] == 'plot':
-                        st.image(message['value'])
-
-                        b64 = base64.b64encode(message['value']).decode()
-                        href = f'<a href="data:image/png;base64,{b64}" download="plot.png">Download PNG</a>'  # noqa: E501
-                        st.markdown(href, unsafe_allow_html=True)
-
-                    elif message['type'] == 'error':
-                        st.markdown(
-                            message['value'],
-                            unsafe_allow_html=True
-                            )
-                    else:
-                        st.markdown(
-                            """:thinking_face: Sorry,
-                            I had a problem executing your pompt.
-                            """,
-                            unsafe_allow_html=True
-                        )
-
-        if st.session_state[user_session_id]["pandasai"]:
-            prompt_position = st.session_state[user_session_id]["pandabot_user_prompt_count"]  # noqa: E501
-        else:
-            prompt_position = 1
-
-        if api_key is not None:
-
-            prompt = st.chat_input("Enter your prompt:")
-
-            if (
-                prompt and
-                (df is not None and df.shape[0] > 0)
-            ):
-                with st.spinner(":sparkles: Generating response..."):
-                    # Increment user prompt count
-                    if "pandabot_user_prompt_count" not in st.session_state[user_session_id]:  # noqa: E501
-                        st.session_state[user_session_id]["pandabot_user_prompt_count"] = 1  # noqa: E501
-                    else:
-                        st.session_state[user_session_id]["pandabot_user_prompt_count"] += 1  # noqa: E501
-                    _utils.llms.pandabot_user_query(
-                        df=df.to_pandas(),
-                        prompt=prompt,
-                        prompt_position=prompt_position,
-                        api_key=api_key,
-                        session_id=user_session_id,
-                        cache_mode=CACHE,
-                        )
-
-                st.rerun()
-
-            elif (
-                prompt and
-                (df is None or df.shape[0] == 0)
-            ):
-                error_message = """
-                :confused: I don't have any data to plot.
-                Please select a table from the drop down list above.
-                """
-                st.session_state[user_session_id]["pandasai"].append(
-                    {"role": "assistant",
-                        "type": "string",
-                        "value": error_message}
-                    )
-                st.rerun()
-
-        else:
-            st.markdown(
-                """
-                You need to enter your OpenAI API key
-                to use Pandabot.
-                If you don't have one, you can get it
-                from [OpenAI](https://platform.openai.com/signup).
-                """
-            )
-
-            user_api_key = st.text_input(
-                "Enter your OpenAI API key:",
-                type='password',
-                icon=":material/key:",
-                )
-
-            if st.button("Check API Key"):
-                if user_api_key:
-                    if _utils.llms.is_openai_key_valid(user_api_key):
-                        st.success("API key is valid!")
-                        st.session_state[
-                            user_session_id
-                            ]["user_key"] = user_api_key
-                        st.rerun()
-                    else:
-                        st.error(
-                            "API key is invalid. Please check and try again."
-                            )
-                else:
-                    st.warning("Please enter an API key.")
-
-        if CACHE:
-            remaining_tokens = max(0, QUOTA - daily_tokens)
-            used_tokens_pct = int((daily_tokens / QUOTA) * 100)
-
-            st.sidebar.markdown(
-                f" ##### Daily queries - used: `{min(QUOTA, daily_tokens)}` - remaining: `{remaining_tokens}`"  # noqa: E501
-                )
-            st.sidebar.progress(min(used_tokens_pct / 100, 1.0))
-
-            if remaining_tokens < 10 and remaining_tokens > 0:
-                st.warning(
-                    f"""
-                    You have only `{remaining_tokens}` queries left
-                    for today using the community API.
-                    When these run out, you will need login
-                    with your own OpenAI API key.
-                    If you don't have one, you can get it
-                    from [OpenAI](https://platform.openai.com/signup).
-                    """,
-                    icon=":material/warning:"
-                    )
-
-            elif remaining_tokens <= 0:
-                st.error(
-                    """
-                    You have used all your queries for today
-                    using the community API.
-                    Please login with your own OpenAI API key
-                    to continue using the AI-assisted tools.
-                    If you don't have one, you can get it
-                    from [OpenAI](https://platform.openai.com/signup).
-                    """,
-                    icon=":material/hourglass_disabled:"
-                    )
-
-        st.sidebar.markdown("""
-                            ### Clear Pandabot History
-
-                            :panda_face:
-                            Pandabot is a chat assistant
-                            designed to work with tabular data
-                            (or data frames).
-                            If I'm not generating anything useful,
-                            it can be helpul to start over.
-                            Click the button below.
-                            This will remove all previous messages and
-                            start a new conversation.
-                            """)
-
-        if st.sidebar.button("Clear chat history"):
-            if "pandasai" not in st.session_state[user_session_id]:
-                st.session_state[user_session_id]["pandasai"] = []
-            _utils.llms.clear_pandasai(user_session_id)
-            st.rerun()
-
-        st.sidebar.markdown("---")
-
-        with st.sidebar.expander(
-            "Pandabot Tips",
-            icon=":material/lightbulb_2:",
-            expanded=False
-        ):
-            st.markdown(_utils.content.message_plotbot_tips)
-
-        st.sidebar.markdown("---")
-
-        with st.sidebar.expander(
-            "Current LLM Parameters",
-            icon=":material/build:",
-            expanded=False
-        ):
-            st.markdown(_utils.llms.print_settings(LLM_PARAMS))
-
-        st.sidebar.markdown("---")
-
-    else:
-
-        st.markdown(_utils.content.message_plotbot)
-
-        st.sidebar.markdown(_utils.content.message_generate_table)
-        _utils.handlers.sidebar_action_button(
-            button_label="Load Tables",
-            button_icon=":material/manufacturing:",
-            preconditions=[
-                session.get('has_target')[0],
-            ],
-            action=lambda: _utils.handlers.generate_tags_table(
-                user_session_id
-            ),
-            spinner_message="Loading tables..."
-        )
-
-        if st.session_state[user_session_id].get("tags_warning"):
-            msg, icon = st.session_state[user_session_id]["tags_warning"]
-            st.warning(msg, icon=icon)
-
-        st.sidebar.markdown("---")
+    st.sidebar.markdown("---")
 
 
 if __name__ == "__main__":
