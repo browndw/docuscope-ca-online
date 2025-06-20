@@ -1,4 +1,4 @@
-# Copyright (C) 2025 David West Brown
+# Copyright 2024 David West Brown
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,26 +13,14 @@
 # limitations under the License.
 
 import hashlib
-import pathlib
-import sys
-
 import streamlit as st
 from datetime import datetime, timedelta
 from google.cloud import firestore
 from google.oauth2 import service_account
 
-# Ensure project root is in sys.path for both desktop and online
-project_root = pathlib.Path(__file__).parent.parents[1].resolve()
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+from webapp.utilities.configuration import config_manager
 
-from webapp.utilities.handlers import import_options_general  # noqa: E402
-
-OPTIONS = str(project_root.joinpath("webapp/options.toml"))
-
-# import options
-_options = import_options_general(OPTIONS)
-DESKTOP = _options['global']['desktop_mode']
+DESKTOP = config_manager.desktop_mode
 
 if DESKTOP is False:
     # Set up the Google Cloud Firestore credentials
