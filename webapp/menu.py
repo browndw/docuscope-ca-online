@@ -1,15 +1,127 @@
+"""
+Menu system and session management for the DocuScope Corpus Analysis application.
+
+This module provides navigation menu functions and implements a dual-timeout session
+management system for online users:
+
+1. Inactivity Timeout: Logs out users after 90 minutes of inactivity
+2. Absolute Timeout: Logs out users after 24 hours regardless of activity
+
+Both timeouts are configurable via options.toml and include warning systems.
+"""
+
 import base64
-import pathlib
+import time
+
 import streamlit as st
 
-import utilities as _utils
+from webapp.utilities.storage import add_login
+from webapp.utilities.configuration import config_manager
 
-HERE = pathlib.Path(__file__).parent.resolve()
-OPTIONS = str(HERE.joinpath("options.toml"))
-GOOGLE_LOGO = str(HERE.joinpath("_static/web_light_rd_na.svg"))
+GOOGLE_LOGO = config_manager.google_logo_path
+DESKTOP = config_manager.desktop_mode
 
-_options = _utils.handlers.import_options_general(OPTIONS)
-DESKTOP = _options['global']['desktop_mode']
+
+def update_last_activity() -> None:
+    """Update the last activity timestamp for the current user session."""
+    if not DESKTOP and hasattr(st, "user") and getattr(st.user, "is_logged_in", False):
+        st.session_state["last_activity_time"] = time.time()
+
+
+def check_session_timeouts() -> bool:
+    """
+    Check both inactivity and absolute session timeouts.
+
+    Returns
+    -------
+    bool
+        True if session is valid, False if should logout
+    """
+    if DESKTOP or not (hasattr(st, "user") and getattr(st.user, "is_logged_in", False)):
+        return True
+
+    current_time = time.time()
+
+    # Get timeout settings from config
+    inactivity_timeout = config_manager.inactivity_timeout_minutes * 60
+    inactivity_warning = config_manager.inactivity_warning_minutes * 60
+    absolute_timeout = config_manager.absolute_timeout_hours * 3600
+    absolute_warning = config_manager.absolute_warning_hours * 3600
+
+    # Check absolute timeout (based on login time)
+    if hasattr(st.user, 'iat'):
+        login_time = st.user.iat
+        session_duration = current_time - login_time
+
+        if session_duration >= absolute_timeout:
+            timeout_hours = config_manager.absolute_timeout_hours
+            st.error(
+                f"Your session has expired after {timeout_hours} hours. "
+                "Please log in again.",
+                icon=":material/schedule:"
+            )
+            st.logout()
+            return False
+        elif session_duration >= absolute_warning:
+            remaining_seconds = absolute_timeout - session_duration
+            remaining_minutes = remaining_seconds / 60
+            
+            # Critical warning in final 30 seconds
+            if remaining_seconds <= 30:
+                st.error(
+                    f"⚠️ SESSION EXPIRING IN {remaining_seconds:.0f} SECONDS! "
+                    "Click anywhere to stay logged in!",
+                    icon=":material/schedule:"
+                )
+                st.rerun()
+            else:
+                # Regular warning - no rerun to avoid disrupting work
+                st.warning(
+                    f"Your session will expire in {remaining_minutes:.0f} minutes. "
+                    "Please save your work.",
+                    icon=":material/schedule:"
+                )
+
+    # Check inactivity timeout
+    last_activity = st.session_state.get("last_activity_time")
+    if last_activity is None:
+        # First time - set activity time
+        update_last_activity()
+        return True
+
+    inactive_duration = current_time - last_activity
+
+    if inactive_duration >= inactivity_timeout:
+        timeout_minutes = config_manager.inactivity_timeout_minutes
+        st.error(
+            f"You have been logged out due to inactivity ({timeout_minutes} minutes). "
+            "Please log in again.",
+            icon=":material/schedule:"
+        )
+        st.logout()
+        return False
+    elif inactive_duration >= inactivity_warning:
+        remaining_seconds = inactivity_timeout - inactive_duration
+        remaining_minutes = remaining_seconds / 60
+        
+        # Critical warning in final 30 seconds
+        if remaining_seconds <= 30:
+            st.error(
+                f"⚠️ LOGGING OUT IN {remaining_seconds:.0f} SECONDS DUE TO INACTIVITY! "
+                "Click anywhere to stay active!",
+                icon=":material/schedule:"
+            )
+            st.rerun()
+        else:
+            # Regular warning - no rerun to avoid disrupting work
+            st.warning(
+                f"You've been inactive for {inactive_duration/60:.0f} minutes. "
+                f"You'll be logged out in {remaining_minutes:.0f} minutes "
+                "if no activity is detected.",
+                icon=":material/schedule:"
+            )
+
+    return True
 
 
 def unauthenticated_menu() -> None:
@@ -34,6 +146,7 @@ def authenticated_menu():
     # Show log out button only if not DESKTOP and user is logged in
     if not DESKTOP and hasattr(st, "user") and getattr(st.user, "is_logged_in", False):
         st.sidebar.button("Log out of Google", on_click=st.logout, icon=":material/logout:")
+
     with st.sidebar.expander("**Navigation**",
                              icon=":material/explore:",
                              expanded=False):
@@ -101,9 +214,56 @@ def menu():
         authenticated_menu()
         st.sidebar.markdown("---")
         return
-    if hasattr(st, "user") and getattr(st.user, "is_logged_in", False):
+
+    # Check current login state
+    current_login_state = hasattr(st, "user") and getattr(st.user, "is_logged_in", False)
+
+    if current_login_state:
+        # Check session timeouts first - this may log the user out
+        if not check_session_timeouts():
+            # User was logged out due to timeout
+            st.session_state["previous_login_state"] = False
+            unauthenticated_menu()
+            return
+
+        # Update activity timestamp for valid interaction
+        update_last_activity()
+
+        # Ensure session_id is properly stored
+        if "session_id" not in st.session_state:
+            # Get the actual session ID from Streamlit's script run context
+            try:
+                user_session = (
+                    st.runtime.scriptrunner_utils.script_run_context
+                    .get_script_run_ctx()
+                )
+                st.session_state["session_id"] = user_session.session_id
+            except Exception:
+                # Fallback to a generated session ID
+                import uuid
+                st.session_state["session_id"] = str(uuid.uuid4())
+
+        # Check if this is a new login (state changed from False to True)
+        previous_login_state = st.session_state.get("previous_login_state", False)
+
+        if not previous_login_state:
+            # User just logged in - record the login
+            try:
+                add_login(
+                    user_id=st.user.email,
+                    session_id=st.session_state["session_id"]
+                )
+            except Exception:
+                # Silently handle any errors
+                pass
+
+        # Update the login state
+        st.session_state["previous_login_state"] = True
+
         authenticated_menu()
         st.sidebar.markdown("---")
         return
     else:
+        # User is not logged in
+        st.session_state["previous_login_state"] = False
         unauthenticated_menu()
