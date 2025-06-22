@@ -65,7 +65,7 @@ def check_session_timeouts() -> bool:
         elif session_duration >= absolute_warning:
             remaining_seconds = absolute_timeout - session_duration
             remaining_minutes = remaining_seconds / 60
-            
+
             # Critical warning in final 30 seconds
             if remaining_seconds <= 30:
                 st.error(
@@ -103,7 +103,7 @@ def check_session_timeouts() -> bool:
     elif inactive_duration >= inactivity_warning:
         remaining_seconds = inactivity_timeout - inactive_duration
         remaining_minutes = remaining_seconds / 60
-        
+
         # Critical warning in final 30 seconds
         if remaining_seconds <= 30:
             st.error(
