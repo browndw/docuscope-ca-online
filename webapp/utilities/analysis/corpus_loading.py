@@ -5,15 +5,9 @@ This module provides functions for loading, validating, and processing
 corpus data from various sources including internal databases and user uploads.
 """
 
-import pathlib
 import streamlit as st
 from lingua import LanguageDetectorBuilder
-from webapp.config.session_keys import SessionKeys
-
-# Ensure project root is in sys.path
-project_root = pathlib.Path(__file__).parent.parents[2].resolve()
-
-CORPUS_DIR = project_root.joinpath("webapp/_corpora")
+from webapp.utilities.state import SessionKeys
 
 # Warning constants
 WARNING_CORRUPT_TARGET = 10

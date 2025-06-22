@@ -8,7 +8,7 @@ analyses including n-grams, collocations, and keyword-in-context searches.
 import streamlit as st
 import docuscospacy as ds
 
-from webapp.config.session_keys import CorpusKeys, TargetKeys, WarningKeys, SessionKeys
+from webapp.utilities.state import CorpusKeys, TargetKeys, WarningKeys, SessionKeys
 from webapp.utilities.session.session_management import update_session
 from webapp.utilities.analysis.corpus_loading import update_metadata
 
@@ -17,7 +17,7 @@ def generate_ngrams(
         user_session_id: str,
         ngram_span: int,
         ts: str = 'doc_id'  # Default to 'doc_id' for ngram counting
-        ) -> None:
+) -> None:
     """
     Generate n-grams for the target corpus based on user input.
 
@@ -171,7 +171,7 @@ def generate_kwic(
         node_word: str,
         search_type: str,
         ignore_case: bool
-        ) -> None:
+) -> None:
     """
     Generate a KWIC (Key Word in Context) table for the target corpus
     based on user input.

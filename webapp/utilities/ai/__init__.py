@@ -18,7 +18,15 @@ from webapp.utilities.ai.shared import (
     detect_intent,
     prune_message_thread,
     fig_to_svg,
-    validate_api_key
+    validate_api_key,
+    get_quota_info,
+    render_quota_tracker,
+    should_show_api_key_input,
+    export_conversation_history,
+    get_current_plot_as_svg,
+    get_current_plot_as_png,
+    render_work_preservation_interface,
+    should_show_work_preservation_interface
 )
 
 # Import core LLM utilities (non-circular)
@@ -77,6 +85,16 @@ __all__ = [
     'render_api_key_input',
     'render_data_selection_interface',
     'render_data_preview_controls',
+
+    # Quota tracking utilities
+    'get_quota_info',
+    'render_quota_tracker',
+    'should_show_api_key_input',
+    'export_conversation_history',
+    'get_current_plot_as_svg',
+    'get_current_plot_as_png',
+    'render_work_preservation_interface',
+    'should_show_work_preservation_interface',
 
     # Plotbot functions
     'clear_plotbot',

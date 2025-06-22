@@ -158,21 +158,45 @@ def persist(
     """
     if app_name is None:
         # Auto-detect app name from calling file
-        import inspect
-        import pathlib
         try:
             frame = inspect.currentframe().f_back
-            caller_file = frame.f_globals.get('__file__')
+            caller_file = None
+
+            # Walk up the call stack to find the first file that looks like a page
+            # This handles cases where persist is called from utility functions
+            while frame:
+                file_path = frame.f_globals.get('__file__')
+                if file_path:
+                    # Check if this looks like a page file (in pages/ directory or numbered)
+                    path_obj = pathlib.Path(file_path)
+                    filename = path_obj.stem
+
+                    # If it's in pages directory or starts with a number, it's likely a page
+                    if (
+                        'pages' in path_obj.parts or
+                        (filename and filename[0].isdigit()) or
+                        path_obj.parent.name == 'pages'
+                    ):
+                        caller_file = file_path
+                        break
+
+                frame = frame.f_back
+
+            # If we found a page file, use it; otherwise use the immediate caller
             if caller_file:
                 app_name = pathlib.Path(caller_file).stem
             else:
-                # Fallback to a generic app name if detection fails
-                app_name = "unknown_app"
-                st.warning(
-                    "Could not auto-detect page name for widget persistence. "
-                    "Using fallback name. Some widget states may not persist correctly.",
-                    icon=":material/warning:"
-                )
+                # Fallback to immediate caller
+                frame = inspect.currentframe().f_back
+                if frame and frame.f_globals.get('__file__'):
+                    app_name = pathlib.Path(frame.f_globals['__file__']).stem
+                else:
+                    app_name = "unknown_app"
+                    st.warning(
+                        "Could not auto-detect page name for widget persistence. "
+                        "Using fallback name. Some widget states may not persist correctly.",  # noqa: E501
+                        icon=":material/warning:"
+                    )
         except Exception:
             # Fallback to a generic app name if any error occurs
             app_name = "unknown_app"
@@ -219,17 +243,43 @@ def load_widget_state(
         # Auto-detect app name from calling file
         try:
             frame = inspect.currentframe().f_back
-            caller_file = frame.f_globals.get('__file__')
+            caller_file = None
+
+            # Walk up the call stack to find the first file that looks like a page
+            # This handles cases where load_widget_state is called from utility functions
+            while frame:
+                file_path = frame.f_globals.get('__file__')
+                if file_path:
+                    # Check if this looks like a page file (in pages/ directory or numbered)
+                    path_obj = pathlib.Path(file_path)
+                    filename = path_obj.stem
+
+                    # If it's in pages directory or starts with a number, it's likely a page
+                    if (
+                        'pages' in path_obj.parts or
+                        (filename and filename[0].isdigit()) or
+                        path_obj.parent.name == 'pages'
+                    ):
+                        caller_file = file_path
+                        break
+
+                frame = frame.f_back
+
+            # If we found a page file, use it; otherwise use the immediate caller
             if caller_file:
                 app_name = pathlib.Path(caller_file).stem
             else:
-                # Fallback to a generic app name if detection fails
-                app_name = "unknown_app"
-                st.warning(
-                    "Could not auto-detect page name for widget state. "
-                    "Using fallback name. Some widget states may not persist correctly.",
-                    icon=":material/warning:"
-                )
+                # Fallback to immediate caller
+                frame = inspect.currentframe().f_back
+                if frame and frame.f_globals.get('__file__'):
+                    app_name = pathlib.Path(frame.f_globals['__file__']).stem
+                else:
+                    app_name = "unknown_app"
+                    st.warning(
+                        "Could not auto-detect page name for widget state. "
+                        "Using fallback name. Some widget states may not persist correctly.",  # noqa: E501
+                        icon=":material/warning:"
+                    )
         except Exception:
             # Fallback to a generic app name if any error occurs
             app_name = "unknown_app"

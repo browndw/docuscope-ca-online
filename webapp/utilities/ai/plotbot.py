@@ -20,21 +20,19 @@ from RestrictedPython.Guards import safe_builtins, guarded_unpack_sequence
 from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
 from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
 
-from loguru import logger
-
-from webapp.config.session_keys import SessionKeys  # noqa: E402
-
-# Import webapp utilities after ensuring project root is in path
-from webapp.utilities.storage import add_message, add_plot  # noqa: E402
-
-# Import shared AI utilities
-from webapp.utilities.ai.shared import (  # noqa: E402
-    LLM_MODEL,
-    detect_intent,
-    prune_message_thread,
-    fig_to_svg
+from webapp.utilities.state import SessionKeys
+from webapp.utilities.storage import add_message, add_plot
+from webapp.utilities.ai.shared import (
+    LLM_MODEL, detect_intent,
+    prune_message_thread, fig_to_svg
 )
-from webapp.utilities.ai.code_execution import is_code_safe, strip_imports  # noqa: E402
+from webapp.utilities.ai.code_execution import is_code_safe, strip_imports
+
+# Import centralized logging configuration and logger
+import webapp.utilities.configuration.logging_config  # noqa: F401
+from webapp.utilities.configuration.logging_config import get_logger
+
+logger = get_logger()
 
 # Plotbot-specific constants
 FORBIDDEN_PATTERNS = [
@@ -46,6 +44,35 @@ FORBIDDEN_PATTERNS = [
     r'^\s*sys\.',            # sys. usage at line start
     r'^\s*subprocess\.',     # subprocess. usage at line start
 ]
+
+# AI logging is automatically configured by importing the centralized logging system
+
+
+def previous_code_chunk(session_id: str) -> str:
+    """
+    Extract the most recent code chunk from plotbot conversation history.
+
+    Parameters
+    ----------
+    session_id : str
+        The session identifier.
+
+    Returns
+    -------
+    str or None
+        The most recent code chunk, or None if no code found.
+    """
+    chat_history = st.session_state[session_id].get(SessionKeys.AI_PLOTBOT_CHAT, [])
+
+    # Look for the most recent code chunk in conversation history
+    for message in reversed(chat_history):
+        if (message.get("role") == "assistant" and
+                message.get("type") == "code" and
+                isinstance(message.get("value"), str) and
+                message.get("value").strip()):
+            return message.get("value")
+
+    return None
 
 
 def clear_plotbot(session_id: str, clear_all=True):
@@ -65,6 +92,9 @@ def clear_plotbot(session_id: str, clear_all=True):
         st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT] = []
 
     st.session_state[session_id][SessionKeys.AI_PLOT_INTENT] = False
+
+    # Reset the user prompt counter for accurate message indexing
+    st.session_state[session_id][SessionKeys.AI_PLOTBOT_PROMPT_COUNT] = 0
 
     if clear_all:
         if SessionKeys.AI_PLOTBOT_PERSIST not in st.session_state[session_id]:
@@ -143,108 +173,202 @@ def plotbot_code_generate_or_update(
         LLM parameters.
     code_chunk : str, optional
         Existing code to update/modify.
-        
+
     Returns
     -------
     str or dict
         Generated code string, or error dict if generation failed.
     """
-    client = openai.OpenAI(api_key=api_key)
-    
-    if code_chunk:
-        # Update existing code
+    valid_columns = df.columns.tolist()
+    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+    non_numeric_columns = df.select_dtypes(exclude=['number']).columns.tolist()
+
+    if code_chunk is None:
+        # Library-specific instructions and examples
+        if plot_lib == "matplotlib":
+            lib_instructions = """
+    - Use the format 'fig, ax = plt.subplots()' to create the figure.
+    - Do not call 'fig.show()' or 'plt.show()'.
+    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc.
+
+    Example:
+    fig, ax = plt.subplots()
+    ax.plot(df['col1'], df['col2'])
+    ax.set_xlabel('Column 1')
+    ax.set_ylabel('Column 2')"""
+        elif plot_lib == "seaborn":
+            lib_instructions = """
+    - Use seaborn functions like sns.barplot(), sns.scatterplot(), sns.lineplot(), etc.
+    - Always create a figure first with 'fig, ax = plt.subplots()'.
+    - Pass the 'ax' parameter to seaborn functions.
+    - Do not call 'plt.show()'.
+
+    Example:
+    fig, ax = plt.subplots()
+    sns.barplot(data=df, x='col1', y='col2', ax=ax)
+    ax.set_title('My Plot')"""
+        elif plot_lib == "plotly.express":
+            lib_instructions = """
+    - Use plotly.express functions like px.bar(), px.scatter(), px.line(), etc.
+    - Assign the result to a variable called 'fig'.
+    - Do not call 'fig.show()'.
+
+    Example:
+    fig = px.bar(df, x='col1', y='col2')
+    fig.update_layout(title='My Plot')"""
+        else:
+            # Default to matplotlib
+            lib_instructions = """
+    - Use the format 'fig, ax = plt.subplots()' to create the figure.
+    - Do not call 'fig.show()' or 'plt.show()'.
+    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc."""
+
         prompt = f"""
-You are a plotting assistant. The user wants to modify existing plotting code.
+    You are a Python plotting assistant.
 
-Current plotting code:
-```python
-{code_chunk}
-```
+    The user has requested to create a plot.
+    Here is the data schema:
+    {schema}
 
-User's modification request: {user_request}
+    The available columns in the DataFrame are:
+    {', '.join(valid_columns)}.
+    Numeric columns are: {', '.join(numeric_columns)}.
+    Non-numeric columns are: {', '.join(non_numeric_columns)}.
 
-Data schema:
-{schema}
+    Based on the user request: '{user_request}', generate Python code for plotting using {plot_lib}.
 
-Data sample (first 3 rows):
-{df.head(3).to_string()}
+    Instructions:
+    - Only output valid Python code, with no explanations or markdown formatting.
+    - Do not include any import statements.
+    - The DataFrame is called 'df'.
+    - Use only columns that exist in the DataFrame. If the user mentions a column that does not exist, ignore it and use available columns instead.
+    - If the request involves numeric data (like line charts, bar charts, histograms), use only numeric columns.
+    - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns.
+    - Ensure the code is error-free and matches the DataFrame schema.
+    - If you need to set axis labels or titles, use generic names if the user does not specify.
+    - Include concise comments in the code to explain non-obvious steps or terminology (e.g., what a spine is or how to remove it).
+    - Do not include explanations or markdown outside the code.
+    {lib_instructions}
 
-Please provide the COMPLETE updated plotting code using {plot_lib}.
+    Now, generate the code:
+    """  # noqa: E501
 
-Requirements:
-- Use ONLY {plot_lib} for plotting
-- The dataframe is already available as 'df'
-- Create a figure and assign it to variable 'fig'
-- Do NOT include import statements
-- Do NOT call plt.show(), fig.show(), or display()
-- Do NOT save to files
-- Return only executable Python code
-- Code must work with the provided dataframe schema
-
-Return only the Python code, no explanations or markdown formatting.
-"""
     else:
-        # Generate new code
+        # Library-specific instructions for updates
+        if plot_lib == "matplotlib":
+            lib_instructions = """
+    - Use the format 'fig, ax = plt.subplots()' to create the figure.
+    - Do not call 'fig.show()' or 'plt.show()'.
+    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc.
+
+    Example:
+    fig, ax = plt.subplots()
+    ax.plot(df['col1'], df['col2'])
+    ax.set_xlabel('Column 1')
+    ax.set_ylabel('Column 2')"""
+        elif plot_lib == "seaborn":
+            lib_instructions = """
+    - Use seaborn functions like sns.barplot(), sns.scatterplot(), sns.lineplot(), etc.
+    - Always create a figure first with 'fig, ax = plt.subplots()'.
+    - Pass the 'ax' parameter to seaborn functions.
+    - Do not call 'plt.show()'.
+
+    Example:
+    fig, ax = plt.subplots()
+    sns.barplot(data=df, x='col1', y='col2', ax=ax)
+    ax.set_title('My Plot')"""
+        elif plot_lib == "plotly.express":
+            lib_instructions = """
+    - Use plotly.express functions like px.bar(), px.scatter(), px.line(), etc.
+    - Assign the result to a variable called 'fig'.
+    - Do not call 'fig.show()'.
+
+    Example:
+    fig = px.bar(df, x='col1', y='col2')
+    fig.update_layout(title='My Plot')"""
+        else:
+            # Default to matplotlib
+            lib_instructions = """
+    - Use the format 'fig, ax = plt.subplots()' to create the figure.
+    - Do not call 'fig.show()' or 'plt.show()'.
+    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc."""
+
         prompt = f"""
-You are a plotting assistant. Generate Python plotting code based on the user's request.
+    You are a Python plotting assistant.
 
-User request: {user_request}
+    The user has requested to update code that generates a plot.
+    Here is the data schema:
+    {schema}
 
-Data schema:
-{schema}
+    The available columns in the DataFrame are:
+    {', '.join(valid_columns)}.
+    Numeric columns are: {', '.join(numeric_columns)}.
+    Non-numeric columns are: {', '.join(non_numeric_columns)}.
 
-Data sample (first 3 rows):
-{df.head(3).to_string()}
+    Based on the user request: '{user_request}',
+    and the current code:
+    {code_chunk}
 
-Please generate plotting code using {plot_lib}.
+    Update the code to generate the plot using the following instructions:
+    - Only output valid Python code, with no explanations or markdown formatting.
+    - Do not include any import statements.
+    - The DataFrame is called 'df'.
+    - Use only columns that exist in the DataFrame. If the user mentions a column that does not exist, ignore it and use available columns instead.
+    - If the request involves numeric data (like line charts, bar charts, histograms), use only numeric columns.
+    - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns.
+    - Ensure the code is error-free and matches the DataFrame schema.
+    - If you need to set axis labels or titles, use generic names if the user does not specify.
+    - Include concise comments in the code to explain non-obvious steps or terminology (e.g., what a spine is or how to remove it).
+    - Do not include explanations or markdown outside the code.
+    {lib_instructions}
 
-Requirements:
-- Use ONLY {plot_lib} for plotting
-- The dataframe is already available as 'df'
-- Create a figure and assign it to variable 'fig'
-- Do NOT include import statements
-- Do NOT call plt.show(), fig.show(), or display()
-- Do NOT save to files
-- Return only executable Python code
-- Code must work with the provided dataframe schema
-
-Return only the Python code, no explanations or markdown formatting.
-"""
+    Now, update and output the code:
+    """  # noqa: E501
 
     try:
-        response = client.chat.completions.create(
+        openai.api_key = api_key
+        response = openai.chat.completions.create(
             model=LLM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            **llm_params
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            stream=True,
+            temperature=llm_params["temperature"],
+            max_tokens=llm_params["max_tokens"],
+            top_p=llm_params["top_p"],
+            frequency_penalty=llm_params["frequency_penalty"],
+            presence_penalty=llm_params["presence_penalty"]
         )
-        
-        code = response.choices[0].message.content.strip()
-        
-        # Clean up code (remove markdown formatting if present)
-        if code.startswith("```python"):
-            code = code[9:]
-        if code.startswith("```"):
-            code = code[3:]
-        if code.endswith("```"):
-            code = code[:-3]
-        
-        code = code.strip()
-        
-        # Validate the code contains required elements
-        if not code or "fig" not in code:
-            logger.error("Generated code is empty or doesn't create a 'fig' variable")
-            return {
-                "type": "error",
-                "value": "Sorry, I couldn't generate valid plotting code. Please try rephrasing your request."  # noqa: E501
-            }
-        
-        return code
-        
+
+        full_response = ""
+        for chunk in response:
+            chunk_content = chunk.choices[0].delta.content
+            if chunk_content:
+                full_response += chunk_content
+
+        if "```python" in full_response:
+            full_response = full_response.replace("```python", "")
+        if "```" in full_response:
+            full_response = full_response.replace("```", "")
+        if "fig.show()" in full_response:
+            full_response = full_response.replace("fig.show()", "")
+
+        valid_columns = df.columns
+        for col in valid_columns:
+            if "labels_column_name" in full_response:
+                full_response = full_response.replace(
+                    "labels_column_name",
+                    col
+                )
+
+        return full_response
+
     except Exception as e:
-        logger.error(f"Error generating plotting code: {e}")
+        logger.error(f"Error in generating plot code: {e}")  # For developer logs
         return {
             "type": "error",
-            "value": f"Sorry, I encountered an error: {str(e)}"
+            "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
         }
 
 
@@ -253,7 +377,7 @@ def plotbot_code_execute(plot_code: str,
                          plot_lib: str) -> dict:
     """
     Execute plotting code in a safe, restricted environment.
-    
+
     Parameters
     ----------
     plot_code : str
@@ -262,7 +386,7 @@ def plotbot_code_execute(plot_code: str,
         The dataframe to plot.
     plot_lib : str
         The plotting library being used.
-        
+
     Returns
     -------
     dict
@@ -276,7 +400,7 @@ def plotbot_code_execute(plot_code: str,
             "type": "error",
             "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
         }
-    
+
     # Strip import statements before safety check
     plot_code = strip_imports(plot_code)
     if not is_code_safe(plot_code):
@@ -287,20 +411,49 @@ def plotbot_code_execute(plot_code: str,
         }
 
     exec_locals = {}
+
+    # Create a safer attribute getter for DataFrame operations
+    def safe_getattr(obj, name, default=None):
+        """Safe attribute getter for restricted execution."""
+        if hasattr(obj, name):
+            return getattr(obj, name)
+        return default
+
     allowed_globals = {
         "__builtins__": safe_builtins,
         "df": df,
         "_getitem_": guarded_getitem,
         "_unpack_sequence_": guarded_unpack_sequence,
         "_getiter_": guarded_getiter,
+        "_getattr_": safe_getattr,
+        # Always include matplotlib as it's needed for figure creation
+        "plt": plt,
+        # Add pandas functionality for DataFrame operations
+        "pd": pd,
+        # Add common Python functions needed for data manipulation
+        "len": len,
+        "max": max,
+        "min": min,
+        "sum": sum,
+        "sorted": sorted,
+        "list": list,
+        "dict": dict,
+        "str": str,
+        "int": int,
+        "float": float,
+        "bool": bool,
+        "range": range,
+        "enumerate": enumerate,
+        "zip": zip,
     }
 
     # Add library-specific globals
     if plot_lib == "matplotlib":
-        allowed_globals["plt"] = plt
+        # plt already added above
+        pass
     elif plot_lib == "seaborn":
         allowed_globals["sns"] = sns
-        allowed_globals["plt"] = plt
+        # plt already added above
     elif plot_lib == "plotly.express":
         allowed_globals["px"] = px
     else:
@@ -312,6 +465,13 @@ def plotbot_code_execute(plot_code: str,
 
     try:
         byte_code = compile_restricted(plot_code, '<string>', 'exec')
+        if byte_code is None:
+            logger.error("Failed to compile restricted code")
+            return {
+                "type": "error",
+                "value": "Sorry, the code could not be compiled safely."
+            }
+
         exec(byte_code, allowed_globals, exec_locals)
         if "fig" in exec_locals:
             fig = exec_locals["fig"]
@@ -327,6 +487,7 @@ def plotbot_code_execute(plot_code: str,
             }
     except Exception as e:
         logger.error(f"Error executing plot code: {e}")
+        logger.error(f"Code that failed: {plot_code}")
         return {
             "type": "error",
             "value": f"Sorry, there was an error executing your plot: {str(e)}"
@@ -344,7 +505,7 @@ def plotbot_user_query(session_id: str,
                        cache_mode: bool = False) -> None:
     """
     Handle user queries for plotbot (iterative plotting assistant).
-    
+
     Parameters
     ----------
     session_id : str
@@ -381,7 +542,7 @@ def plotbot_user_query(session_id: str,
                     message=user_input)
 
     intent = detect_intent(user_input)
-    
+
     # Handle schema generation for both pandas and polars DataFrames
     if isinstance(df, pd.DataFrame):
         schema = df.dtypes.to_string()
@@ -404,6 +565,20 @@ def plotbot_user_query(session_id: str,
         st.session_state[session_id][SessionKeys.AI_PLOT_INTENT] = True
 
         if df is not None:
+            # Auto-detect previous code chunk if none provided
+            if code_chunk is None:
+                chat_history = st.session_state[session_id].get(
+                    SessionKeys.AI_PLOTBOT_CHAT, []
+                )
+                # Look for the most recent code chunk in conversation history
+                for message in reversed(chat_history):
+                    if (message.get("role") == "assistant" and
+                            message.get("type") == "code" and
+                            isinstance(message.get("value"), str) and
+                            message.get("value").strip()):
+                        code_chunk = message.get("value")
+                        break
+
             # Use unified code generation/update function
             cache_dict = st.session_state[session_id].setdefault(
                 SessionKeys.AI_PLOTBOT_CACHE, {}
@@ -416,13 +591,8 @@ def plotbot_user_query(session_id: str,
             cached_code = cached.get("code") if cached else None
             if (cached and isinstance(cached_code, str) and
                     cached_code.strip()):
-                logger.debug(f"Cache hit for key: {cache_key}")
                 plot_code = cached_code
             else:
-                if cached:
-                    logger.debug(f"Cache hit but invalid cached code for key: {cache_key}")
-                else:
-                    logger.debug(f"Cache miss for key: {cache_key}")
                 plot_code = plotbot_code_generate_or_update(
                     df=df,
                     user_request=user_input,
@@ -485,6 +655,13 @@ def plotbot_user_query(session_id: str,
                          plot_library=plot_lib,
                          plot_svg=svg_str)
 
+            # Generate SVG for export capability
+            svg_str = ""
+            if plot_fig.get("type") == "plot":
+                svg_str = fig_to_svg(figure=plot_fig["value"], plot_lib=plot_lib)
+                # Store SVG for work preservation export
+                st.session_state[session_id]["plotbot_plot_svg"] = svg_str
+
             # Append code and plot to session state
             st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
                 {"role": "assistant", "type": "code", "value": plot_code}
@@ -533,10 +710,10 @@ def generate_plotbot_code_and_plot(
 ) -> tuple[str, dict]:
     """
     Generate plotting code and execute it to create a plot.
-    
+
     This is a helper function that combines code generation and execution
     in a single call, useful for non-interactive scenarios.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -551,25 +728,25 @@ def generate_plotbot_code_and_plot(
         LLM parameters.
     code_chunk : str, optional
         Existing code to update.
-        
+
     Returns
     -------
     tuple[str, dict]
         Generated code and plot result.
     """
     schema = str(df.dtypes.to_dict())
-    
+
     # Generate the code
     plot_code = plotbot_code_generate_or_update(
         df, user_input, plot_lib, schema, api_key, llm_params, code_chunk
     )
-    
+
     if not plot_code:
         return None, None
-    
+
     # Execute the code
     plot_result = plotbot_code_execute(plot_code, df, plot_lib)
-    
+
     if plot_result.get("type") == "plot":
         return plot_code, plot_result.get("value")
     else:

@@ -7,8 +7,13 @@ metadata for target and reference corpora.
 
 import streamlit as st
 import polars as pl
-from webapp.config.session_keys import SessionKeys, CorpusKeys, MetadataKeys, ReferenceKeys
-from webapp.utilities.session.session_management import get_corpus_categories, update_session
+from webapp.utilities.session.session_management import (
+    get_corpus_categories, update_session
+    )
+from webapp.utilities.state import (
+    SessionKeys, CorpusKeys,
+    MetadataKeys, ReferenceKeys
+    )
 
 
 # Constants for metadata validation

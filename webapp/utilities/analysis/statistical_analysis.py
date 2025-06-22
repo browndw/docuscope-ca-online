@@ -9,7 +9,7 @@ import polars as pl
 import streamlit as st
 import docuscospacy as ds
 from scipy.stats import pearsonr
-from webapp.config.session_keys import (
+from webapp.utilities.state import (
     CorpusKeys, TargetKeys, ReferenceKeys, WarningKeys
 )
 from webapp.utilities.session import update_session, update_metadata

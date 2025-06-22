@@ -18,7 +18,7 @@ from webapp.utilities.session.metadata_handlers import (
 )
 
 from webapp.utilities.analysis.data_validation import check_corpus_external, check_corpus_new  # noqa: E501
-from webapp.config.session_keys import LoadCorpusKeys
+from webapp.utilities.state import LoadCorpusKeys
 
 # Warning constants for corpus processing
 WARNING_CORRUPT_TARGET = 10

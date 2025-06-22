@@ -19,7 +19,7 @@ import streamlit as st
 import docuscospacy as ds
 
 from webapp.utilities.plotting.boxplot_utils import boxplots_pl
-from webapp.config.session_keys import BoxplotKeys
+from webapp.utilities.state import BoxplotKeys
 
 
 def generate_boxplot(

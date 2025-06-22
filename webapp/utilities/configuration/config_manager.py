@@ -10,7 +10,11 @@ import os
 import tomli
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
-from loguru import logger
+
+# Import centralized logging configuration and logger
+from webapp.utilities.configuration.logging_config import get_logger
+
+logger = get_logger()
 
 
 class ConfigurationManager:
@@ -84,7 +88,7 @@ class ConfigurationManager:
                     'presence_penalty': 0
                 },
                 'llm_model': 'gpt-4o-mini',
-                'quota': 10
+                'quota': 100  # Default quota for LLM usage
             },
             'cache': {
                 'cache_mode': False,  # Safe default
@@ -351,6 +355,11 @@ class ConfigurationManager:
     def models_dir_path(self) -> str:
         """Get path to models directory."""
         return str(self.get_project_root() / "webapp" / "_models")
+
+    @property
+    def corpus_dir_path(self) -> str:
+        """Get path to corpora directory."""
+        return str(self.get_project_root() / "webapp" / "_corpora")
 
     @property
     def docuscope_logo_path(self) -> str:

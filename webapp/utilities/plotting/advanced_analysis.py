@@ -16,7 +16,7 @@ from sklearn import decomposition
 # Import session utilities
 from webapp.utilities.session import update_session
 from webapp.utilities.analysis import update_metadata
-from webapp.config.session_keys import PCAKeys, ScatterplotKeys
+from webapp.utilities.state import PCAKeys, ScatterplotKeys
 
 
 def pca_contributions(

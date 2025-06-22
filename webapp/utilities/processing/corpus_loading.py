@@ -1,5 +1,3 @@
-import time
-
 """
 Corpus loading utilities for loading corpus data from files and database paths.
 
@@ -11,8 +9,9 @@ import os
 import gzip
 import glob
 import pickle
-import polars as pl
 import random
+import time
+import polars as pl
 import streamlit as st
 
 
@@ -75,7 +74,6 @@ def load_corpus_internal(db_path: str,
         # If this wasn't the last attempt, we'll try again
         if attempt < 2:
             # Brief pause before retry to reduce contention
-            # import time  # Moved to module level
             time.sleep(0.1 * (attempt + 1))  # Increasing delay
 
     # All 3 attempts failed - show error to user

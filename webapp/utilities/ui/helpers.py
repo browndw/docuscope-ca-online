@@ -9,7 +9,7 @@ import pathlib
 import streamlit as st
 
 from webapp.utilities.exports import convert_to_excel
-from webapp.config.session_keys import SessionKeys
+from webapp.utilities.state import SessionKeys
 
 # Documentation base URL
 DOCS_BASE_URL = "https://browndw.github.io/docuscope-docs/guide/"

@@ -6,7 +6,7 @@ This module provides shared utilities for download pages (13_download_corpus.py 
 """
 
 import streamlit as st
-from webapp.config.session_keys import (
+from webapp.utilities.state import (
     SessionKeys, CorpusKeys, WarningKeys
 )
 from webapp.utilities.analysis import generate_tags_table
@@ -16,7 +16,7 @@ from webapp.utilities.ui import sidebar_action_button
 def render_download_page_header(title: str, help_url: str, description: str = None) -> None:
     """
     Render the standard header for download pages.
-    
+
     Parameters
     ----------
     title : str
@@ -33,7 +33,7 @@ def render_download_page_header(title: str, help_url: str, description: str = No
             "for offline use or integration with other tools."
         )
     )
-    
+
     st.sidebar.link_button(
         label="Help",
         url=help_url,
@@ -44,7 +44,7 @@ def render_download_page_header(title: str, help_url: str, description: str = No
 def render_data_loading_interface(user_session_id: str, session: dict) -> None:
     """
     Render the interface for loading data when tables are not available.
-    
+
     Parameters
     ----------
     user_session_id : str
@@ -84,7 +84,7 @@ def render_data_loading_interface(user_session_id: str, session: dict) -> None:
 def render_corpus_selection() -> str:
     """
     Render corpus selection radio buttons.
-    
+
     Returns
     -------
     str
@@ -105,7 +105,7 @@ def render_corpus_selection() -> str:
 def render_data_type_selection() -> str:
     """
     Render data type selection radio buttons.
-    
+
     Returns
     -------
     str
@@ -133,7 +133,7 @@ def render_data_type_selection() -> str:
 def render_format_selection() -> str:
     """
     Render file format selection radio buttons.
-    
+
     Returns
     -------
     str
@@ -149,7 +149,7 @@ def render_format_selection() -> str:
 def render_tagset_selection() -> str:
     """
     Render tagset selection for tagged file downloads.
-    
+
     Returns
     -------
     str
@@ -161,7 +161,7 @@ def render_tagset_selection() -> str:
         ("Parts-of-Speech", "DocuScope"),
         horizontal=True
     )
-    
+
     return 'pos' if download_radio == 'Parts-of-Speech' else 'ds'
 
 
@@ -175,7 +175,7 @@ def render_download_button(
 ) -> None:
     """
     Render a standardized download button in the sidebar.
-    
+
     Parameters
     ----------
     label : str
@@ -193,7 +193,7 @@ def render_download_button(
     """
     if message:
         st.sidebar.markdown(f"#### {message}")
-    
+
     st.sidebar.download_button(
         label=label,
         icon=icon,
@@ -207,12 +207,12 @@ def render_download_button(
 def check_reference_corpus_availability(session: dict) -> bool:
     """
     Check if reference corpus is available and show error if not.
-    
+
     Parameters
     ----------
     session : dict
         The session state dictionary
-        
+
     Returns
     -------
     bool
@@ -233,7 +233,7 @@ def check_reference_corpus_availability(session: dict) -> bool:
 def get_corpus_data(user_session_id: str, corpus_type: str, data_key: str):
     """
     Get corpus data from session state.
-    
+
     Parameters
     ----------
     user_session_id : str
@@ -242,7 +242,7 @@ def get_corpus_data(user_session_id: str, corpus_type: str, data_key: str):
         Either "target" or "reference"
     data_key : str
         The key for the specific data to retrieve
-        
+
     Returns
     -------
     Data from the corpus session

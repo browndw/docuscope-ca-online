@@ -18,7 +18,7 @@ from lingua import Language
 from typing import Optional, List, Union
 
 from webapp.utilities.analysis.corpus_loading import load_detector
-from webapp.config.session_keys import SessionKeys
+from webapp.utilities.state import SessionKeys
 
 
 def check_language(text_str: str) -> bool:

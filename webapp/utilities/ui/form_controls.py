@@ -153,9 +153,6 @@ def tag_filter_multiselect(
     Render a segmented control widget (inside an expander) for tag filtering and
     return the filtered DataFrame.
     """
-    # import polars as pl  # Moved to module level
-    # import streamlit as st  # Moved to module level
-
     if df is None or getattr(df, "height", 0) == 0:
         return df
     cats = sorted(df.get_column(tag_col).drop_nulls().unique().to_list())

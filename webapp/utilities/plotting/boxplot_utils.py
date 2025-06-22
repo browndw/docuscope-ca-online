@@ -16,7 +16,7 @@ def boxplots_pl(
         ) -> pl.DataFrame:
     """
     Prepare data for boxplot visualization from a document-term matrix.
-    
+
     Parameters
     ----------
     dtm_pl : pl.DataFrame
@@ -27,7 +27,7 @@ def boxplots_pl(
         List of category IDs for Group A (for grouped boxplots).
     grp_b : list, optional
         List of category IDs for Group B (for grouped boxplots).
-        
+
     Returns
     -------
     pl.DataFrame

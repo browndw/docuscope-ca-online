@@ -1,17 +1,3 @@
-# Copyright (C) 2025 David West Brown
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """
 Session management utilities for corpus analysis application.
 
@@ -23,7 +9,7 @@ import polars as pl
 import streamlit as st
 
 from webapp.utilities.data import get_doc_cats
-from webapp.config.session_keys import SessionKeys
+from webapp.utilities.state import SessionKeys
 
 
 def init_ai_assist(
@@ -120,7 +106,7 @@ def validate_session_state(user_session_id: str) -> bool:
         # Check that session exists (matching legacy behavior)
         if user_session_id not in st.session_state:
             return False
-            
+
         # Check for basic metadata structure (like legacy version)
         # This is the minimum requirement for most UI functions
         required_keys = ['metadata_target']

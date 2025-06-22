@@ -227,5 +227,17 @@ def get_log_directory() -> pathlib.Path:
     return config.get_log_directory()
 
 
+def get_logger():
+    """
+    Get the configured logger instance.
+
+    Returns
+    -------
+    loguru.Logger
+        The configured logger instance
+    """
+    return logger
+
+
 # Pre-configure AI logging when module is imported
 setup_ai_logging()

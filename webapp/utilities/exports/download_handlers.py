@@ -7,7 +7,7 @@ used in the download pages.
 
 import streamlit as st
 from webapp.utilities.exports import convert_corpus_to_zip, convert_to_zip
-from webapp.config.session_keys import CorpusKeys, TargetKeys, ReferenceKeys
+from webapp.utilities.state import CorpusKeys, TargetKeys, ReferenceKeys
 from webapp.utilities.ui.download_interface import render_download_button
 
 
@@ -17,7 +17,7 @@ def handle_corpus_file_download(
 ) -> None:
     """
     Handle single corpus file download (Parquet format).
-    
+
     Parameters
     ----------
     user_session_id : str
@@ -31,9 +31,9 @@ def handle_corpus_file_download(
     else:
         corpus_session = st.session_state[user_session_id][CorpusKeys.REFERENCE]
         tokens_df = corpus_session[ReferenceKeys.DS_TOKENS]
-    
+
     download_file = tokens_df.to_pandas().to_parquet()
-    
+
     render_download_button(
         label="Download Corpus File",
         data=download_file,
@@ -50,7 +50,7 @@ def handle_all_data_download(
 ) -> None:
     """
     Handle download of all processed data.
-    
+
     Parameters
     ----------
     user_session_id : str
@@ -61,7 +61,7 @@ def handle_all_data_download(
         Either "CSV" or "PARQUET"
     """
     corpus_key = CorpusKeys.TARGET if corpus_type == "Target" else CorpusKeys.REFERENCE
-    
+
     with st.sidebar.status("Preparing files..."):
         if file_format == "CSV":
             download_file = convert_corpus_to_zip(
@@ -74,7 +74,7 @@ def handle_all_data_download(
                 user_session_id,
                 corpus_key
             )
-    
+
     render_download_button(
         label="Download Corpus Files",
         data=download_file,
@@ -90,7 +90,7 @@ def handle_tagged_files_download(
 ) -> None:
     """
     Handle tagged files download.
-    
+
     Parameters
     ----------
     user_session_id : str
@@ -100,9 +100,9 @@ def handle_tagged_files_download(
     """
     target_session = st.session_state[user_session_id][CorpusKeys.TARGET]
     tok_pl = target_session[TargetKeys.DS_TOKENS]
-    
+
     download_file = convert_to_zip(tok_pl, tagset)
-    
+
     st.sidebar.download_button(
         label="Download to Zip",
         data=download_file,

@@ -1,15 +1,13 @@
 """
-Legacy plotting functions migrated from formatters.py.
-
-This module contains plotting functions that were previously in the legacy
-formatters module, now properly organized and imported.
+Plotting functons for interactive visualizations using Plotly.
+Includes boxplots, scatter plots, PCA visualizations, and variable contribution bars.
 """
 import math
 import numpy as np
 import pandas as pd
+import polars as pl
 import plotly.express as px
 import plotly.graph_objects as go
-import polars as pl
 
 
 def plot_general_boxplot(

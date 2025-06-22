@@ -20,14 +20,15 @@ from pandasai.exceptions import MaliciousQueryError, NoResultFoundError
 from pandasai_openai import OpenAI
 import pandasai as pai
 
-from loguru import logger
-
-# Import shared utilities from llm_core
+# Import centralized logging configuration and logger
+import webapp.utilities.configuration.logging_config  # noqa: F401
+from webapp.utilities.configuration.logging_config import get_logger
 # Import shared AI utilities
 from webapp.utilities.ai.shared import prune_message_thread
 from webapp.utilities.storage import add_message
-from webapp.config.session_keys import SessionKeys
+from webapp.utilities.state import SessionKeys
 
+logger = get_logger()
 # Thread-safe global lock for monkeypatching
 _monkeypatch_lock = threading.RLock()
 
@@ -40,7 +41,7 @@ class SessionPlotStorage:
 
     def __init__(self, session_id: str):
         self.session_id = session_id
-        self.session_img_key = f"pandabot_img_bytes_{session_id}"
+        self.session_img_key = SessionKeys.get_pandabot_img_key(session_id)
         self.last_access = time.time()
 
         # Initialize session storage if needed
@@ -87,9 +88,6 @@ def thread_safe_monkeypatch(session_storage: SessionPlotStorage):
     Uses a global lock to ensure only one thread can modify the global state at a time,
     while using session-specific storage for captured images.
     """
-    # import os  # Moved to module level
-    # import builtins  # Moved to module level
-
     with _monkeypatch_lock:
         # Store original functions
         _original_savefig = plt.Figure.savefig
@@ -195,6 +193,9 @@ def clear_pandasai(session_id):
         st.session_state[session_id][SessionKeys.AI_PANDABOT_CHAT] = []
     else:
         st.session_state[session_id][SessionKeys.AI_PANDABOT_CHAT] = []
+
+    # Reset the user prompt counter for accurate message indexing
+    st.session_state[session_id][SessionKeys.AI_PANDABOT_PROMPT_COUNT] = 0
 
 
 def pandabot_user_query(
@@ -457,11 +458,3 @@ def pandabot_user_query(
 
     # Prune conversation history
     prune_message_thread(session_id, "pandasai")
-
-
-# AUDIT: 2025-06-20 - Major refactor: Removed misuse of detect_intent() for plot detection.
-# Instead of trying to guess user intent before calling PandasAI, we now always apply
-# the monkey patch (lightweight when no plots) and handle responses based on actual
-# PandasAI 3.0 structured output. This makes plot capture more reliable and eliminates
-# the dual code paths that were error-prone. Plot detection now happens AFTER PandasAI
-# responds, based on result["type"] == "chart" rather than guessing from user input.

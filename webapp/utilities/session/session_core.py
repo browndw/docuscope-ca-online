@@ -1,14 +1,11 @@
 """
-Core session management functions migrated from legacy handlers.
-
-This module contains the core session initialization, update, and management
-functions that were originally in handlers.py.
+This module contains the core session initialization, update, and management.
 """
 
 import polars as pl
 import streamlit as st
 
-from webapp.config.session_keys import SessionKeys, MetadataKeys
+from webapp.utilities.state import SessionKeys, MetadataKeys
 from webapp.utilities.data import get_doc_cats
 
 
@@ -83,12 +80,12 @@ def get_corpus_categories(doc_ids: list, user_session_id: str) -> tuple[list, in
     doc_cats = get_doc_cats(doc_ids)
     unique_count = len(set(doc_cats)) if doc_cats else 0
     result = (doc_cats, unique_count)
-    
+
     # Cache the result in user session
     if user_session_id not in st.session_state:
         st.session_state[user_session_id] = {}
     st.session_state[user_session_id][cache_key] = result
-    
+
     return result
 
 
@@ -105,7 +102,6 @@ def init_metadata_target(session_id: str) -> None:
     -------
     None
     """
-    
     df = st.session_state[session_id]["target"]["ds_tokens"]
     tags_to_check = df.get_column("ds_tag").to_list()
     tags = [
@@ -149,8 +145,6 @@ def init_metadata_reference(session_id: str) -> None:
     -------
     None
     """
-    # Import here to avoid circular import
-    
     df = st.session_state[session_id]["reference"]["ds_tokens"]
     temp_metadata_reference = {
         MetadataKeys.TOKENS_POS: df.group_by(

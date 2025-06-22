@@ -10,12 +10,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
-from loguru import logger
 from RestrictedPython import compile_restricted
 from RestrictedPython.Guards import safe_builtins
 from RestrictedPython.Guards import guarded_unpack_sequence
 from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
 from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
+
+# Import centralized logging configuration and logger
+import webapp.utilities.configuration.logging_config  # noqa: F401
+from webapp.utilities.configuration.logging_config import get_logger
+
+logger = get_logger()
 
 
 # Security: Define forbidden patterns for code safety (legacy working version)

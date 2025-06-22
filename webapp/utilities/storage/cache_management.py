@@ -1,16 +1,12 @@
-# Copyright 2024 David West Brown
+"""
+Resources for managing storage and caching in the web application.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+This module provides functions for handling persistent storage of messages,
+plots, and user logins in a Firestore database. It includes utilities for
+generating persistent hashes, adding messages and plots to the database,
+and tracking user logins. It also includes a function to count user queries
+in the last 24 hours to help manage query limits and quotas.
+"""
 
 import hashlib
 import streamlit as st
@@ -19,6 +15,14 @@ from google.cloud import firestore
 from google.oauth2 import service_account
 
 from webapp.utilities.configuration import config_manager
+
+# Import centralized logging configuration and logger
+from webapp.utilities.configuration.logging_config import get_logger, setup_utility_logging
+
+logger = get_logger()
+
+# Set up logging for storage utilities
+setup_utility_logging("storage")
 
 DESKTOP = config_manager.desktop_mode
 
@@ -108,8 +112,8 @@ def add_message(user_id: str,
             'message_idx': message_idx,
             'message': message
         })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to add message to Firestore: {e}")
 
 
 def add_plot(user_id: str,
@@ -168,9 +172,7 @@ def add_plot(user_id: str,
             'plot_svg': plot_svg
         })
     except Exception as e:
-        # Handle the exception (e.g., log it, print it, etc.)
-        print(f"Error adding plot to Firestore: {e}")
-        pass
+        logger.error(f"Failed to add plot to Firestore: {e}")
 
 
 def add_login(user_id: str,
@@ -205,29 +207,50 @@ def add_login(user_id: str,
             'session_id': session_id,
             'time_stamp': timestamp
         })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to add login to Firestore: {e}")
 
 
 def get_query_count(user_id):
+    """
+    Get the count of user queries in the last 24 hours.
+
+    Parameters
+    ----------
+    user_id : str
+        The user ID to check queries for
+
+    Returns
+    -------
+    int
+        Number of user queries in the last 24 hours
+    """
     try:
+        # Only proceed if we're in online mode and have credentials
+        if DESKTOP or creds is None:
+            return 0
+
         db = firestore.Client(credentials=creds, project="docuscope-ca-data")
         collection_ref = db.collection("messages")
         timestamp = datetime.now()
-        user_id = persistent_hash(user_id)
+        hashed_user_id = persistent_hash(user_id)
 
         # Calculate the timestamp for 24 hours ago
         last_24_hours = timestamp - timedelta(hours=24)
 
-        # Create a query to filter documents by user_id and time_stamp
+        # Create a query using the newer filter syntax
         query = (
             collection_ref
-            .where("user_id", "==", user_id)
-            .where("role", "==", "user")
-            .where("time_stamp", ">=", last_24_hours)
-            )
-        docs = query.get()
-        return len(docs)
+            .where(filter=firestore.FieldFilter("user_id", "==", hashed_user_id))
+            .where(filter=firestore.FieldFilter("role", "==", "user"))
+            .where(filter=firestore.FieldFilter("time_stamp", ">=", last_24_hours))
+        )
 
-    except Exception:
+        docs = query.get()
+        count = len(docs)
+
+        return count
+
+    except Exception as e:
+        logger.error(f"Failed to get query count from Firestore: {e}")
         return 0

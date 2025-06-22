@@ -10,20 +10,21 @@ import docuscospacy as ds
 import pandas as pd
 import polars as pl
 import streamlit as st
+from datetime import datetime, timedelta
 
-from loguru import logger
-
-from webapp.config.session_keys import SessionKeys
+from webapp.utilities.state import SessionKeys
 from webapp.utilities.state import persist
 from webapp.utilities.storage import get_query_count
 from webapp.utilities.analysis import tags_table_grouped, dtm_simplify_grouped
 from webapp.utilities.configuration import get_ai_configuration
 
-_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
+# Import centralized logging configuration and logger
+import webapp.utilities.configuration.logging_config  # noqa: F401
+from webapp.utilities.configuration.logging_config import get_logger
 
-# Note: AI logging is automatically configured by the centralized logging system
-# AUDIT: 2025-06-20 - Removed redundant setup_ai_logging() call as centralized logging
-# system automatically initializes AI logging when configuration module is imported.
+logger = get_logger()
+
+_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
 
 
 def print_settings(dct: dict) -> str:
@@ -335,8 +336,15 @@ def setup_ai_session_state(user_session_id: str, bot_type: str) -> None:
     if bot_type not in st.session_state[user_session_id]:
         st.session_state[user_session_id][bot_type] = []
 
-    # Initialize user prompt count
-    prompt_count_key = f"{bot_type}_user_prompt_count"
+    # Initialize user prompt count using centralized keys
+    if bot_type == "plotbot":
+        prompt_count_key = SessionKeys.AI_PLOTBOT_PROMPT_COUNT
+    elif bot_type == "pandasai":
+        prompt_count_key = SessionKeys.AI_PANDABOT_PROMPT_COUNT
+    else:
+        # Fallback for unknown bot types - keep the same pattern for consistency
+        prompt_count_key = f"{bot_type}_user_prompt_count"
+
     if prompt_count_key not in st.session_state[user_session_id]:
         st.session_state[user_session_id][prompt_count_key] = 0
 
@@ -377,15 +385,31 @@ def get_api_key(
             try:
                 community_key = st.secrets["openai"]["api_key"]
             except Exception:
-                logger.debug("Community API key not available")
                 community_key = None
 
-        # Check quota if caching is enabled
+        # Check quota if caching is enabled and using community key
         if cache_enabled and community_key:
             try:
-                daily_tokens = get_query_count(st.user.email)
-                if daily_tokens >= quota:
-                    logger.debug("Daily quota exceeded, community key disabled")
+                # Cache quota check for 30 seconds to avoid repeated Firestore calls
+                quota_cache_key = SessionKeys.get_quota_cache_key(st.user.email)
+                current_time = datetime.now()
+
+                # Check if we have a recent quota check cached
+                cache_time_key = SessionKeys.get_quota_time_key(quota_cache_key)
+                if (quota_cache_key in st.session_state[user_session_id] and
+                        current_time - st.session_state[user_session_id][cache_time_key] <
+                        timedelta(seconds=30)):
+                    # Use cached result
+                    quota_exceeded = st.session_state[user_session_id][quota_cache_key]
+                else:
+                    # Make fresh quota check
+                    daily_tokens = get_query_count(st.user.email)
+                    quota_exceeded = daily_tokens >= quota
+                    # Cache the result
+                    st.session_state[user_session_id][quota_cache_key] = quota_exceeded
+                    st.session_state[user_session_id][cache_time_key] = current_time
+
+                if quota_exceeded:
                     community_key = None
             except Exception as e:
                 logger.error(f"Error checking quota: {e}")
@@ -462,7 +486,6 @@ def render_data_selection_interface(
     user_session_id: str,
     session: dict,
     bot_prefix: str,
-    page_stem: str,
     clear_function: callable,
     metadata_target: dict = None
 ) -> tuple[str, str, pl.DataFrame | None]:
@@ -477,8 +500,6 @@ def render_data_selection_interface(
         Session state dictionary
     bot_prefix : str
         Prefix for session keys (e.g., 'plotbot', 'pandasai')
-    page_stem : str
-        Page stem for state persistence
     clear_function : callable
         Function to clear bot state
     metadata_target : dict, optional
@@ -504,7 +525,7 @@ def render_data_selection_interface(
         )
 
         # Corpus selection
-        corpus_key = f"{bot_prefix}_corpus"
+        corpus_key = SessionKeys.get_bot_corpus_key(bot_prefix)
         selected_corpus = st.radio(
             "Select corpus:",
             ("Target", "Reference", "Keywords", "Grouped"),
@@ -521,7 +542,7 @@ def render_data_selection_interface(
             groups = metadata_target.get('doccats', [{}])[0].get('cats', [])
 
         # Query selection
-        query_key = f"{bot_prefix}_query"
+        query_key = SessionKeys.get_bot_query_key(bot_prefix)
         data_label = ("Select data to analyze:" if bot_prefix == 'pandasai'
                       else "Select data to plot:")
         selected_query = st.selectbox(
@@ -559,7 +580,6 @@ def render_data_selection_interface(
 def render_data_preview_controls(
     df: pl.DataFrame,
     query: str,
-    page_stem: str,
     user_session_id: str
 ) -> pl.DataFrame:
     """
@@ -571,8 +591,6 @@ def render_data_preview_controls(
         Input dataframe
     query : str
         Selected query/table name
-    page_stem : str
-        Page stem for state persistence
     user_session_id : str
         User session identifier
 

@@ -6,7 +6,7 @@ from corpus data, including tags tables, frequency tables, and metadata tables.
 """
 
 import streamlit as st
-from webapp.config.session_keys import (
+from webapp.utilities.state import (
     SessionKeys, CorpusKeys, TargetKeys, WarningKeys
 )
 from webapp.utilities.session import update_session

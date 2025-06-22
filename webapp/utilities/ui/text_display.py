@@ -8,7 +8,7 @@ import random
 import streamlit as st
 import streamlit.components.v1 as components
 
-from webapp.utilities.session import load_metadata
+from webapp.utilities.session import load_metadata, update_session
 from webapp.utilities.exports import convert_to_word
 from webapp.utilities.ui.text_visualization import (
     generate_tag_html_legend, plot_tag_density
@@ -16,7 +16,7 @@ from webapp.utilities.ui.text_visualization import (
 from webapp.utilities.ui.helpers import toggle_download, sidebar_action_button
 from webapp.utilities.plotting import plot_download_link
 from webapp.utilities.processing import generate_document_html
-from webapp.config.session_keys import CorpusKeys, SessionKeys, TargetKeys, WarningKeys
+from webapp.utilities.state import CorpusKeys, SessionKeys, TargetKeys, WarningKeys
 
 # Document highlighting colors
 HEX_HIGHLIGHTS = ['#5fb7ca', '#e35be5', '#ffc701', '#fe5b05', '#cb7d60']
@@ -338,7 +338,6 @@ def render_document_reset_interface(user_session_id: str) -> None:
             target_session[key] = {}
 
         # Update session and clear tags
-        from webapp.utilities.session import update_session
         update_session(SessionKeys.DOC, False, user_session_id)
 
         if _TAGS in st.session_state:

@@ -1,5 +1,3 @@
-import streamlit as st
-
 """
 Corpus display utilities for the Streamlit interface.
 
@@ -12,7 +10,7 @@ import streamlit as st
 from webapp.utilities.session import validate_session_state
 from webapp.utilities.session.metadata_handlers import load_metadata
 from webapp.utilities.ui.shared_utils import add_category_description
-from webapp.config.session_keys import SessionKeys, MetadataKeys, CorpusKeys
+from webapp.utilities.state import SessionKeys, MetadataKeys, CorpusKeys
 from webapp.utilities.data import get_doc_cats
 
 
@@ -214,15 +212,18 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
             )
 
         # Create tabs for Target and Reference
-        tab_labels = ["Target corpus"]
+        tab_labels = [":material/docs: Target corpus"]
         if has_reference:
-            tab_labels.append("Reference corpus")
+            tab_labels.append(":material/text_compare: Reference corpus")
         tabs = st.tabs(tab_labels)
 
         # --- Target Tab ---
         with tabs[0]:
             st.info(target_info(metadata_target))
-            with st.expander("Documents:"):
+            with st.expander(
+                label="Documents in target corpus:",
+                icon=":material/home_storage:"
+            ):
                 doc_ids = metadata_target.get(MetadataKeys.DOCIDS, [{}])[0].get('ids', [])
                 st.write(doc_ids)
 
@@ -254,7 +255,10 @@ def display_reference_corpus_tab(tab, metadata_reference: dict, session: dict) -
     with tab:
         try:
             st.info(reference_info(metadata_reference))
-            with st.expander("Documents in reference corpus:"):
+            with st.expander(
+                label="Documents in reference corpus:",
+                icon=":material/home_storage:"
+            ):
                 ref_doc_ids = metadata_reference.get(
                     MetadataKeys.DOCIDS, [{}]
                 )[0].get('ids', [])
@@ -293,8 +297,7 @@ def display_reference_corpus_tab(tab, metadata_reference: dict, session: dict) -
 
 def render_corpus_info_expanders() -> None:
     """Render information expanders for different corpus types."""
-    # import streamlit as st  # Moved to module level
-    
+
     st.markdown("##### :material/lightbulb: Learn more...")
     col_1, col_2, col_3, col_4 = st.columns(4)
 

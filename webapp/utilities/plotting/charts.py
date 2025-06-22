@@ -21,7 +21,7 @@ import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
 
-from webapp.config.session_keys import ScatterplotKeys, BoxplotKeys, PCAKeys
+from webapp.utilities.state import ScatterplotKeys, BoxplotKeys, PCAKeys
 from webapp.utilities.session import update_session
 
 
