@@ -29,7 +29,7 @@ from webapp.utilities.state import (
 from webapp.menu import (   # noqa: E402
     menu, require_login
 )
-from webapp.config.session_keys import (
+from webapp.utilities.state import (
     TargetKeys
 )
 

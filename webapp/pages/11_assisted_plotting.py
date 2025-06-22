@@ -13,7 +13,10 @@
 # limitations under the License.
 
 import base64
+import io
+import json
 import streamlit as st
+from datetime import datetime
 
 from webapp.utilities.session import (  # noqa: E402
     get_or_init_user_session
@@ -22,33 +25,28 @@ from webapp.utilities.configuration import (  # noqa: E402
     get_ai_configuration
 )
 from webapp.utilities.ai import (   # noqa: E402
-    clear_plotbot,
-    previous_code_chunk,
-    plotbot_user_query,
-    setup_ai_session_state,
-    get_api_key,
-    render_api_key_input,
-    render_data_selection_interface,
-    render_data_preview_controls
+    clear_plotbot, previous_code_chunk,
+    plotbot_user_query, setup_ai_session_state,
+    get_api_key, render_api_key_input,
+    render_data_selection_interface, render_data_preview_controls,
+    render_quota_tracker, should_show_api_key_input,
+    render_work_preservation_interface, should_show_work_preservation_interface,
+    export_conversation_history
 )
 from webapp.utilities.analysis import (   # noqa: E402
     generate_tags_table
 )
 from webapp.utilities.ui import (  # noqa: E402
-    sidebar_help_link,
-    render_table_generation_interface
+    sidebar_help_link, render_table_generation_interface
 )
 from webapp.utilities.state import (  # noqa: E402
-    load_widget_state,
-    persist
+    load_widget_state, persist
 )
-from webapp.config.session_keys import (  # noqa: E402
-    SessionKeys,
-    WarningKeys
+from webapp.utilities.state import (  # noqa: E402
+    SessionKeys, WarningKeys
 )
 from webapp.menu import (   # noqa: E402
-    menu,
-    require_login
+    menu, require_login
 )
 
 TITLE = "AI-Assisted Plotting"
@@ -110,17 +108,27 @@ def render_plotbot_chat_interface(
             elif message["type"] == "plot":
                 # Handle different plot types
                 if plot_lib in ["matplotlib", "seaborn"]:
-                    st.image(message['value'])
+                    fig = message['value']
+                    # Convert matplotlib figure to image
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                    buf.seek(0)
+                    img_bytes = buf.getvalue()
+                    st.image(img_bytes)
+
                     # Add download link
-                    img_bytes = message['value'].getvalue()
                     b64 = base64.b64encode(img_bytes).decode()
                     href = (f'<a href="data:image/png;base64,{b64}" '
                             'download="plot.png">Download PNG</a>')
                     st.markdown(href, unsafe_allow_html=True)
+                    buf.close()
+
                 elif plot_lib == "plotly.express":
                     fig = message['value']
-                    fig.update_xaxes(automargin=True)
-                    fig.update_yaxes(automargin=True)
+                    # Only call plotly methods on plotly figures
+                    if hasattr(fig, 'update_xaxes'):
+                        fig.update_xaxes(automargin=True)
+                        fig.update_yaxes(automargin=True)
                     img_bytes = fig.to_image(format="png", scale=2)
                     st.image(img_bytes)
                     # Add download link
@@ -144,7 +152,7 @@ def render_plotbot_chat_interface(
                     {"role": "user", "type": "string", "value": input_prompt}
                 )
                 # Increment user prompt count
-                prompt_count_key = "plotbot_user_prompt_count"
+                prompt_count_key = SessionKeys.AI_PLOTBOT_PROMPT_COUNT
                 if prompt_count_key not in st.session_state[user_session_id]:
                     st.session_state[user_session_id][prompt_count_key] = 1
                 else:
@@ -158,6 +166,7 @@ def render_plotbot_chat_interface(
                     user_input=input_prompt,
                     api_key=api_key,
                     llm_params=LLM_PARAMS,
+                    code_chunk=last_code,
                     prompt_position=st.session_state[user_session_id][prompt_count_key],
                     cache_mode=CACHE
                 )
@@ -171,7 +180,7 @@ def render_plotbot_chat_interface(
                 st.session_state[user_session_id]["plotbot"].append(
                     {"role": "user", "type": "string", "value": input_refine}
                 )
-                st.session_state[user_session_id]["plotbot_user_prompt_count"] += 1
+                st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_PROMPT_COUNT] += 1
 
                 # Generate refined response
                 plotbot_user_query(
@@ -181,8 +190,9 @@ def render_plotbot_chat_interface(
                     user_input=input_refine,
                     api_key=api_key,
                     llm_params=LLM_PARAMS,
+                    code_chunk=last_code,
                     prompt_position=st.session_state[user_session_id][
-                        "plotbot_user_prompt_count"
+                        SessionKeys.AI_PLOTBOT_PROMPT_COUNT
                     ],
                     cache_mode=CACHE
                 )
@@ -195,8 +205,35 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
         # Initialize session state
         setup_ai_session_state(user_session_id, "plotbot")
 
+        # Get user info for quota tracking
+        try:
+            user_email = (st.user.email if hasattr(st, 'user') and st.user.email
+                          else 'anonymous')
+        except Exception:
+            user_email = session.get('user_email', 'anonymous')
+
+        # Render quota tracker in sidebar (for online mode)
+        render_quota_tracker(user_email)
+
         # Get API key first
         api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
+
+        # Check if we should show API key input based on quota and current key status
+        has_user_key = (
+            api_key is not None and
+            st.session_state[user_session_id].get(SessionKeys.AI_USER_KEY) is not None
+        )
+
+        # Check if we should show work preservation interface first
+        show_work_preservation = should_show_work_preservation_interface(
+            user_email, user_session_id, has_user_key, "plotbot"
+        )
+
+        # Only show API key input if work preservation is not needed
+        show_api_input = (
+            should_show_api_key_input(user_email, has_user_key) and
+            not show_work_preservation
+        )
 
         # Introduction
         st.markdown(
@@ -210,9 +247,15 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
             )
         )
 
-        # Only show data interfaces if user has valid API key
-        if api_key:
-            # Add clear chat button to sidebar
+        # Show appropriate interface based on state
+        if show_work_preservation:
+            # Show work preservation interface when quota is exhausted but user has work
+            render_work_preservation_interface(user_session_id, user_email, "plotbot")
+        elif show_api_input:
+            # Show API key input when no work preservation needed
+            render_api_key_input(user_session_id)
+        elif api_key:
+            # Add chat controls to sidebar
             st.sidebar.markdown(
                 body="### Chat Controls",
                 help=(
@@ -226,6 +269,40 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                 clear_plotbot(user_session_id)
                 st.rerun()
 
+            # Add workflow export to sidebar
+            st.sidebar.markdown("### Export Workflow")
+
+            # Get workflow data
+            workflow_json = export_conversation_history(user_session_id, "plotbot")
+
+            if workflow_json:
+                # Parse to show summary
+                try:
+                    data = json.loads(workflow_json)
+                    step_count = len(data.get("workflow_steps", []))
+                    plot_count = data.get("summary", {}).get("plots_generated", 0)
+
+                    st.sidebar.write(f"**{step_count}** conversation steps")
+                    if plot_count > 0:
+                        st.sidebar.write(f"**{plot_count}** plots included")
+                except Exception:
+                    st.sidebar.write("Workflow available")
+
+                # Download button
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"plotbot_workflow_{timestamp}.json"
+
+                st.sidebar.download_button(
+                    label="Download Workflow",
+                    data=workflow_json,
+                    file_name=filename,
+                    mime="application/json",
+                    icon=":material/file_download:",
+                    help="Download your complete analysis workflow with embedded plots"
+                )
+            else:
+                st.sidebar.info("Start a conversation to create a workflow")
+
             # Get metadata if available
             metadata_target = None
             if session.get(SessionKeys.HAS_TARGET, [False])[0]:
@@ -238,14 +315,19 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
 
             # Data selection interface
             selected_corpus, selected_query, df = render_data_selection_interface(
-                user_session_id, session, "plotbot", "11_assisted_plotting",
-                clear_plotbot, metadata_target
+                user_session_id=user_session_id,
+                session=session,
+                bot_prefix="plotbot",
+                clear_function=clear_plotbot,
+                metadata_target=metadata_target
             )
 
             # Data preview with controls
             if df is not None:
                 df = render_data_preview_controls(
-                    df, selected_query, "11_assisted_plotting", user_session_id
+                    df=df,
+                    query=selected_query,
+                    user_session_id=user_session_id
                 )
 
             # Plotting library selection
@@ -255,9 +337,6 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
             render_plotbot_chat_interface(
                 user_session_id, api_key, df, selected_query, plot_lib
             )
-        else:
-            # Show API key input if no valid key available
-            render_api_key_input(user_session_id)
 
     except Exception as e:
         st.error(f"Error loading Plotbot interface: {str(e)}", icon=":material/error:")

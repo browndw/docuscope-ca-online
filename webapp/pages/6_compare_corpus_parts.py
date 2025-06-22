@@ -46,7 +46,7 @@ from webapp.menu import (   # noqa: E402
     menu,
     require_login
     )
-from webapp.config.session_keys import (  # noqa: E402
+from webapp.utilities.state import (  # noqa: E402
     SessionKeys, CorpusKeys,
     TargetKeys, WarningKeys
     )

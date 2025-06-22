@@ -34,7 +34,7 @@ from webapp.utilities.state import (   # noqa: E402
     load_widget_state,
     persist
     )
-from webapp.config.session_keys import (  # noqa: E402
+from webapp.utilities.state import (  # noqa: E402
     CorpusKeys,
     SessionKeys,
     TargetKeys,

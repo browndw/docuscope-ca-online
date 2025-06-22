@@ -29,7 +29,7 @@ from webapp.utilities.ui import (  # noqa: E402
     render_format_selection,
     check_reference_corpus_availability
 )
-from webapp.config.session_keys import (  # noqa: E402
+from webapp.utilities.state import (  # noqa: E402
     SessionKeys
 )
 from webapp.menu import (   # noqa: E402

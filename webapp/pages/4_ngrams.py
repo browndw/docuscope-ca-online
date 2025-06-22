@@ -30,7 +30,7 @@ from webapp.utilities.analysis import (
 from webapp.menu import (
     menu, require_login
     )
-from webapp.config.session_keys import (
+from webapp.utilities.state import (
     CorpusKeys, SessionKeys,
     WarningKeys
     )

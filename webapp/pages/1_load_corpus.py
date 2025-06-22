@@ -42,7 +42,7 @@ from webapp.utilities.ui import (
 from webapp.menu import (
     menu, require_login
     )
-from webapp.config.session_keys import (
+from webapp.utilities.state import (
     CorpusKeys, LoadCorpusKeys,
     MetadataKeys, SessionKeys,
     WarningKeys

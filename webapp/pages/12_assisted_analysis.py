@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import streamlit as st
+from datetime import datetime
 
 from webapp.utilities.session import (  # noqa: E402
     get_or_init_user_session
@@ -24,7 +26,9 @@ from webapp.utilities.ai import (   # noqa: E402
     clear_pandasai, pandabot_user_query,
     setup_ai_session_state, get_api_key,
     render_api_key_input, render_data_selection_interface,
-    render_data_preview_controls
+    render_data_preview_controls, render_quota_tracker,
+    should_show_api_key_input, render_work_preservation_interface,
+    should_show_work_preservation_interface, export_conversation_history
 )
 from webapp.utilities.analysis import (   # noqa: E402
     generate_tags_table
@@ -35,7 +39,7 @@ from webapp.utilities.ui import (  # noqa: E402
 from webapp.utilities.state import (  # noqa: E402
     load_widget_state
 )
-from webapp.config.session_keys import (  # noqa: E402
+from webapp.utilities.state import (  # noqa: E402
     SessionKeys, WarningKeys
 )
 from webapp.menu import (   # noqa: E402
@@ -89,7 +93,7 @@ def render_pandabot_chat_interface(
                 {"role": "user", "type": "string", "value": user_prompt}
             )
             # Increment user prompt count
-            prompt_count_key = "pandabot_user_prompt_count"
+            prompt_count_key = SessionKeys.AI_PANDABOT_PROMPT_COUNT
             if prompt_count_key not in st.session_state[user_session_id]:
                 st.session_state[user_session_id][prompt_count_key] = 1
             else:
@@ -113,9 +117,35 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
         # Initialize session state
         setup_ai_session_state(user_session_id, "pandasai")
 
-        # Get API key
+        # Get user info for quota tracking
+        try:
+            user_email = (st.user.email if hasattr(st, 'user') and st.user.email
+                          else 'anonymous')
+        except Exception:
+            user_email = session.get('user_email', 'anonymous')
+
+        # Render quota tracker in sidebar (for online mode)
+        render_quota_tracker(user_email)
+
         # Get API key first
         api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
+
+        # Check if we should show API key input based on quota and current key status
+        has_user_key = (
+            api_key is not None and
+            st.session_state[user_session_id].get(SessionKeys.AI_USER_KEY) is not None
+        )
+
+        # Check if we should show work preservation interface first
+        show_work_preservation = should_show_work_preservation_interface(
+            user_email, user_session_id, has_user_key, "pandabot"
+        )
+
+        # Only show API key input if work preservation is not needed
+        show_api_input = (
+            should_show_api_key_input(user_email, has_user_key) and
+            not show_work_preservation
+        )
 
         # Introduction
         st.markdown(
@@ -129,9 +159,15 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
             )
         )
 
-        # Only show data interfaces if user has valid API key
-        if api_key:
-            # Add clear chat button to sidebar
+        # Show appropriate interface based on state
+        if show_work_preservation:
+            # Show work preservation interface when quota is exhausted but user has work
+            render_work_preservation_interface(user_session_id, user_email, "pandabot")
+        elif show_api_input:
+            # Show API key input when no work preservation needed
+            render_api_key_input(user_session_id)
+        elif api_key:
+            # Add chat controls to sidebar
             st.sidebar.markdown(
                 body="### Chat Controls",
                 help=(
@@ -145,6 +181,40 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
                 clear_pandasai(user_session_id)
                 st.rerun()
 
+            # Add workflow export to sidebar
+            st.sidebar.markdown("### Export Workflow")
+
+            # Get workflow data
+            workflow_json = export_conversation_history(user_session_id, "pandabot")
+
+            if workflow_json:
+                # Parse to show summary
+                try:
+                    data = json.loads(workflow_json)
+                    step_count = len(data.get("workflow_steps", []))
+                    plot_count = data.get("summary", {}).get("plots_generated", 0)
+
+                    st.sidebar.write(f"**{step_count}** conversation steps")
+                    if plot_count > 0:
+                        st.sidebar.write(f"**{plot_count}** plots included")
+                except Exception:
+                    st.sidebar.write("Workflow available")
+
+                # Download button
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"pandabot_workflow_{timestamp}.json"
+
+                st.sidebar.download_button(
+                    label="Download Workflow",
+                    data=workflow_json,
+                    file_name=filename,
+                    mime="application/json",
+                    icon=":material/file_download:",
+                    help="Download your complete analysis workflow with embedded plots"
+                )
+            else:
+                st.sidebar.info("Start a conversation to create a workflow")
+
             # Get metadata if available
             metadata_target = None
             if session.get(SessionKeys.HAS_TARGET, [False])[0]:
@@ -157,23 +227,25 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
 
             # Data selection interface
             selected_corpus, selected_query, df = render_data_selection_interface(
-                user_session_id, session, "pandasai", "12_assisted_analysis",
-                clear_pandasai, metadata_target
+                user_session_id=user_session_id,
+                session=session,
+                bot_prefix="pandasai",
+                clear_function=clear_pandasai,
+                metadata_target=metadata_target
             )
 
             # Data preview with controls
             if df is not None:
                 df = render_data_preview_controls(
-                    df, selected_query, "12_assisted_analysis", user_session_id
+                    df=df,
+                    query=selected_query,
+                    user_session_id=user_session_id
                 )
 
             # Chat interface
             render_pandabot_chat_interface(
                 user_session_id, api_key, df, selected_query
             )
-        else:
-            # Show API key input if no valid key available
-            render_api_key_input(user_session_id)
 
     except Exception as e:
         st.error(f"Error loading Pandabot interface: {str(e)}", icon=":material/error:")
