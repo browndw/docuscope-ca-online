@@ -111,8 +111,7 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
 
     if st.sidebar.button(
         label="Create New Collocations Table",
-        icon=":material/refresh:",
-        help="Reset the analysis and configure new collocation parameters."
+        icon=":material/refresh:"
     ):
         # Clear existing data using the new system
         clear_corpus_data(user_session_id, CorpusKeys.TARGET, [TargetKeys.COLLOCATIONS])
@@ -141,7 +140,11 @@ def render_setup_interface(user_session_id: str, session: dict) -> None:
         metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
     # Configuration in expanders
-    with st.expander("Collocation Configuration", expanded=True):
+    with st.expander(
+        label="Collocation Configuration",
+        icon=":material/settings:",
+        expanded=True
+    ):
         node_word = render_node_word_config()
         to_left, to_right = render_span_config()
         stat_mode = render_association_measure_config()
@@ -159,7 +162,8 @@ def render_node_word_config() -> str:
     st.markdown("### Node word")
     st.markdown("Enter a node word without spaces.")
     return st.text_input(
-        "Node word:",
+        label="Node word:",
+        placeholder="Enter a single word (e.g., 'data')",
         key="collocation_node_word",
         help="The central word around which to find collocations."
     )
@@ -362,10 +366,9 @@ def render_generation_controls(
 
         # Check if node word is provided
         if not node_word or node_word.strip() == "":
-            st.error(
+            st.warning(
                 body=(
-                    "Please enter a **node word** in the configuration above. "
-                    "The node word is the central word around which to find collocations."
+                    "Please enter a **node word**."
                 ),
                 icon=":material/edit:"
             )
@@ -377,7 +380,7 @@ def render_generation_controls(
         )
 
     sidebar_action_button(
-        button_label="Collocations",
+        button_label="Collocations Table",
         button_icon=":material/manufacturing:",
         preconditions=[True],  # Always allow button click, handle validation in action
         action=collocations_action,
