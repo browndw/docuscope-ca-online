@@ -17,7 +17,7 @@ from webapp.utilities.core import app_core
 
 from webapp.utilities.session import (
     get_or_init_user_session, load_metadata,
-    update_session, safe_session_get
+    safe_session_get
     )
 from webapp.utilities.corpus import (
     get_corpus_data_manager, clear_corpus_data
@@ -233,8 +233,7 @@ def render_sidebar_controls(
 
     if st.sidebar.button(
         label="Compare New Categories",
-        icon=":material/refresh:",
-        help="Reset the analysis and select new categories to compare."
+        icon=":material/refresh:"
     ):
         # Clear only corpus parts comparison data using the corpus data manager
         clear_corpus_data(user_session_id, CorpusKeys.TARGET, [
@@ -407,13 +406,12 @@ def render_generation_controls(
 
         # Check category selection
         if not tar_selected:
-            st.error(
+            st.warning(
                 body=(
                     "Please select at least one **target category** from the "
-                    "category selection interface above. Target categories "
-                    "represent the group you want to analyze."
+                    "category selection interface above."
                 ),
-                icon=":material/category:"
+                icon=":material/warning:"
             )
             return
 
