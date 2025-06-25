@@ -124,10 +124,12 @@ def handle_tagged_files_download(
         st.error("Core corpus data not available for tagged files download.")
         return
 
-    download_file = convert_to_zip(tok_pl, tagset)
+    with st.sidebar.status("Preparing files..."):
+        download_file = convert_to_zip(tok_pl, tagset)
 
     st.sidebar.download_button(
         label="Download to Zip",
+        icon=":material/download:",
         data=download_file,
         file_name="tagged_files.zip",
         mime="application/zip",
