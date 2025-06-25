@@ -18,7 +18,7 @@ from webapp.utilities.core import app_core
 
 from webapp.utilities.session import (
     get_or_init_user_session, load_metadata,
-    update_session, safe_session_get
+    safe_session_get
     )
 from webapp.utilities.corpus import (
     get_corpus_data_manager, clear_corpus_data
@@ -208,7 +208,11 @@ def render_keyness_reset_controls(user_session_id: str) -> None:
         ])
 
         # Reset keyness_table state using session key
-        app_core.session_manager.update_session_state(user_session_id, SessionKeys.KEYNESS_TABLE, False)
+        app_core.session_manager.update_session_state(
+            user_session_id,
+            SessionKeys.KEYNESS_TABLE,
+            False
+            )
         # Clear warnings using session key
         st.session_state[user_session_id][WarningKeys.KEYNESS] = None
         st.rerun()
