@@ -130,6 +130,8 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
             st.session_state[user_session_id][WarningKeys.NGRAM] = None
             st.rerun()
 
+        st.sidebar.markdown("---")
+
     except Exception as e:
         st.error(f"Error loading n-grams table: {str(e)}", icon=":material/error:")
         st.info("Try regenerating the n-grams table if this error persists.")
@@ -183,7 +185,11 @@ def render_ngrams_config(
         user_session_id: str, session: dict
 ) -> None:
     """Render N-grams configuration using expander layout."""
-    with st.expander("N-grams Configuration", expanded=True):
+    with st.expander(
+        "N-grams Configuration",
+        icon=":material/settings:",
+        expanded=True
+    ):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -237,6 +243,8 @@ def render_ngrams_config(
         spinner_message="Processing n-grams..."
     )
 
+    st.sidebar.markdown("---")
+
     # Display warning if there is an issue
     if st.session_state[user_session_id].get(WarningKeys.NGRAM):
         msg, icon = st.session_state[user_session_id][WarningKeys.NGRAM]
@@ -261,8 +269,12 @@ def render_clusters_config(
     if has_target_corpus(session):
         metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
-    with st.expander("Clusters Configuration", expanded=True):
-        col1, col2 = st.columns(2)
+    with st.expander(
+        label="Clusters Configuration",
+        icon=":material/settings:",
+        expanded=True
+    ):
+        col1, col2 = st.columns(2, gap="large")
 
         with col1:
             st.markdown("#### Search Mode")
@@ -279,7 +291,17 @@ def render_clusters_config(
                 )
 
             if from_anchor == 'Token':
-                node_word = st.text_input("Node word:")
+                node_word = st.text_input(
+                    label="Node word:",
+                    placeholder="Enter a word or part of a word...",
+                    help=(
+                        "Enter a word to search for in the corpus. "
+                        "This word will be used as the anchor for clustering. "
+                        "You can use different search modes to match a word "
+                        "or part of a word. "
+                        "Don't include any special characters or spaces."
+                    )
+                )
                 search_mode = st.radio(
                     "Select search type:",
                     list(SEARCH_MODE_CONFIG.keys()),
@@ -352,32 +374,21 @@ def render_clusters_config(
     # Create a custom action that handles validation and shows appropriate errors
     def clusters_action():
         if not corpus_loaded:
-            st.error(
+            st.warning(
                 body=(
-                    "It doesn't look like you've loaded the necessary data yet. "
-                    "Most apps require a target corpus to be loaded "
-                    "before you can run them. "
-                    "But other apps may require a reference corpus "
-                    "or the processing of metadata. "
-                    "You can review and update your corpus data "
-                    "by navigating to **Manage Corpus Data**:"
+                    "Please load a target corpus before generating clusters."
                 ),
                 icon=":material/sentiment_stressed:"
-            )
-            st.page_link(
-                page="pages/1_load_corpus.py",
-                label="Manage Corpus Data",
-                icon=":material/database:",
             )
             return
         elif not is_valid_config:
             if from_anchor == 'Token':
-                st.error(
+                st.warning(
                     "Please enter a node word to search for.",
                     icon=":material/edit:"
                 )
             elif from_anchor == 'Tag':
-                st.error(
+                st.warning(
                     "Please select a valid tag from the dropdown.",
                     icon=":material/edit:"
                 )
@@ -396,6 +407,8 @@ def render_clusters_config(
         action=clusters_action,
         spinner_message="Processing clusters..."
     )
+
+    st.sidebar.markdown("---")
 
     # Display warning if there is an issue
     if st.session_state[user_session_id].get(WarningKeys.NGRAM):
