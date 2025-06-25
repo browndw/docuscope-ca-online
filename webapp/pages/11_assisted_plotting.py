@@ -404,7 +404,7 @@ def main():
             user_session_id=user_session_id,
             session=session,
             table_type="tags table",
-            button_label="Tags Table",
+            button_label="Load Tables",
             generation_func=generate_tags_table,
             session_key=SessionKeys.TAGS_TABLE,
             warning_key=WarningKeys.TAGS
