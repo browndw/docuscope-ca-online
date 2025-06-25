@@ -95,24 +95,12 @@ def sidebar_action_button(
     container = st.sidebar if sidebar else st
     if container.button(button_label, icon=button_icon, type="secondary"):
         if not all(preconditions):
-            st.error(
+            st.warning(
                     body=(
-                        "It doesn't look like you've loaded the necessary data yet. "
-                        "Most apps require a target corpus to be loaded "
-                        "before you can run them. "
-                        "But other apps may require a reference corpus "
-                        "or the processing of metadata.  "
-                        "You can review and update your corpus data "
-                        " by navigating to **Manage Corpus Data**:"
+                        "It doesn't look like you've loaded the necessary data yet."
                         ),
                     icon=":material/sentiment_stressed:"
                 )
-            # Add a direct page link for user convenience
-            st.page_link(
-                page="pages/1_load_corpus.py",
-                label="Manage Corpus Data",
-                icon=":material/database:",
-            )
             return
         with container:
             with st.spinner(spinner_message):
@@ -177,10 +165,6 @@ def render_table_generation_interface(
     if st.sidebar.button(
         label=button_label,
         icon=":material/manufacturing:",
-        help=(
-            f"Generate {table_type} from the loaded corpus. "
-            "Click on the **Help** button for more information on how to use this app."
-        ),
         type="secondary",
         use_container_width=False
     ):
