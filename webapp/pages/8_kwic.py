@@ -67,7 +67,7 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
 
     # Reset table option in sidebar
     st.sidebar.markdown("---")
-    st.sidebar.info(
+    st.sidebar.markdown(
         body=(
             "### Generate new table\n\n"
             "Use the button to reset the KWIC table and start over."
@@ -76,8 +76,7 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
 
     if st.sidebar.button(
         label="Create New KWIC Table",
-        icon=":material/refresh:",
-        help="Reset the analysis and configure new KWIC parameters."
+        icon=":material/refresh:"
     ):
         # Clear existing data
         target_dict = st.session_state[user_session_id][CorpusKeys.TARGET]
@@ -107,14 +106,20 @@ def render_setup_interface(user_session_id: str, session: dict) -> None:
     )
 
     # Configuration in main area expander
-    with st.expander("🔧 **KWIC Configuration**", expanded=True):
-        col1, col2 = st.columns([1, 1])
+    with st.expander(
+        label="KWIC Configuration",
+        icon=":material/settings:",
+        expanded=True
+    ):
+
+        col1, col2 = st.columns(2, gap="large")
 
         with col1:
             st.markdown("### Node word")
             st.markdown("Enter a node word without spaces.")
             node_word = st.text_input(
                 "Node word",
+                placeholder="Enter a word or part of a word...",
                 help="The word to search for in the KWIC table."
             )
 
@@ -171,10 +176,9 @@ def render_generation_controls(
 
         # Check if node word is provided
         if not node_word or node_word.strip() == "":
-            st.error(
+            st.warning(
                 body=(
-                    "Please enter a **node word** in the configuration above. "
-                    "The node word is the central word to search for."
+                    "Please enter a **node word**."
                 ),
                 icon=":material/edit:"
             )
@@ -183,13 +187,25 @@ def render_generation_controls(
         # If all validation passes, generate the KWIC table
         generate_kwic(user_session_id, node_word, search_type, ignore_case)
 
+    st.sidebar.markdown(
+        body=(
+            "### Generate KWIC\n\n"
+            "Use the button to process key words in context."
+        ),
+        help=(
+            "KWIC (Key Word in Context) tables display occurrences of a "
+            "node word along with its surrounding context in the target corpus."
+        )
+    )
     sidebar_action_button(
-        button_label="KWIC",
+        button_label="KWIC Table",
         button_icon=":material/manufacturing:",
         preconditions=[True],  # Always allow button click, handle validation in action
         action=kwic_action,
         spinner_message="Processing KWIC..."
     )
+
+    st.sidebar.markdown("---")
 
     # Display warnings if any
     if st.session_state[user_session_id].get(WarningKeys.KWIC):
