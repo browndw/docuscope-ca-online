@@ -5,6 +5,17 @@ desktop_mode = true
 max_bytes_text = 20000000
 max_bytes_polars = 150000000
 
+# Model paths
+model_large_path = "webapp/_models/en_docusco_spacy"
+model_small_path = "webapp/_models/en_docusco_spacy_cd"
+
+# Language detection
+enable_language_detection = false
+
+# Size limits (for backward compatibility)
+max_text_size = 20000000
+max_polars_size = 150000000
+
 [llm]
 llm_parameters = { temperature = 0.7, top_p = 0.7, max_tokens = 500, frequency_penalty = 0, presence_penalty = 0 }
 llm_model = "gpt-4o-mini"
