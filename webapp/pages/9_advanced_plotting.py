@@ -137,13 +137,16 @@ def render_boxplot_interface(
             st.warning(
                 """
                 It doesn't look like you've processed any metadata yet.
-                You can do this by clicking on the **Manage Corpus Data**
-                button above.
+                You can do this from **Manage Corpus Data**.
                 """,
-                icon=":material/new_label:"
+                icon=":material/warning:"
             )
         else:
-            with st.expander("Boxplot Variables", expanded=True):
+            with st.expander(
+                label="Boxplot Variables",
+                icon=":material/settings:",
+                expanded=True
+            ):
                 st.markdown(
                     body="### Grouping variables",
                     help=(
@@ -195,7 +198,7 @@ def render_boxplot_interface(
                 )
 
             st.sidebar.markdown(
-                body="### Boxplots of Frequencies by Group",
+                body="### Boxplots of frequencies by group",
                 help=(
                     "Click the button to generate boxplots of tag frequencies "
                     "for the selected variables and groups."
@@ -203,6 +206,11 @@ def render_boxplot_interface(
                     "and one category from group A and one from group B."
                 )
             )
+
+            st.sidebar.markdown(
+                body="Use the button to generate  grouped boxplots "
+                "for the selected variables.",
+                )
 
             boxplot_group_btn = plot_action_button(
                 label="Generate Boxplots",
@@ -265,7 +273,11 @@ def render_boxplot_interface(
 
     # Handle plotting without grouping variables
     else:
-        with st.expander("Boxplot Variables", expanded=True):
+        with st.expander(
+            label="Boxplot Variables",
+            icon=":material/settings:",
+            expanded=True
+        ):
             st.markdown("### Variables")
             box_val2 = st.segmented_control(
                 "Select variables for plotting:",
@@ -277,11 +289,14 @@ def render_boxplot_interface(
 
         # Sidebar action button
         st.sidebar.markdown(
-            body="### Boxplots of Frequencies",
+            body="### Boxplots of frequencies",
             help=(
                 "Click the button to generate boxplots of tag frequencies "
                 "for the selected variables."
                 )
+            )
+        st.sidebar.markdown(
+            body="Use the button to generate boxplots for the selected variables. ",
             )
         boxplot_btn = plot_action_button(
             label="Generate Boxplots",
@@ -401,12 +416,16 @@ def render_scatterplot_interface(
             st.warning(
                 """
                 It doesn't look like you've processed any metadata yet.
-                You can do this by clicking on the **Manage Corpus Data** button above.
+                You can do this from **Manage Corpus Data**.
                 """,
-                icon=":material/new_label:"
+                icon=":material/warning:"
             )
         else:
-            with st.expander("Scatterplot Variables", expanded=True):
+            with st.expander(
+                label="Scatterplot Variables",
+                icon=":material/settings:",
+                expanded=True
+            ):
 
                 st.markdown("### Highlight Groups")
                 doccats_list = metadata_target.get(MetadataKeys.DOCCATS, [{}])
@@ -438,13 +457,19 @@ def render_scatterplot_interface(
 
                 # Sidebar action button
                 st.sidebar.markdown(
-                    body="### Scatterplot of Frequencies by Group",
+                    body="### Scatterplot of frequencies by group",
                     help=(
                         "Click the button to generate scatterplots of tag frequencies "
                         "for the selected variables and groups."
                         "Be sure to select at least one variable and one group."
                     )
                 )
+
+                st.sidebar.markdown(
+                    body="Use the button to generate grouped scatterplots "
+                    "for the selected variables.",
+                    )
+
                 scatterplot_group_btn = plot_action_button(
                     label="Generate Scatterplot",
                     key=f"scatterplot_group_btn_{user_session_id}",
@@ -528,7 +553,11 @@ def render_scatterplot_interface(
                 )
 
     else:
-        with st.expander("Scatterplot Variables", expanded=True):
+        with st.expander(
+            label="Scatterplot Variables",
+            icon=":material/settings:",
+            expanded=True
+        ):
             st.markdown("### Variables")
             xaxis2 = st.segmented_control(
                 "Select variable for the x-axis:",
@@ -549,11 +578,15 @@ def render_scatterplot_interface(
 
             # Sidebar action button
             st.sidebar.markdown(
-                body="### Scatterplot of Frequencies",
+                body="### Scatterplot of frequencies",
                 help=(
                     "Click the button to generate scatterplots of tag frequencies "
                     "for the selected variables."
                     )
+                )
+
+            st.sidebar.markdown(
+                body="Use the button to generate scatterplots for the selected variables.",
                 )
 
             scatterplot_btn = plot_action_button(
@@ -671,6 +704,13 @@ def render_pca_interface(
             "Click the button to generate a PCA plot of scaled tag frequencies. "
             "Once generated, you can select principal components "
             "to visualize the PCA results and variable contributions."
+        )
+    )
+
+    st.sidebar.markdown(
+        body=(
+            "Use the button to generate scatterplots of principal components "
+            "for the selected tagset."
         )
     )
     pca_btn = plot_action_button(
@@ -924,6 +964,14 @@ def main() -> None:
     elif plot_type == "PCA" and safe_session_get(session, SessionKeys.HAS_TARGET, None) is True:  # noqa: E501
 
         render_pca_interface(user_session_id, session, metadata_target)
+
+    elif not safe_session_get(session, SessionKeys.HAS_TARGET, False):
+        st.sidebar.warning(
+            body=(
+                "Please load a target corpus first."
+            ),
+            icon=":material/warning:"
+        )
 
 
 if __name__ == "__main__":
