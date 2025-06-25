@@ -223,7 +223,7 @@ def check_reference_corpus_availability(session: dict) -> bool:
         st.error(
             """
             It doesn't look like you've loaded a reference corpus yet.
-            You can do this by clicking on the **Manage Corpus Data** button above.
+            You can do this from **Manage Corpus Data**.
             """,
             icon=":material/sentiment_stressed:"
         )
