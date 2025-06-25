@@ -3,308 +3,186 @@ Widget state management utilities.
 
 This module provides functions for managing Streamlit widget states,
 form controls, and UI element state persistence.
+
+Note: For new code, consider using the widget_key_manager module which provides
+centralized, session-scoped widget management with better safety guarantees.
 """
-import inspect
-import pathlib
 import streamlit as st
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 def get_widget_state(key: str, default: Any = None) -> Any:
     """
-    Get widget state from session state with fallback to default.
-
+    Get a widget state value with default fallback.
+    
     Parameters
     ----------
     key : str
-        The session state key to retrieve.
-    default : Any, optional
-        Default value to return if key doesn't exist.
-
+        The widget state key
+    default : Any
+        Default value if key doesn't exist
+        
     Returns
     -------
     Any
-        The widget state value or default.
+        The widget state value or default
     """
     return st.session_state.get(key, default)
 
 
 def set_widget_state(key: str, value: Any) -> None:
     """
-    Set widget state in session state.
-
+    Set a widget state value.
+    
     Parameters
     ----------
     key : str
-        The session state key to set.
+        The widget state key
     value : Any
-        The value to store.
+        The value to set
     """
     st.session_state[key] = value
 
 
 def clear_widget_state(key: str) -> None:
     """
-    Clear specific widget state from session state.
-
+    Clear a specific widget state.
+    
     Parameters
     ----------
     key : str
-        The session state key to clear.
+        The widget state key to clear
     """
     if key in st.session_state:
         del st.session_state[key]
 
 
-def reset_form_state(form_keys: list) -> None:
+def reset_form_state(keys: list) -> None:
     """
-    Reset multiple form widget states.
-
+    Reset multiple widget states to None.
+    
     Parameters
     ----------
-    form_keys : list
-        List of session state keys to reset.
+    keys : list
+        List of widget state keys to reset
     """
-    for key in form_keys:
-        clear_widget_state(key)
+    for key in keys:
+        if key in st.session_state:
+            st.session_state[key] = None
 
 
-def preserve_widget_state(widget_map: Dict[str, Any]) -> None:
+def preserve_widget_state(
+    keys: list,
+    session_id: str,
+    namespace: str = "preserved"
+) -> None:
     """
-    Preserve multiple widget states in session state.
-
+    Preserve widget states in session storage for later restoration.
+    
     Parameters
     ----------
-    widget_map : Dict[str, Any]
-        Dictionary mapping widget keys to their values.
+    keys : list
+        List of widget state keys to preserve
+    session_id : str
+        Session ID for storage
+    namespace : str
+        Namespace for preservation
     """
-    for key, value in widget_map.items():
-        set_widget_state(key, value)
+    if session_id not in st.session_state:
+        st.session_state[session_id] = {}
+    
+    preservation_key = f"{namespace}_preserved_state"
+    if preservation_key not in st.session_state[session_id]:
+        st.session_state[session_id][preservation_key] = {}
+    
+    for key in keys:
+        if key in st.session_state:
+            st.session_state[session_id][preservation_key][key] = st.session_state[key]
 
 
 def get_form_state(keys: list) -> Dict[str, Any]:
     """
-    Get the current state of multiple form widgets.
+    Get current form state for specified keys.
+    
+    Parameters
+    ----------
+    keys : list
+        List of widget state keys to retrieve
+        
+    Returns
+    -------
+    Dict[str, Any]
+        Dictionary of current form state
+    """
+    return {key: st.session_state.get(key) for key in keys}
+
+
+def validate_required_fields(required_fields: list) -> tuple:
+    """
+    Validate that required form fields are filled.
+    
+    Parameters
+    ----------
+    required_fields : list
+        List of required widget state keys
+        
+    Returns
+    -------
+    tuple
+        (is_valid: bool, missing_fields: list)
+    """
+    missing_fields = []
+    for field in required_fields:
+        value = st.session_state.get(field)
+        if value is None or value == "" or value == []:
+            missing_fields.append(field)
+    
+    return len(missing_fields) == 0, missing_fields
+
+
+def safe_clear_widget_state(keys: list) -> None:
+    """
+    Safely clear widget states without raising errors.
+    
+    Parameters
+    ----------
+    keys : list
+        List of widget state keys to clear
+    """
+    for key in keys:
+        try:
+            if key in st.session_state:
+                del st.session_state[key]
+        except Exception:
+            # Silently continue if there's an issue clearing a specific key
+            continue
+
+
+def safe_clear_widget_states(keys: list) -> Dict[str, bool]:
+    """
+    Safely clear multiple widget states without raising KeyErrors.
 
     Parameters
     ----------
     keys : list
-        List of session state keys to retrieve.
+        List of session state keys to clear.
 
     Returns
     -------
-    Dict[str, Any]
-        Dictionary of key-value pairs for current widget states.
+    Dict[str, bool]
+        Dictionary mapping keys to whether they were successfully deleted.
     """
-    return {key: get_widget_state(key) for key in keys}
-
-
-def validate_required_fields(required_fields: Dict[str, str]) -> Optional[str]:
-    """
-    Validate that required form fields are filled.
-
-    Parameters
-    ----------
-    required_fields : Dict[str, str]
-        Dictionary mapping field keys to field names for display.
-
-    Returns
-    -------
-    Optional[str]
-        Error message if validation fails, None if all fields are valid.
-    """
-    missing_fields = []
-
-    for key, field_name in required_fields.items():
-        value = get_widget_state(key)
-
-        # Check if field is empty or None
-        if value is None or (isinstance(value, str) and not value.strip()):
-            missing_fields.append(field_name)
-        elif isinstance(value, list) and len(value) == 0:
-            missing_fields.append(field_name)
-
-    if missing_fields:
-        return f"Please fill in the following required fields: {', '.join(missing_fields)}"
-
-    return None
-
-
-def persist(
-        key: str,
-        session_id: str,
-        app_name: str = None
-        ) -> str:
-    """
-    Persist a widget state across sessions.
-    This function checks if the key exists in the session state,
-    and if not, initializes it with None.
-    If the key exists, it updates the session state with the current value.
-
-    Parameters
-    ----------
-    key : str
-        The key to persist in the session state.
-    session_id : str
-        The session ID for the current user session.
-    app_name : str, optional
-        The name of the application, used to create a unique session state key.
-        If not provided, will auto-detect from the calling file's name.
-
-    Returns
-    -------
-    str
-        The key that was persisted.
-    """
-    if app_name is None:
-        # Auto-detect app name from calling file
+    results = {}
+    for key in keys:
         try:
-            frame = inspect.currentframe().f_back
-            caller_file = None
-
-            # Walk up the call stack to find the first file that looks like a page
-            # This handles cases where persist is called from utility functions
-            while frame:
-                file_path = frame.f_globals.get('__file__')
-                if file_path:
-                    # Check if this looks like a page file (in pages/ directory or numbered)
-                    path_obj = pathlib.Path(file_path)
-                    filename = path_obj.stem
-
-                    # If it's in pages directory or starts with a number, it's likely a page
-                    if (
-                        'pages' in path_obj.parts or
-                        (filename and filename[0].isdigit()) or
-                        path_obj.parent.name == 'pages'
-                    ):
-                        caller_file = file_path
-                        break
-
-                frame = frame.f_back
-
-            # If we found a page file, use it; otherwise use the immediate caller
-            if caller_file:
-                app_name = pathlib.Path(caller_file).stem
+            if key in st.session_state:
+                del st.session_state[key]
+                results[key] = True
             else:
-                # Fallback to immediate caller
-                frame = inspect.currentframe().f_back
-                if frame and frame.f_globals.get('__file__'):
-                    app_name = pathlib.Path(frame.f_globals['__file__']).stem
-                else:
-                    app_name = "unknown_app"
-                    st.warning(
-                        "Could not auto-detect page name for widget persistence. "
-                        "Using fallback name. Some widget states may not persist correctly.",  # noqa: E501
-                        icon=":material/warning:"
-                    )
+                results[key] = False
         except Exception:
-            # Fallback to a generic app name if any error occurs
-            app_name = "unknown_app"
-            st.warning(
-                "Could not auto-detect page name for widget persistence. "
-                "Using fallback name. Some widget states may not persist correctly.",
-                icon=":material/warning:"
-            )
-
-    _PERSIST_STATE_KEY = f"{app_name}_PERSIST"
-    if _PERSIST_STATE_KEY not in st.session_state[session_id].keys():
-        st.session_state[session_id][_PERSIST_STATE_KEY] = {}
-        st.session_state[session_id][_PERSIST_STATE_KEY][key] = None
-
-    if key in st.session_state:
-        st.session_state[session_id][_PERSIST_STATE_KEY][key] = st.session_state[key]  # noqa: E501
-
-    return key
-
-
-def load_widget_state(
-        session_id: str,
-        app_name: str = None
-        ) -> None:
-    """
-    Load persistent widget state from the session state.
-    This function checks if the persistent state key exists in the session state,
-    and if it does, it loads the values into the current session state.
-    If the key does not exist, it initializes the persistent state with None.
-
-    Parameters
-    ----------
-    session_id : str
-        The session ID for the current user session.
-    app_name : str, optional
-        The name of the application, used to create a unique session state key.
-        If not provided, will auto-detect from the calling file's name.
-
-    Returns
-    -------
-    None
-    """
-    if app_name is None:
-        # Auto-detect app name from calling file
-        try:
-            frame = inspect.currentframe().f_back
-            caller_file = None
-
-            # Walk up the call stack to find the first file that looks like a page
-            # This handles cases where load_widget_state is called from utility functions
-            while frame:
-                file_path = frame.f_globals.get('__file__')
-                if file_path:
-                    # Check if this looks like a page file (in pages/ directory or numbered)
-                    path_obj = pathlib.Path(file_path)
-                    filename = path_obj.stem
-
-                    # If it's in pages directory or starts with a number, it's likely a page
-                    if (
-                        'pages' in path_obj.parts or
-                        (filename and filename[0].isdigit()) or
-                        path_obj.parent.name == 'pages'
-                    ):
-                        caller_file = file_path
-                        break
-
-                frame = frame.f_back
-
-            # If we found a page file, use it; otherwise use the immediate caller
-            if caller_file:
-                app_name = pathlib.Path(caller_file).stem
-            else:
-                # Fallback to immediate caller
-                frame = inspect.currentframe().f_back
-                if frame and frame.f_globals.get('__file__'):
-                    app_name = pathlib.Path(frame.f_globals['__file__']).stem
-                else:
-                    app_name = "unknown_app"
-                    st.warning(
-                        "Could not auto-detect page name for widget state. "
-                        "Using fallback name. Some widget states may not persist correctly.",  # noqa: E501
-                        icon=":material/warning:"
-                    )
-        except Exception:
-            # Fallback to a generic app name if any error occurs
-            app_name = "unknown_app"
-            st.warning(
-                "Could not auto-detect page name for widget state. "
-                "Using fallback name. Some widget states may not persist correctly.",
-                icon=":material/warning:"
-            )
-
-    _PERSIST_STATE_KEY = f"{app_name}_PERSIST"
-    """Load persistent widget state."""
-    try:
-        if _PERSIST_STATE_KEY in st.session_state[session_id]:
-            for key in st.session_state[session_id][_PERSIST_STATE_KEY]:
-                if st.session_state[session_id][_PERSIST_STATE_KEY][key] is not None:  # noqa: E501
-                    if key not in st.session_state:
-                        st.session_state[key] = st.session_state[session_id][_PERSIST_STATE_KEY][key]  # noqa: E501
-    except KeyError:
-        # Session state structure might be corrupted or missing
-        # Silently skip loading to avoid crashing the app
-        pass
-    except Exception:
-        # Any other unexpected error
-        # Silently skip to avoid disrupting the user experience
-        pass
+            results[key] = False
+    return results
 
 
 class WidgetStateManager:
@@ -312,25 +190,20 @@ class WidgetStateManager:
     Context manager for widget state management.
 
     Provides a clean interface for managing widget states within
-    a specific context or form.
+    a specific namespace and handles cleanup automatically.
     """
 
-    def __init__(self, namespace: str = ""):
-        """
-        Initialize the widget state manager.
-
-        Parameters
-        ----------
-        namespace : str, optional
-            Namespace prefix for widget keys to avoid conflicts.
-        """
-        self.namespace = f"{namespace}_" if namespace else ""
-        self._original_states = {}
+    def __init__(self, namespace: str = "default"):
+        """Initialize widget state manager with namespace."""
+        self.namespace = f"{namespace}_"
+        self.managed_keys = set()
 
     def __enter__(self):
+        """Enter context manager."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager."""
         # Optionally restore original states on exit
         pass
 

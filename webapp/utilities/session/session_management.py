@@ -5,11 +5,7 @@ This module provides functions for initializing, updating, and managing
 session state across the application.
 """
 
-import polars as pl
 import streamlit as st
-
-from webapp.utilities.data import get_doc_cats
-from webapp.utilities.state import SessionKeys
 
 
 def init_ai_assist(
@@ -37,54 +33,10 @@ def init_ai_assist(
         st.session_state[session_id]["plot_intent"] = False
 
 
-def update_session(
-        key: str,
-        value: any,
-        session_id: str
-        ) -> None:
-    """
-    Update a specific key-value pair in the session state
-    for a given session ID.
-
-    Parameters
-    ----------
-    key : str
-        The key in the session state to update.
-    value : any
-        The value to assign to the specified key.
-    session_id : str
-        The session ID for which the session state is to be updated.
-
-    Returns
-    -------
-    None
-    """
-    session = st.session_state[session_id]["session"]
-    session = session.to_dict(as_series=False)
-    session[key] = value
-    df = pl.from_dict(session)
-    st.session_state[session_id]["session"] = df
+# update_session function moved to session_core.py to eliminate duplication
 
 
-def get_corpus_categories(doc_ids: list, user_session_id: str) -> tuple[list, int]:
-    """Get document categories with user-scoped caching."""
-    cache_key = f"corpus_categories_{user_session_id}"
-
-    # Check if already cached in user's session
-    if cache_key in st.session_state.get(user_session_id, {}):
-        return st.session_state[user_session_id][cache_key]
-
-    # Calculate and cache in user session
-    doc_cats = get_doc_cats(doc_ids)
-    unique_count = len(set(doc_cats)) if doc_cats else 0
-    result = (doc_cats, unique_count)
-
-    # Store in user's session state
-    if user_session_id not in st.session_state:
-        st.session_state[user_session_id] = {}
-    st.session_state[user_session_id][cache_key] = result
-
-    return result
+# get_corpus_categories function moved to session_core.py to eliminate duplication
 
 
 def validate_session_state(user_session_id: str) -> bool:
@@ -120,6 +72,80 @@ def validate_session_state(user_session_id: str) -> bool:
         return False
 
 
+def validate_session_structure(user_session_id: str, required_keys: list) -> bool:
+    """
+    Lightweight validation for session state structure.
+
+    Parameters
+    ----------
+    user_session_id : str
+        The session ID to validate
+    required_keys : list
+        List of keys that must exist in the session
+
+    Returns
+    -------
+    bool
+        True if session structure is valid, False otherwise
+    """
+    try:
+        if user_session_id not in st.session_state:
+            return False
+
+        session_data = st.session_state[user_session_id]
+        return all(key in session_data for key in required_keys)
+    except Exception:
+        return False
+
+
+def ensure_session_key(user_session_id: str, key: str, default_value=None) -> None:
+    """
+    Ensure a session key exists with a default value.
+
+    Parameters
+    ----------
+    user_session_id : str
+        The session ID
+    key : str
+        The key to ensure exists
+    default_value : any, optional
+        Default value if key doesn't exist
+    """
+    try:
+        if user_session_id not in st.session_state:
+            st.session_state[user_session_id] = {}
+
+        if key not in st.session_state[user_session_id]:
+            st.session_state[user_session_id][key] = default_value
+    except Exception:
+        # Silently handle errors to avoid disrupting the application
+        pass
+
+
+def get_session_value(user_session_id: str, key: str, default=None):
+    """
+    Safely get a value from session state.
+
+    Parameters
+    ----------
+    user_session_id : str
+        The session ID
+    key : str
+        The key to retrieve
+    default : any, optional
+        Default value if key doesn't exist
+
+    Returns
+    -------
+    any
+        The session value or default
+    """
+    try:
+        return st.session_state.get(user_session_id, {}).get(key, default)
+    except Exception:
+        return default
+
+
 def generate_temp(states: dict, session_id: str) -> None:
     """
     Initialize session states with the given states for a specific session ID.
@@ -143,43 +169,7 @@ def generate_temp(states: dict, session_id: str) -> None:
             st.session_state[session_id][key] = value
 
 
-def init_session(session_id: str) -> None:
-    """
-    Initialize a new session with default values for a specific session ID.
-
-    Parameters
-    ----------
-    session_id : str
-        The session ID for which the session is to be initialized.
-
-    Returns
-    -------
-    None
-    """
-    # Create session dictionary with scalar values (matching legacy exactly)
-    session = {
-        SessionKeys.HAS_TARGET: False,
-        SessionKeys.TARGET_DB: '',
-        SessionKeys.HAS_META: False,
-        SessionKeys.HAS_REFERENCE: False,
-        SessionKeys.REFERENCE_DB: '',
-        SessionKeys.FREQ_TABLE: False,
-        SessionKeys.TAGS_TABLE: False,
-        SessionKeys.KEYNESS_TABLE: False,
-        SessionKeys.NGRAMS: False,
-        SessionKeys.KWIC: False,
-        SessionKeys.KEYNESS_PARTS: False,
-        SessionKeys.DTM: False,
-        SessionKeys.PCA: False,
-        SessionKeys.COLLOCATIONS: False,
-        SessionKeys.DOC: False,
-    }
-    df = pl.from_dict(session)
-
-    if session_id not in st.session_state:
-        st.session_state[session_id] = {}
-
-    st.session_state[session_id]["session"] = df
+# init_session function moved to session_core.py to eliminate duplication
 
 
 def get_or_init_user_session() -> tuple[str, dict]:
@@ -198,13 +188,21 @@ def get_or_init_user_session() -> tuple[str, dict]:
         st.session_state[user_session_id] = {}
 
     try:
-        session = pl.DataFrame.to_dict(
-            st.session_state[user_session_id]["session"], as_series=False
-        )
+        session_raw = st.session_state[user_session_id]["session"]
+        # Handle both DataFrame and dict cases (unified session management)
+        if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
+            # It's a Polars DataFrame (has both to_dict and columns attributes)
+            session = session_raw.to_dict(as_series=False)
+        else:
+            # It's already a dictionary or other object
+            session = session_raw if isinstance(session_raw, dict) else {}
     except KeyError:
+        from webapp.utilities.session.session_core import init_session
         init_session(user_session_id)
-        session = pl.DataFrame.to_dict(
-            st.session_state[user_session_id]["session"], as_series=False
-        )
+        session_raw = st.session_state[user_session_id]["session"]
+        if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
+            session = session_raw.to_dict(as_series=False)
+        else:
+            session = session_raw if isinstance(session_raw, dict) else {}
 
     return user_session_id, session

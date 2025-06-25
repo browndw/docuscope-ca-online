@@ -14,8 +14,12 @@ from webapp.utilities.state.widget_state import (
     get_form_state,
     validate_required_fields,
     WidgetStateManager,
-    persist,
-    load_widget_state
+    safe_clear_widget_state,
+    safe_clear_widget_states
+)
+
+from webapp.utilities.state.widget_key_manager import (
+    widget_key_manager,
 )
 
 from webapp.utilities.state.session_keys import (
@@ -41,8 +45,10 @@ __all__ = [
     'get_form_state',
     'validate_required_fields',
     'WidgetStateManager',
-    'persist',
-    'load_widget_state',
+    'safe_clear_widget_state',
+    'safe_clear_widget_states',
+    # Widget key manager
+    'widget_key_manager',
     # Session state keys
     'SessionKeys',
     'MetadataKeys',

@@ -7,7 +7,7 @@ used in the download pages.
 
 import streamlit as st
 from webapp.utilities.exports import convert_corpus_to_zip, convert_to_zip
-from webapp.utilities.state import CorpusKeys, TargetKeys, ReferenceKeys
+from webapp.utilities.state import CorpusKeys
 from webapp.utilities.ui.download_interface import render_download_button
 
 
@@ -25,12 +25,22 @@ def handle_corpus_file_download(
     corpus_type : str
         Either "Target" or "Reference"
     """
-    if corpus_type == "Target":
-        corpus_session = st.session_state[user_session_id][CorpusKeys.TARGET]
-        tokens_df = corpus_session[TargetKeys.DS_TOKENS]
-    else:
-        corpus_session = st.session_state[user_session_id][CorpusKeys.REFERENCE]
-        tokens_df = corpus_session[ReferenceKeys.DS_TOKENS]
+    from webapp.utilities.corpus import get_corpus_data_manager
+
+    # Use the new data manager system
+    corpus_key = CorpusKeys.TARGET if corpus_type == "Target" else CorpusKeys.REFERENCE
+    manager = get_corpus_data_manager(user_session_id, corpus_key)
+
+    if not manager.is_ready():
+        st.error(f"No {corpus_type.lower()} corpus data available for download.")
+        return
+
+    # Get the core tokens data
+    tokens_df = manager.get_core_data()
+
+    if tokens_df is None:
+        st.error(f"Core corpus data not available for {corpus_type.lower()} corpus.")
+        return
 
     download_file = tokens_df.to_pandas().to_parquet()
 
@@ -98,8 +108,21 @@ def handle_tagged_files_download(
     tagset : str
         Either "pos" or "ds"
     """
-    target_session = st.session_state[user_session_id][CorpusKeys.TARGET]
-    tok_pl = target_session[TargetKeys.DS_TOKENS]
+    from webapp.utilities.corpus import get_corpus_data_manager
+
+    # Use the new data manager system
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+
+    if not manager.is_ready():
+        st.error("No target corpus data available for download.")
+        return
+
+    # Get the core tokens data
+    tok_pl = manager.get_core_data()
+
+    if tok_pl is None:
+        st.error("Core corpus data not available for tagged files download.")
+        return
 
     download_file = convert_to_zip(tok_pl, tagset)
 

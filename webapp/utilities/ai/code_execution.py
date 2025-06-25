@@ -51,7 +51,7 @@ def is_code_safe(plot_code: str) -> bool:
     """
     for pattern in FORBIDDEN_PATTERNS:
         if re.search(pattern, plot_code, re.MULTILINE):
-            logger.error(f"Unsafe pattern matched: {pattern} in code: {plot_code}")
+            logger(f"Unsafe pattern matched: {pattern} in code: {plot_code}")
             return False
     return True
 
@@ -99,7 +99,6 @@ def plotbot_code_execute(
         Result dictionary with 'type' and 'value' keys.
     """
     if not isinstance(plot_code, str) or not plot_code.strip():
-        logger.error("plot_code is not a valid string.")
         return {
             "type": "error",
             "value": ("Sorry, I couldn't generate your plot. "
@@ -109,7 +108,6 @@ def plotbot_code_execute(
     # Strip import statements before safety check
     plot_code = strip_imports(plot_code)
     if not is_code_safe(plot_code):
-        logger.error("Unsafe code detected in plot instructions.")
         return {
             "type": "error",
             "value": "Sorry, your request included unsafe code and could not be executed."
@@ -144,21 +142,18 @@ def plotbot_code_execute(
                 "value": fig
             }
         else:
-            logger.error("No figure object ('fig') was created by the code.")
             return {
                 "type": "error",
                 "value": "Sorry, no plot was generated. Please try a different request."
             }
 
-    except SyntaxError as e:
-        logger.error(f"Syntax error in plot code: {e}")
+    except SyntaxError:
         return {
             "type": "error",
             "value": ("Sorry, there was a problem with the plot code. "
                       "Please try a different request.")
         }
-    except Exception as e:
-        logger.error(f"Error in executing plot code: {e}")
+    except Exception:
         return {
             "type": "error",
             "value": "Sorry, something went wrong while generating your plot."

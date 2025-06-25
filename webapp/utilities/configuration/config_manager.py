@@ -189,11 +189,7 @@ class ConfigurationManager:
                 "Using default configuration."
             )
             config = self._get_default_config()
-        except Exception as e:
-            logger.error(
-                f"Unexpected error loading configuration: {e}. "
-                "Using default configuration."
-            )
+        except Exception:
             config = self._get_default_config()
 
         # Apply runtime sanity checks

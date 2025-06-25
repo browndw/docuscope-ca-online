@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import streamlit as st
 
-from webapp.utilities.configuration import config_manager
+from webapp.utilities.core import safe_config_value
 from webapp.utilities.storage.cache_management import get_query_count
 
 # Import centralized logging configuration and logger
@@ -77,7 +77,9 @@ def export_conversation_history(
         if bot_type == "plotbot":
             messages_key = SessionKeys.AI_PLOTBOT_CHAT
             # Also get plotbot-specific messages from the plotbot list
-            plotbot_messages = st.session_state[user_session_id].get("plotbot", [])
+            plotbot_messages = st.session_state[user_session_id].get(
+                SessionKeys.AI_PLOTBOT_CHAT, []
+            )
         elif bot_type == "pandabot":
             messages_key = SessionKeys.AI_PANDABOT_CHAT
             plotbot_messages = []
@@ -173,7 +175,6 @@ def export_conversation_history(
         return json.dumps(workflow_data, indent=2, ensure_ascii=False)
 
     except Exception as e:
-        logger.error(f"Error exporting workflow history: {e}")
         return json.dumps({
             "error": f"Failed to export workflow: {str(e)}",
             "export_date": datetime.now().isoformat(),
@@ -198,9 +199,14 @@ def get_current_plot_as_png(user_session_id: str, bot_type: str = "plotbot") -> 
         PNG bytes of current plot or empty bytes if none
     """
     try:
+        # Import here to avoid circular imports
+        from webapp.utilities.state import SessionKeys
+        
         if bot_type == "plotbot":
             # Get the current plot from plotbot session
-            plotbot_messages = st.session_state[user_session_id].get("plotbot", [])
+            plotbot_messages = st.session_state[user_session_id].get(
+                SessionKeys.AI_PLOTBOT_CHAT, []
+            )
             for msg in reversed(plotbot_messages):  # Get most recent plot
                 if msg.get("type") == "plot":
                     plot_obj = msg.get("value")
@@ -265,8 +271,7 @@ def get_current_plot_as_png(user_session_id: str, bot_type: str = "plotbot") -> 
 
         return b""
 
-    except Exception as e:
-        logger.error(f"Error getting current plot as PNG: {e}")
+    except Exception:
         return b""
 
 
@@ -310,8 +315,7 @@ def get_current_plot_as_svg(user_session_id: str, bot_type: str = "plotbot") -> 
 
         return ""
 
-    except Exception as e:
-        logger.error(f"Error getting current plot: {e}")
+    except Exception:
         return ""
 
 
@@ -496,7 +500,7 @@ def should_show_work_preservation_interface(
         return False
 
     # In desktop mode, don't show preservation interface
-    if config_manager.desktop_mode:
+    if safe_config_value('desktop', config_type='ai'):
         return False
 
     # Check if user has already acknowledged quota exhaustion
@@ -635,11 +639,9 @@ def fig_to_svg(
                 plt.close(figure)
                 return svg_string
             else:
-                logger.error(f"Unsupported figure type: {figure_type}")
                 return ""
 
-    except Exception as e:
-        logger.error(f"Error converting figure to SVG: {e}")
+    except Exception:
         # Try to close matplotlib figures if possible
         try:
             if hasattr(figure, 'savefig'):
@@ -754,8 +756,7 @@ def validate_api_key(api_key: str) -> bool:
         # Simple test call
         client.models.list()
         return True
-    except Exception as e:
-        logger.error(f"OpenAI API key validation failed: {e}")
+    except Exception:
         return False
 
 
@@ -778,10 +779,10 @@ def get_quota_info(user_id: str) -> dict:
         - 'percentage_used': Percentage of quota used (0-100)
     """
     try:
-        total_quota = config_manager.llm_quota
+        total_quota = safe_config_value('quota', config_type='ai')
 
         # Only check usage in online mode
-        if config_manager.desktop_mode:
+        if safe_config_value('desktop', config_type='ai'):
             # In desktop mode, no quota limits
             return {
                 'total': total_quota,
@@ -800,13 +801,13 @@ def get_quota_info(user_id: str) -> dict:
             'remaining': remaining_queries,
             'percentage_used': min(100, percentage_used)  # Cap at 100%
         }
-    except Exception as e:
-        logger.error(f"Error getting quota info: {e}")
+    except Exception:
         # Return safe defaults
+        quota = safe_config_value('quota', config_type='ai')
         return {
-            'total': config_manager.llm_quota,
+            'total': quota,
             'used': 0,
-            'remaining': config_manager.llm_quota,
+            'remaining': quota,
             'percentage_used': 0
         }
 
@@ -847,7 +848,7 @@ def render_quota_tracker(user_id: str) -> dict:
         quota_info = get_quota_info(user_id)
 
     # Only show quota tracker in online mode when secrets are available
-    if not config_manager.desktop_mode:
+    if not safe_config_value('desktop', config_type='ai'):
         try:
             import streamlit as st
             # Check if we have access to community key (secrets)
@@ -899,7 +900,7 @@ def render_quota_tracker(user_id: str) -> dict:
                         )
         except Exception as e:
             # If we can't access secrets or any other error, don't show quota tracker
-            logger.debug(f"Cannot render quota tracker: {e}")
+            logger(f"Cannot render quota tracker: {e}")
 
     return quota_info
 
@@ -921,7 +922,7 @@ def should_show_api_key_input(user_id: str, has_user_key: bool = False) -> bool:
         True if API key input should be shown
     """
     # In desktop mode, always require user to provide their own API key
-    if config_manager.desktop_mode:
+    if safe_config_value('desktop', config_type='ai'):
         return not has_user_key
 
     # In online mode, check if secrets are available for community key access

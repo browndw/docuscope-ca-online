@@ -8,9 +8,9 @@ analyses including n-grams, collocations, and keyword-in-context searches.
 import streamlit as st
 import docuscospacy as ds
 
+from webapp.utilities.core import app_core
 from webapp.utilities.state import CorpusKeys, TargetKeys, WarningKeys, SessionKeys
-from webapp.utilities.session.session_management import update_session
-from webapp.utilities.analysis.corpus_loading import update_metadata
+from webapp.utilities.corpus import get_corpus_data_manager
 
 
 def generate_ngrams(
@@ -46,7 +46,9 @@ def generate_ngrams(
         return
 
     # --- Main logic ---
-    tok_pl = st.session_state[user_session_id][CorpusKeys.TARGET].get(TargetKeys.DS_TOKENS)
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
+
     if tok_pl is None or getattr(tok_pl, "height", 0) == 0:
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             """
@@ -73,10 +75,10 @@ def generate_ngrams(
 
     # --- Success ---
     st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.NGRAMS] = ngram_df
-    update_session(
-        'ngrams',
-        True,
-        user_session_id
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.NGRAMS,
+        True
     )
     st.session_state[user_session_id][WarningKeys.NGRAM] = None
     st.rerun()
@@ -121,7 +123,16 @@ def generate_clusters(
             return
 
     # --- Main logic ---
-    tok_pl = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.DS_TOKENS]
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
+
+    if tok_pl is None:
+        st.session_state[user_session_id][WarningKeys.NGRAM] = (
+            "No corpus data available. Please load a corpus first.",
+            ":material/error:"
+        )
+        return
+
     ngram_df = None
     if from_anchor == 'Token':
         ngram_df = ds.clusters_by_token(
@@ -157,10 +168,10 @@ def generate_clusters(
 
     # --- Success ---
     st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.NGRAMS] = ngram_df
-    update_session(
-        'ngrams',
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.NGRAMS,
         True,
-        user_session_id
     )
     st.session_state[user_session_id][WarningKeys.NGRAM] = None
     st.rerun()
@@ -201,9 +212,10 @@ def generate_kwic(
         return
 
     # --- Get tokens table ---
-    try:
-        tok_pl = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.DS_TOKENS]
-    except KeyError:
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
+
+    if tok_pl is None:
         st.session_state[user_session_id][WarningKeys.KWIC] = (
             "KWIC table cannot be generated: no tokens found in the target corpus.",
             ":material/sentiment_stressed:"
@@ -247,7 +259,11 @@ def generate_kwic(
 
     st.session_state[user_session_id][WarningKeys.KWIC] = None
 
-    update_session(SessionKeys.KWIC, True, user_session_id)
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.KWIC,
+        True
+        )
     st.success('KWIC table generated!')
     st.rerun()
 
@@ -309,7 +325,9 @@ def generate_collocations(
         return
 
     # --- Main logic ---
-    tok_pl = st.session_state[user_session_id][CorpusKeys.TARGET].get(TargetKeys.DS_TOKENS)
+    manager = get_corpus_data_manager(user_session_id, "target")
+    tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
+
     if tok_pl is None or getattr(tok_pl, "height", 0) == 0:
         st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = (
             """
@@ -339,30 +357,28 @@ def generate_collocations(
         return
 
     # --- Success ---
-    # Ensure target corpus dict exists before storing collocations
-    if CorpusKeys.TARGET not in st.session_state[user_session_id]:
-        st.session_state[user_session_id][CorpusKeys.TARGET] = {}
+    # Store collocations result using the new corpus data manager
+    manager.set_data("collocations", coll_df)
 
-    # Store collocations result
-    try:
-        target_dict = st.session_state[user_session_id][CorpusKeys.TARGET]
-        target_dict[TargetKeys.COLLOCATIONS] = coll_df
-    except AttributeError as e:
-        # Fallback in case of import issues
-        st.session_state[user_session_id][CorpusKeys.TARGET]["collocations"] = coll_df
-        st.error(f"Session key access error: {e}. Using fallback key.")
-
-    update_session(
+    app_core.session_manager.update_session_state(
+        user_session_id,
         'collocations',
         True,
-        user_session_id
     )
 
-    update_metadata(
+    # Store collocation parameters as a dictionary in metadata
+    colloc_params = {
+        'node_word': node_word,
+        'node_tag': node_tag,
+        'to_left': to_left,
+        'to_right': to_right,
+        'stat_mode': stat_mode,
+        'count_by': count_by
+    }
+    app_core.session_manager.update_metadata(
+        user_session_id,
         CorpusKeys.TARGET,
-        key='collocations',
-        value=[node_word, stat_mode, str(to_left), str(to_right)],
-        session_id=user_session_id
+        {'collocations': colloc_params}
     )
 
     st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = None

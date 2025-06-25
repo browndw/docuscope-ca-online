@@ -94,10 +94,37 @@ class LoggingConfig:
         # Track this handler
         self._added_handlers[handler_key] = handler_id
 
+    def setup_module_logging(self, module_type: str, module_name: str) -> None:
+        """
+        Set up logging for any module type with consistent naming.
+
+        Parameters
+        ----------
+        module_type : str
+            Type of module ('ai', 'page', 'utility', 'debug')
+        module_name : str
+            Name of the specific module
+        """
+        if module_type == "ai":
+            self.setup_logger(f"{module_name}_error")
+        elif module_type == "page":
+            self.setup_logger(f"page_{module_name}_error")
+        elif module_type == "utility":
+            self.setup_logger(f"utility_{module_name}_error")
+        elif module_type == "debug":
+            self.setup_logger(
+                f"debug_{module_name}",
+                level="DEBUG",
+                rotation="5 MB",
+                retention="3 days"
+            )
+        else:
+            raise ValueError(f"Unknown module_type: {module_type}")
+
     def setup_ai_logging(self) -> None:
         """Set up logging for AI modules (plotbot and pandabot)."""
-        self.setup_logger("plotbot_error")
-        self.setup_logger("pandabot_error")
+        self.setup_module_logging("ai", "plotbot")
+        self.setup_module_logging("ai", "pandabot")
 
     def setup_page_logging(self, page_name: str) -> None:
         """
@@ -108,7 +135,7 @@ class LoggingConfig:
         page_name : str
             Name of the page (e.g., "corpus_loading", "plotting")
         """
-        self.setup_logger(f"page_{page_name}_error")
+        self.setup_module_logging("page", page_name)
 
     def setup_utility_logging(self, utility_name: str) -> None:
         """
@@ -119,7 +146,7 @@ class LoggingConfig:
         utility_name : str
             Name of the utility (e.g., "analysis", "storage", "exports")
         """
-        self.setup_logger(f"utility_{utility_name}_error")
+        self.setup_module_logging("utility", utility_name)
 
     def setup_debug_logging(self, module_name: str) -> None:
         """
@@ -130,12 +157,7 @@ class LoggingConfig:
         module_name : str
             Name of the module for debug logging
         """
-        self.setup_logger(
-            f"debug_{module_name}",
-            level="DEBUG",
-            rotation="5 MB",
-            retention="3 days"
-        )
+        self.setup_module_logging("debug", module_name)
 
     def get_log_directory(self) -> pathlib.Path:
         """Get the log directory path."""
@@ -174,6 +196,21 @@ def get_logging_config() -> LoggingConfig:
     if _global_logging_config is None:
         _global_logging_config = LoggingConfig()
     return _global_logging_config
+
+
+def setup_module_logging(module_type: str, module_name: str) -> None:
+    """
+    Convenience function to set up module logging with unified interface.
+
+    Parameters
+    ----------
+    module_type : str
+        Type of module ('ai', 'page', 'utility', 'debug')
+    module_name : str
+        Name of the specific module
+    """
+    config = get_logging_config()
+    config.setup_module_logging(module_type, module_name)
 
 
 def setup_ai_logging() -> None:

@@ -26,6 +26,14 @@ from webapp.utilities.configuration.config_manager import (
     get_max_text_size,
     get_max_polars_size
 )
+from webapp.utilities.configuration.access_patterns import (
+    ConfigAccessor,
+    config_accessor,
+    get_standardized_ai_config,
+    get_config_value,
+    safe_config_access,
+    with_config_fallback
+)
 from webapp.utilities.configuration.logging_config import (
     LoggingConfig,
     get_logging_config,
@@ -56,6 +64,13 @@ __all__ = [
     'get_enable_language_detection',
     'get_max_text_size',
     'get_max_polars_size',
+    # Standardized configuration access
+    'ConfigAccessor',
+    'config_accessor',
+    'get_standardized_ai_config',
+    'get_config_value',
+    'safe_config_access',
+    'with_config_fallback',
     # Logging utilities
     'LoggingConfig',
     'get_logging_config',

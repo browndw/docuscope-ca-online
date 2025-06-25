@@ -24,12 +24,21 @@ from webapp.utilities.ui.data_tables import (
     render_dataframe,
     render_excel_download_option
 )
+from webapp.utilities.ui.error_boundaries import (
+    UIErrorBoundary,
+    with_fallback,
+    safe_asset_loader,
+    SafeComponentRenderer,
+    graceful_component,
+    safe_session_operation,
+    AssetManager,
+    asset_manager
+)
 from webapp.utilities.ui.shared_utils import (
     add_category_description
 )
 from webapp.utilities.ui.text_visualization import (
-    generate_tag_html_legend,
-    plot_tag_density
+    generate_tag_html_legend
 )
 from webapp.utilities.ui.form_controls import (
     tagset_selection,
@@ -86,7 +95,6 @@ __all__ = [
     'render_dataframe',
     'render_excel_download_option',
     'generate_tag_html_legend',
-    'plot_tag_density',
     'tagset_selection',
     'tag_filter_multiselect',
     'multi_tag_filter_multiselect',
@@ -112,5 +120,13 @@ __all__ = [
     'render_tagset_selection',
     'render_download_button',
     'check_reference_corpus_availability',
-    'get_corpus_data'
+    'get_corpus_data',
+    'UIErrorBoundary',
+    'with_fallback',
+    'safe_asset_loader',
+    'SafeComponentRenderer',
+    'graceful_component',
+    'safe_session_operation',
+    'AssetManager',
+    'asset_manager'
 ]

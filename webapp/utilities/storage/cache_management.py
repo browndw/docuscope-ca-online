@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from google.cloud import firestore
 from google.oauth2 import service_account
 
-from webapp.utilities.configuration import config_manager
+from webapp.utilities.core import safe_config_value
 
 # Import centralized logging configuration and logger
 from webapp.utilities.configuration.logging_config import get_logger, setup_utility_logging
@@ -24,7 +24,7 @@ logger = get_logger()
 # Set up logging for storage utilities
 setup_utility_logging("storage")
 
-DESKTOP = config_manager.desktop_mode
+DESKTOP = safe_config_value('desktop_mode', config_type='global')
 
 if DESKTOP is False:
     # Set up the Google Cloud Firestore credentials
@@ -113,7 +113,7 @@ def add_message(user_id: str,
             'message': message
         })
     except Exception as e:
-        logger.error(f"Failed to add message to Firestore: {e}")
+        logger(f"Failed to add message to Firestore: {e}")
 
 
 def add_plot(user_id: str,
@@ -172,7 +172,7 @@ def add_plot(user_id: str,
             'plot_svg': plot_svg
         })
     except Exception as e:
-        logger.error(f"Failed to add plot to Firestore: {e}")
+        logger(f"Failed to add plot to Firestore: {e}")
 
 
 def add_login(user_id: str,
@@ -208,7 +208,7 @@ def add_login(user_id: str,
             'time_stamp': timestamp
         })
     except Exception as e:
-        logger.error(f"Failed to add login to Firestore: {e}")
+        logger(f"Failed to add login to Firestore: {e}")
 
 
 def get_query_count(user_id):
@@ -252,5 +252,5 @@ def get_query_count(user_id):
         return count
 
     except Exception as e:
-        logger.error(f"Failed to get query count from Firestore: {e}")
+        logger(f"Failed to get query count from Firestore: {e}")
         return 0

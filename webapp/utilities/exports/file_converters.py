@@ -19,17 +19,19 @@ from docx.shared import RGBColor
 from io import BytesIO
 import pandas as pd
 import polars as pl
-import streamlit as st
 import zipfile
+from typing import Union
+
+from webapp.utilities.corpus import get_corpus_data_manager
 
 
-def convert_to_excel(df: pl.DataFrame) -> bytes:
+def convert_to_excel(df: Union[pl.DataFrame, pd.DataFrame]) -> bytes:
     """
     Convert a DataFrame to an Excel file in memory.
 
     Parameters
     ----------
-    df : pandas.DataFrame
+    df : Union[pl.DataFrame, pd.DataFrame]
         The DataFrame to be converted to Excel format.
 
     Returns
@@ -39,9 +41,21 @@ def convert_to_excel(df: pl.DataFrame) -> bytes:
     """
     output = BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df.to_excel(writer, index=False, header=True)
+
+    # Convert to pandas only if needed
+    if hasattr(df, 'to_pandas'):
+        pandas_df = df.to_pandas()
+    else:
+        pandas_df = df
+
+    pandas_df.to_excel(writer, index=False, header=True)
     writer.close()
     processed_data = output.getvalue()
+
+    # Clean up memory
+    output.close()
+    del pandas_df
+
     return processed_data
 
 
@@ -145,16 +159,40 @@ def convert_corpus_to_zip(
     bytes
         The ZIP archive as a bytes object, with each table as a file.
     """
+    # Use the new data manager system
+    manager = get_corpus_data_manager(session_id, corpus_type)
+
+    if not manager.is_ready():
+        raise ValueError(f"Corpus data not ready for {corpus_type}")
+
     zip_buf = BytesIO()
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as file_zip:
-        for table in st.session_state[session_id][corpus_type]:
-            _df = st.session_state[session_id][corpus_type][table]
-            if file_type == "parquet":
-                _df = _df.to_pandas().to_parquet()
-                file_zip.writestr(table + ".parquet", _df)
-            else:
-                _df = _df.to_pandas().to_csv()
-                file_zip.writestr(table + ".csv", _df)
+        # Get all available data keys from the manager
+        available_keys = manager.get_available_keys()
+
+        for table_name in available_keys:
+            # Get the data for this key
+            df = manager.get_data(table_name)
+
+            # Skip None values (data not generated yet)
+            if df is None:
+                continue
+
+            # Ensure we have a valid DataFrame
+            if not hasattr(df, 'to_pandas'):
+                continue
+
+            try:
+                if file_type == "parquet":
+                    parquet_data = df.to_pandas().to_parquet()
+                    file_zip.writestr(f"{table_name}.parquet", parquet_data)
+                else:
+                    csv_data = df.to_pandas().to_csv()
+                    file_zip.writestr(f"{table_name}.csv", csv_data)
+            except Exception:
+                # Skip tables that can't be converted, but continue with others
+                continue
+
     processed_data = zip_buf.getvalue()
     return processed_data
 

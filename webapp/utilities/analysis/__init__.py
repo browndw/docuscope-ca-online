@@ -21,9 +21,11 @@ from webapp.utilities.analysis.corpus_generators import (
     generate_collocations
 )
 from webapp.utilities.analysis.corpus_loading import (
-    load_detector,
-    load_metadata,
-    update_metadata
+    load_detector
+)
+# Import metadata functions from their centralized location
+from webapp.utilities.session import (
+    load_metadata
 )
 # Import these from the processing module
 from webapp.utilities.processing import (
@@ -86,7 +88,6 @@ __all__ = [
     'render_corpus_not_loaded_error',
     'render_metadata_not_processed_error',
     'load_metadata',
-    'update_metadata',
     'is_valid_df',
     'dtm_simplify_grouped',
     'tags_table_grouped',

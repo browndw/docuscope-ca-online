@@ -9,6 +9,8 @@ import os
 import pandas as pd
 import streamlit as st
 
+from webapp.utilities.session.session_core import safe_session_get
+
 
 def add_category_description(
         cat_counts: dict,
@@ -22,9 +24,11 @@ def add_category_description(
     internal corpora.
     """
     cat_df = pd.DataFrame(cat_counts.items(), columns=["Category", "Count"]).sort_values("Category")  # noqa: E501
+
     # Determine which session key to use
     db_key = f"{corpus_type}_db"
-    target_db = session.get(db_key, [''])[0]
+    target_db = safe_session_get(session, db_key, '')
+
     if not target_db:
         return cat_df
 

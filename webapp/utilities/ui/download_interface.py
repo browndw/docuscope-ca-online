@@ -7,10 +7,11 @@ This module provides shared utilities for download pages (13_download_corpus.py 
 
 import streamlit as st
 from webapp.utilities.state import (
-    SessionKeys, CorpusKeys, WarningKeys
+    SessionKeys, WarningKeys
 )
 from webapp.utilities.analysis import generate_tags_table
 from webapp.utilities.ui import sidebar_action_button
+from webapp.utilities.session.session_core import safe_session_get
 
 
 def render_download_page_header(title: str, help_url: str, description: str = None) -> None:
@@ -67,7 +68,7 @@ def render_data_loading_interface(user_session_id: str, session: dict) -> None:
         button_label="Load Data",
         button_icon=":material/manufacturing:",
         preconditions=[
-            session.get(SessionKeys.HAS_TARGET)[0],
+            safe_session_get(session, SessionKeys.HAS_TARGET, False),
         ],
         action=lambda: generate_tags_table(user_session_id),
         spinner_message="Loading data..."
@@ -218,7 +219,7 @@ def check_reference_corpus_availability(session: dict) -> bool:
     bool
         True if reference corpus is available, False otherwise
     """
-    if not session.get(SessionKeys.HAS_REFERENCE, [False])[0]:
+    if not safe_session_get(session, SessionKeys.HAS_REFERENCE, False):
         st.error(
             """
             It doesn't look like you've loaded a reference corpus yet.
@@ -232,7 +233,7 @@ def check_reference_corpus_availability(session: dict) -> bool:
 
 def get_corpus_data(user_session_id: str, corpus_type: str, data_key: str):
     """
-    Get corpus data from session state.
+    Get corpus data from session state using the new corpus manager.
 
     Parameters
     ----------
@@ -247,7 +248,5 @@ def get_corpus_data(user_session_id: str, corpus_type: str, data_key: str):
     -------
     Data from the corpus session
     """
-    if corpus_type.lower() == "target":
-        return st.session_state[user_session_id][CorpusKeys.TARGET][data_key]
-    else:
-        return st.session_state[user_session_id][CorpusKeys.REFERENCE][data_key]
+    from webapp.utilities.corpus import get_corpus_data
+    return get_corpus_data(user_session_id, corpus_type.lower(), data_key)

@@ -5,6 +5,20 @@ Sidebar UI components for the corpus analysis application.
 import streamlit as st
 from typing import Tuple, Optional, Callable
 
+# Import widget key manager for centralized widget management
+from webapp.utilities.state.widget_key_manager import (
+    register_persistent_widgets,
+)
+
+# Register persistent sidebar widgets
+PERSISTENT_SIDEBAR_WIDGETS = [
+    "pval_threshold",  # p-value threshold selection
+    "swap_target",     # Target/reference swap toggle
+]
+
+# Register the persistent widgets
+register_persistent_widgets(PERSISTENT_SIDEBAR_WIDGETS)
+
 
 def sidebar_keyness_options(
     user_session_id: str,

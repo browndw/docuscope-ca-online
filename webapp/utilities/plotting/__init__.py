@@ -6,32 +6,31 @@ types of corpus analysis data visualization.
 """
 
 # Import interactive plotting functions with highlighting and grouping
-from webapp.utilities.plotting.interactive_plots import (
-    plot_grouped_boxplot,
-    plot_pca_scatter_highlight,
+from webapp.utilities.plotting.bar_charts import (
+    plot_tag_frequencies_bar,
+    plot_compare_corpus_bar,
     plot_pca_variable_contrib_bar,
-    plot_scatter,
-    plot_scatter_highlight
+    plot_tag_density
 )
 
-from webapp.utilities.plotting.advanced_plots import (
+from webapp.utilities.plotting.boxplots import (
+    plot_general_boxplot,
+    plot_grouped_boxplot,
     generate_boxplot,
     generate_boxplot_by_group
 )
-from webapp.utilities.plotting.advanced_analysis import (
-    generate_pca,
+from webapp.utilities.plotting.scatterplots import (
+    plot_scatter,
+    plot_scatter_highlight,
     generate_scatterplot,
-    generate_scatterplot_with_groups,
+    generate_scatterplot_with_groups
+)
+from webapp.utilities.plotting.pca_plots import (
+    plot_pca_scatter_highlight,
+    generate_pca,
     update_pca_plot
 )
-from webapp.utilities.plotting.boxplot_utils import (
-    boxplots_pl
-)
-
-from webapp.utilities.plotting.charts import (
-    plot_tag_frequencies_bar,
-    plot_compare_corpus_bar,
-    plot_general_boxplot,
+from webapp.utilities.plotting.utils import (
     plot_download_link,
     clear_scatterplot_multiselect,
     clear_boxplot_multiselect,

@@ -19,6 +19,7 @@ from typing import Optional, List, Union
 
 from webapp.utilities.analysis.corpus_loading import load_detector
 from webapp.utilities.state import SessionKeys
+from webapp.utilities.session.session_core import safe_session_get
 
 
 def check_language(text_str: str) -> bool:
@@ -308,17 +309,17 @@ def is_valid_df(
 # Corpus validation functions
 def has_target_corpus(session: dict) -> bool:
     """Check if target corpus is loaded."""
-    return session.get(SessionKeys.HAS_TARGET, [False])[0]
+    return safe_session_get(session, SessionKeys.HAS_TARGET, False)
 
 
 def has_reference_corpus(session: dict) -> bool:
     """Check if reference corpus is loaded."""
-    return session.get(SessionKeys.HAS_REFERENCE, [False])[0]
+    return safe_session_get(session, SessionKeys.HAS_REFERENCE, False)
 
 
 def has_metadata(session: dict) -> bool:
     """Check if metadata has been processed."""
-    return session.get(SessionKeys.HAS_META, [False])[0]
+    return safe_session_get(session, SessionKeys.HAS_META, False)
 
 
 def safe_get_categories(metadata_target: dict) -> list:

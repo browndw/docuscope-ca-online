@@ -7,11 +7,60 @@ generating formatted corpus information strings.
 
 from collections import Counter
 import streamlit as st
-from webapp.utilities.session import validate_session_state
+from webapp.utilities.session import validate_session_state, safe_session_get
 from webapp.utilities.session.metadata_handlers import load_metadata
 from webapp.utilities.ui.shared_utils import add_category_description
 from webapp.utilities.state import SessionKeys, MetadataKeys, CorpusKeys
-from webapp.utilities.data import get_doc_cats
+from webapp.utilities.common import get_doc_cats
+
+
+# Utility function to safely access metadata values in both formats
+def safe_metadata_get(metadata: dict, key: str, default=None, nested_key: str = None):
+    """
+    Safely get a value from metadata dict, handling both list and scalar formats.
+
+    Metadata can be in different formats:
+    - DataFrame converted: {'docids': [{'ids': [...]}], 'doccats': [{'cats': [...]}]}
+    - Direct dict: {'docids': {'ids': [...]}, 'doccats': {'cats': [...]}}
+    
+    Parameters
+    ----------
+    metadata : dict
+        The metadata dictionary
+    key : str
+        The primary key to access
+    default : any
+        Default value if key not found
+    nested_key : str, optional
+        Optional nested key (e.g., 'ids' for docids, 'cats' for doccats)
+
+    Returns
+    -------
+    any
+        The value from the metadata
+    """
+    value = metadata.get(key, default)
+
+    if value is None:
+        return default
+
+    # If it's a list (from DataFrame conversion) and we want nested access
+    if isinstance(value, list) and len(value) > 0 and nested_key:
+        if isinstance(value[0], dict):
+            return value[0].get(nested_key, default)
+        else:
+            return value[0] if not nested_key else default
+
+    # If it's a dict and we want nested access
+    if isinstance(value, dict) and nested_key:
+        return value.get(nested_key, default)
+
+    # If it's a list but no nested key needed, return first element
+    if isinstance(value, list) and len(value) > 0 and not nested_key:
+        return value[0]
+
+    # Return as-is
+    return value
 
 
 # Corpus information display functions
@@ -32,9 +81,9 @@ def target_info(target_metadata: dict) -> str:
     str
         A formatted string containing the target corpus information.
     """
-    tokens_pos = target_metadata.get('tokens_pos')[0]
-    tokens_ds = target_metadata.get('tokens_ds')[0]
-    ndocs = target_metadata.get('ndocs')[0]
+    tokens_pos = safe_metadata_get(target_metadata, 'tokens_pos')
+    tokens_ds = safe_metadata_get(target_metadata, 'tokens_ds')
+    ndocs = safe_metadata_get(target_metadata, 'ndocs')
     target_info = f"""##### Target corpus information:
 
     Number of part-of-speech tokens in corpus: {tokens_pos:,}
@@ -61,9 +110,9 @@ def reference_info(reference_metadata: dict) -> str:
     str
         A formatted string containing the reference corpus information.
     """
-    tokens_pos = reference_metadata.get('tokens_pos')[0]
-    tokens_ds = reference_metadata.get('tokens_ds')[0]
-    ndocs = reference_metadata.get('ndocs')[0]
+    tokens_pos = safe_metadata_get(reference_metadata, 'tokens_pos')
+    tokens_ds = safe_metadata_get(reference_metadata, 'tokens_ds')
+    ndocs = safe_metadata_get(reference_metadata, 'ndocs')
     reference_info = f"""##### Reference corpus information:
 
     Number of part-of-speech tokens in corpus: {tokens_pos:,}
@@ -75,14 +124,29 @@ def reference_info(reference_metadata: dict) -> str:
 
 def collocation_info(collocation_data):
     """Generate formatted collocation information string."""
-    mi = str(collocation_data[1]).upper()
-    span = collocation_data[2] + 'L - ' + collocation_data[3] + 'R'
-    coll_info = f"""##### Collocate information:
+    # Handle both dict and list/tuple formats
+    if isinstance(collocation_data, dict):
+        node_word = collocation_data.get('node_word', '')
+        node_tag = collocation_data.get('node_tag', None)
+        to_left = collocation_data.get('to_left', '')
+        to_right = collocation_data.get('to_right', '')
+        stat_mode = str(collocation_data.get('stat_mode', '')).upper()
+        count_by = collocation_data.get('count_by', '')
+    elif isinstance(collocation_data, (list, tuple)):
+        # Old format: [node_word, stat_mode, to_left, to_right]
+        node_word = collocation_data[0] if len(collocation_data) > 0 else ''
+        stat_mode = str(collocation_data[1]).upper() if len(collocation_data) > 1 else ''
+        to_left = collocation_data[2] if len(collocation_data) > 2 else ''
+        to_right = collocation_data[3] if len(collocation_data) > 3 else ''
+        node_tag = None
+        count_by = ''
+    else:
+        return str(collocation_data)
 
-    Association measure: {mi}
-    \n    Span: {span}
-    \n    Node word: {collocation_data[0]}
-    """
+    span = f"{to_left}L - {to_right}R"
+    tag_str = f"\n    Node tag: {node_tag}" if node_tag else ""
+    count_by_str = f"\n    Count by: {count_by}" if count_by else ""
+    coll_info = f"""##### Collocate information:\n\n    Association measure: {stat_mode}\n    Span: {span}\n    Node word: {node_word}{tag_str}{count_by_str}\n    """  # noqa: E501
     return coll_info
 
 
@@ -196,15 +260,14 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
         return
 
     try:
-        # Load target corpus metadata
-        # Note that metadata is stored as a Polars DataFrame
-        # Convert to dict with as_series=False to get Python lists
-        metadata_target = st.session_state[user_session_id]['metadata_target'].to_dict(
-            as_series=False
+        # Load target corpus metadata using the unified metadata handler
+        metadata_target = load_metadata(
+            CorpusKeys.TARGET,
+            user_session_id
         )
 
         # Check if reference is loaded
-        has_reference = session.get(SessionKeys.HAS_REFERENCE, [False])[0] is True
+        has_reference = safe_session_get(session, SessionKeys.HAS_REFERENCE, False) is True
         if has_reference:
             metadata_reference = load_metadata(
                 CorpusKeys.REFERENCE,
@@ -224,14 +287,26 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
                 label="Documents in target corpus:",
                 icon=":material/home_storage:"
             ):
-                doc_ids = metadata_target.get(MetadataKeys.DOCIDS, [{}])[0].get('ids', [])
+                doc_ids = safe_metadata_get(metadata_target, MetadataKeys.DOCIDS, [], 'ids')
                 st.write(doc_ids)
 
-            if session.get(SessionKeys.HAS_META, [False])[0] is True:
+            if bool(safe_session_get(session, SessionKeys.HAS_META, False)):
                 st.markdown('##### Target corpus metadata:')
-                doc_cats = metadata_target.get(
-                    MetadataKeys.DOCCATS, [{}]
-                )[0].get('cats', [])
+                # Handle both DataFrame and dict formats for DOCCATS
+                doccats_raw = metadata_target.get(MetadataKeys.DOCCATS, [])
+                
+                if isinstance(doccats_raw, list) and len(doccats_raw) > 0:
+                    # DataFrame format: [{'cats': [...]}]
+                    if isinstance(doccats_raw[0], dict):
+                        doc_cats = doccats_raw[0].get('cats', [])
+                    else:
+                        doc_cats = []
+                elif isinstance(doccats_raw, dict):
+                    # Dict format: {'cats': [...]}
+                    doc_cats = doccats_raw.get('cats', [])
+                else:
+                    doc_cats = []
+                    
                 if doc_cats:
                     cat_counts = Counter(doc_cats)
                     cat_df = add_category_description(
@@ -259,13 +334,12 @@ def display_reference_corpus_tab(tab, metadata_reference: dict, session: dict) -
                 label="Documents in reference corpus:",
                 icon=":material/home_storage:"
             ):
-                ref_doc_ids = metadata_reference.get(
-                    MetadataKeys.DOCIDS, [{}]
-                )[0].get('ids', [])
+                ref_doc_ids = safe_metadata_get(
+                    metadata_reference, MetadataKeys.DOCIDS, [], 'ids')
                 st.write(ref_doc_ids)
 
             # Try to process and display reference metadata if target has metadata
-            if session.get(SessionKeys.HAS_META, [False])[0]:
+            if safe_session_get(session, SessionKeys.HAS_META, False):
                 try:
                     st.markdown('##### Reference corpus metadata:')
                     # Extract categories from doc ids using get_doc_cats

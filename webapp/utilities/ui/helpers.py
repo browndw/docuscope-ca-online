@@ -10,6 +10,7 @@ import streamlit as st
 
 from webapp.utilities.exports import convert_to_excel
 from webapp.utilities.state import SessionKeys
+from webapp.utilities.session.session_core import safe_session_get
 
 # Documentation base URL
 DOCS_BASE_URL = "https://browndw.github.io/docuscope-docs/guide/"
@@ -168,7 +169,7 @@ def render_table_generation_interface(
     )
 
     # Validate preconditions with better error messaging
-    has_target = session.get(SessionKeys.HAS_TARGET, [False])[0]
+    has_target = safe_session_get(session, SessionKeys.HAS_TARGET, False)
     if not has_target:
         st.sidebar.warning("Please load a target corpus first.", icon=":material/warning:")
 
@@ -189,6 +190,7 @@ def render_table_generation_interface(
 
 def toggle_download(
         label: str,
+        user_session_id: str = None,
         convert_func: callable = convert_to_excel,
         convert_args: tuple = (),
         convert_kwargs: dict = None,
@@ -198,12 +200,15 @@ def toggle_download(
         location=None
         ) -> None:
     """
-    Generalized toggle-based download for Streamlit.
+    Generalized toggle-based download for Streamlit with session scoping.
 
     Parameters
     ----------
     label : str
         The label for the toggle and download button.
+    user_session_id : str, optional
+        User session ID for proper widget scoping. If not provided,
+        uses a simple non-scoped key (for backward compatibility).
     convert_func : callable
         The function to convert data to bytes.
     convert_args : tuple
@@ -223,7 +228,14 @@ def toggle_download(
         location = st.sidebar
 
     convert_kwargs = convert_kwargs or {}
-    toggle_key = f"toggle_{label.replace(' ', '_')}"
+
+    # Create session-scoped key if user_session_id is provided
+    if user_session_id:
+        toggle_key = f"toggle_{label.replace(' ', '_')}_{user_session_id}"
+    else:
+        # Backward compatibility - use simple key
+        toggle_key = f"toggle_{label.replace(' ', '_')}"
+
     location.markdown("### Download Options")
     # Render the toggle button
     download = location.toggle(f"Download to {label}?", key=toggle_key)

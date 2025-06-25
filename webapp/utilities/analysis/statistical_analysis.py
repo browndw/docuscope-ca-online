@@ -9,10 +9,12 @@ import polars as pl
 import streamlit as st
 import docuscospacy as ds
 from scipy.stats import pearsonr
+from webapp.utilities.core import app_core
 from webapp.utilities.state import (
     CorpusKeys, TargetKeys, ReferenceKeys, WarningKeys
 )
-from webapp.utilities.session import update_session, update_metadata
+from webapp.utilities.corpus import get_corpus_data, set_corpus_data
+from webapp.utilities.session.session_core import safe_session_get
 
 
 def generate_frequency_table(user_session_id: str) -> None:
@@ -30,8 +32,8 @@ def generate_frequency_table(user_session_id: str) -> None:
     """
     # --- Try to get the target tokens table ---
     try:
-        tok_pl = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.DS_TOKENS]
-    except KeyError:
+        tok_pl = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.DS_TOKENS)
+    except (KeyError, ValueError):
         st.session_state[user_session_id][WarningKeys.FREQUENCY] = (
             "Frequency table cannot be generated: no tokens found in the target corpus.",
             ":material/sentiment_stressed:"
@@ -45,12 +47,14 @@ def generate_frequency_table(user_session_id: str) -> None:
         )
         return
 
-    update_session('freq_table', True, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, 'freq_table', True)
     st.session_state[user_session_id][WarningKeys.FREQUENCY] = None
     st.rerun()
 
 
-def generate_tags_table(user_session_id: str) -> None:
+def generate_tags_table(
+        user_session_id: str
+) -> None:
     """
     Load tags tables for the target corpus.
 
@@ -65,8 +69,8 @@ def generate_tags_table(user_session_id: str) -> None:
     """
     # --- Try to get the target tokens table ---
     try:
-        tok_pl = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.DS_TOKENS]
-    except KeyError:
+        tok_pl = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.DS_TOKENS)
+    except (KeyError, ValueError):
         st.session_state[user_session_id][WarningKeys.TAGS] = (
             "Tags table cannot be generated: no tokens found in the target corpus.",
             ":material/info:"
@@ -80,7 +84,7 @@ def generate_tags_table(user_session_id: str) -> None:
         )
         return
 
-    update_session('tags_table', True, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, 'tags_table', True)
     st.session_state[user_session_id][WarningKeys.TAGS] = None
     st.rerun()
 
@@ -108,15 +112,23 @@ def generate_keyness_tables(
     """
     # --- Try to get all required frequency/tag tables ---
     try:
-        wc_tar_pos = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.FT_POS]
-        wc_tar_ds = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.FT_DS]
-        tc_tar_pos = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.TT_POS]
-        tc_tar_ds = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.TT_DS]
-        wc_ref_pos = st.session_state[user_session_id][CorpusKeys.REFERENCE][ReferenceKeys.FT_POS]  # noqa: E501
-        wc_ref_ds = st.session_state[user_session_id][CorpusKeys.REFERENCE][ReferenceKeys.FT_DS]  # noqa: E501
-        tc_ref_pos = st.session_state[user_session_id][CorpusKeys.REFERENCE][ReferenceKeys.TT_POS]  # noqa: E501
-        tc_ref_ds = st.session_state[user_session_id][CorpusKeys.REFERENCE][ReferenceKeys.TT_DS]    # noqa: E501
-    except KeyError:
+        wc_tar_pos = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.FT_POS)
+        wc_tar_ds = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.FT_DS)
+        tc_tar_pos = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.TT_POS)
+        tc_tar_ds = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.TT_DS)
+        wc_ref_pos = get_corpus_data(
+            user_session_id, CorpusKeys.REFERENCE, ReferenceKeys.FT_POS
+        )
+        wc_ref_ds = get_corpus_data(
+            user_session_id, CorpusKeys.REFERENCE, ReferenceKeys.FT_DS
+        )
+        tc_ref_pos = get_corpus_data(
+            user_session_id, CorpusKeys.REFERENCE, ReferenceKeys.TT_POS
+        )
+        tc_ref_ds = get_corpus_data(
+            user_session_id, CorpusKeys.REFERENCE, ReferenceKeys.TT_DS
+        )
+    except (KeyError, ValueError):
         st.session_state[user_session_id][WarningKeys.KEYNESS] = (
             """
             Keyness cannot be computed: missing frequency or tag tables.
@@ -150,12 +162,13 @@ def generate_keyness_tables(
         )
         return
 
-    st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.KW_POS] = kw_pos
-    st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.KW_DS] = kw_ds
-    st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.KT_POS] = kt_pos
-    st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.KT_DS] = kt_ds
+    # Store results using the corpus data manager
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_POS, kw_pos)
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_DS, kw_ds)
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_POS, kt_pos)
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_DS, kt_ds)
 
-    update_session('keyness_table', True, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, 'keyness_table', True)
     st.session_state[user_session_id][WarningKeys.KEYNESS] = None
     st.success('Keywords generated!')
     st.rerun()
@@ -171,7 +184,7 @@ def generate_keyness_parts(
             st.session_state[user_session_id]["session"],
             as_series=False
             )
-    if session.get('has_meta')[0] is False:
+    if safe_session_get(session, 'has_meta', False) is False:
         st.session_state[user_session_id]["keyness_parts_warning"] = (
             """
             No metadata found for the target corpus.
@@ -194,7 +207,7 @@ def generate_keyness_parts(
         return
 
     # --- Main logic ---
-    tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
+    tok_pl = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.DS_TOKENS)
 
     tar_pl = subset_pl(tok_pl, tar_list)
     ref_pl = subset_pl(tok_pl, ref_list)
@@ -243,17 +256,17 @@ def generate_keyness_parts(
     ref_ndocs = ref_pl.get_column("doc_id").unique().len()
 
     # --- Save results and clear warning ---
-    st.session_state[user_session_id]["target"]["kw_pos_cp"] = kw_pos_cp
-    st.session_state[user_session_id]["target"]["kw_ds_cp"] = kw_ds_cp
-    st.session_state[user_session_id]["target"]["kt_pos_cp"] = kt_pos_cp
-    st.session_state[user_session_id]["target"]["kt_ds_cp"] = kt_ds_cp
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_pos_cp", kw_pos_cp)
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_ds_cp", kw_ds_cp)
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_pos_cp", kt_pos_cp)
+    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_ds_cp", kt_ds_cp)
 
-    update_session('keyness_parts', True, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, 'keyness_parts', True)
 
-    update_metadata(
+    app_core.session_manager.update_metadata(
+        user_session_id,
         'target',
-        key='keyness_parts',
-        value=[
+        {'keyness_parts': [
             tar_list,
             ref_list,
             str(tar_tokens_pos),
@@ -262,8 +275,7 @@ def generate_keyness_parts(
             str(ref_tokens_ds),
             str(tar_ndocs),
             str(ref_ndocs)
-        ],
-        session_id=user_session_id
+        ]}
     )
 
     st.session_state[user_session_id]["keyness_parts_warning"] = None

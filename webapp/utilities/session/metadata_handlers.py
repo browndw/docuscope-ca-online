@@ -7,13 +7,13 @@ metadata for target and reference corpora.
 
 import streamlit as st
 import polars as pl
-from webapp.utilities.session.session_management import (
-    get_corpus_categories, update_session
-    )
+from webapp.utilities.session.session_core import (
+    get_corpus_categories
+)
 from webapp.utilities.state import (
     SessionKeys, CorpusKeys,
-    MetadataKeys, ReferenceKeys
-    )
+    MetadataKeys
+)
 
 
 # Constants for metadata validation
@@ -21,107 +21,10 @@ MIN_CATEGORIES = 2
 MAX_CATEGORIES = 20
 
 
-def init_metadata_target(session_id: str) -> None:
-    """
-    Initialize the metadata for the target corpus in the session state.
-
-    Parameters
-    ----------
-    session_id : str
-        The session ID for which the metadata is to be initialized.
-
-    Returns
-    -------
-    None
-    """
-    df = st.session_state[session_id]["target"]["ds_tokens"]
-    tags_to_check = df.get_column("ds_tag").to_list()
-    tags = [
-        'Actors', 'Organization', 'Planning', 'Sentiment', 'Signposting', 'Stance'
-    ]
-    model = 'Common Dictionary' if any(tag in item for item in tags_to_check for tag in tags) else 'Large Dictionary'  # noqa: E501
-    ds_tags = df.get_column("ds_tag").unique().to_list()
-    tags_pos = df.get_column("pos_tag").unique().to_list()
-    if "Untagged" in ds_tags:
-        ds_tags.remove("Untagged")
-    if "Y" in tags_pos:
-        tags_pos.remove("Y")
-
-    temp_metadata_target = {
-        MetadataKeys.TOKENS_POS: df.group_by(
-            ["doc_id", "pos_id", "pos_tag"]
-        ).agg(pl.col("token").str.concat("")).filter(pl.col("pos_tag") != "Y").height,
-        MetadataKeys.TOKENS_DS: df.group_by(
-            ["doc_id", "ds_id", "ds_tag"]
-        ).agg(pl.col("token").str.concat("")).filter(
-            ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))  # noqa: E501
-        ).height,
-        MetadataKeys.NDOCS: len(df.get_column("doc_id").unique().to_list()),
-        MetadataKeys.MODEL: model,
-        MetadataKeys.DOCIDS: {'ids': sorted(df.get_column("doc_id").unique().to_list())},
-        MetadataKeys.TAGS_DS: {'tags': sorted(ds_tags)},
-        MetadataKeys.TAGS_POS: {'tags': sorted(tags_pos)},
-        MetadataKeys.DOCCATS: {'cats': ''},
-        MetadataKeys.COLLOCATIONS: {'temp': ''},
-        MetadataKeys.KEYNESS_PARTS: {'temp': ''},
-        MetadataKeys.VARIANCE: {'temp': ''},
-    }
-    df = pl.from_dict(temp_metadata_target, strict=False)
-    st.session_state[session_id]["metadata_target"] = df
+# init_metadata_target function moved to session_core.py to eliminate duplication
 
 
-def init_metadata_reference(session_id: str) -> None:
-    """
-    Initialize the metadata for the reference corpus in the session state.
-
-    Parameters
-    ----------
-    session_id : str
-        The session ID for which the metadata is to be initialized.
-
-    Returns
-    -------
-    None
-    """
-    df = st.session_state[session_id][CorpusKeys.REFERENCE][ReferenceKeys.DS_TOKENS]
-    tags_to_check = df.get_column("ds_tag").to_list()
-    tags = [
-        'Actors',
-        'Organization',
-        'Planning',
-        'Sentiment',
-        'Signposting',
-        'Stance'
-    ]
-    model = 'Common Dictionary' if any(tag in item for item in tags_to_check for tag in tags) else 'Large Dictionary'  # noqa: E501
-    ds_tags = df.get_column("ds_tag").unique().to_list()
-    tags_pos = df.get_column("pos_tag").unique().to_list()
-    if "Untagged" in ds_tags:
-        ds_tags.remove("Untagged")
-    if "Y" in tags_pos:
-        tags_pos.remove("Y")
-
-    temp_metadata_reference = {
-        MetadataKeys.TOKENS_POS: df.group_by(
-            ["doc_id", "pos_id", "pos_tag"]
-        ).agg(pl.col("token").str.concat("")).filter(pl.col("pos_tag") != "Y").height,
-        MetadataKeys.TOKENS_DS: df.group_by(
-            ["doc_id", "ds_id", "ds_tag"]
-        ).agg(pl.col("token").str.concat("")).filter(
-            ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))  # noqa: E501
-        ).height,
-        MetadataKeys.NDOCS: len(df.get_column("doc_id").unique().to_list()),
-        MetadataKeys.MODEL: model,
-        MetadataKeys.DOCIDS: {'ids': sorted(df.get_column("doc_id").unique().to_list())},
-        MetadataKeys.TAGS_DS: {'tags': sorted(ds_tags)},
-        MetadataKeys.TAGS_POS: {'tags': sorted(tags_pos)},
-        MetadataKeys.DOCCATS: False,
-        MetadataKeys.COLLOCATIONS: {'temp': ''},
-        MetadataKeys.KEYNESS_PARTS: {'temp': ''},
-        MetadataKeys.VARIANCE: {'temp': ''},
-    }
-    df = pl.from_dict(temp_metadata_reference, strict=False)
-    st.session_state[session_id][SessionKeys.METADATA_REFERENCE] = df
+# init_metadata_reference function moved to session_core.py to eliminate duplication
 
 
 def load_metadata(corpus_type: str, session_id: str) -> dict:
@@ -148,8 +51,16 @@ def load_metadata(corpus_type: str, session_id: str) -> dict:
     else:
         raise ValueError("corpus_type must be 'target' or 'reference'")
 
-    metadata = st.session_state[session_id][table_name]
-    metadata = metadata.to_dict(as_series=False)
+    metadata_raw = st.session_state[session_id][table_name]
+    
+    # Handle both DataFrame and dict cases (unified session management)
+    if hasattr(metadata_raw, 'to_dict') and hasattr(metadata_raw, 'columns'):
+        # It's a Polars DataFrame (has both to_dict and columns attributes)
+        metadata = metadata_raw.to_dict(as_series=False)
+    else:
+        # It's already a dictionary or other object
+        metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+    
     return metadata
 
 
@@ -186,22 +97,39 @@ def update_metadata(
     else:
         raise ValueError("corpus_type must be 'target' or 'reference'")
 
-    metadata = st.session_state[session_id][table_name]
-    metadata = metadata.to_dict(as_series=False)
+    metadata_raw = st.session_state[session_id][table_name]
+    
+    # Handle both DataFrame and dict cases (unified session management)
+    if hasattr(metadata_raw, 'to_dict') and hasattr(metadata_raw, 'columns'):
+        # It's a Polars DataFrame (has both to_dict and columns attributes)
+        metadata = metadata_raw.to_dict(as_series=False)
+        was_dataframe = True
+    else:
+        # It's already a dictionary or other object
+        metadata = metadata_raw.copy() if isinstance(metadata_raw, dict) else {}
+        was_dataframe = False
 
-    if key == "doccats":
-        metadata['doccats'] = [{'cats': value}]
-    elif key == "collocations":
-        metadata['collocations'] = {'temp': [value]}
-    elif key == "keyness_parts":
-        metadata['keyness_parts'] = {'temp': [value]}
-    elif key == "variance":
-        metadata['variance'] = {'temp': [value]}
+    # Update the metadata dictionary
+    if key == MetadataKeys.DOCCATS:
+        metadata[MetadataKeys.DOCCATS] = [{'cats': value}]
+    elif key == MetadataKeys.COLLOCATIONS:
+        # Store collocation parameters dictionary directly
+        metadata[MetadataKeys.COLLOCATIONS] = value
+    elif key == MetadataKeys.KEYNESS_PARTS:
+        metadata[MetadataKeys.KEYNESS_PARTS] = {'temp': [value]}
+    elif key == MetadataKeys.VARIANCE:
+        metadata[MetadataKeys.VARIANCE] = [{'temp': value}]
     else:
         metadata[key] = value
 
-    df = pl.from_dict(metadata, strict=False)
-    st.session_state[session_id][table_name] = df
+    # Store back in the same format it was in originally
+    if was_dataframe:
+        # Convert back to DataFrame and store
+        df = pl.from_dict(metadata, strict=False)
+        st.session_state[session_id][table_name] = df
+    else:
+        # Store as dictionary
+        st.session_state[session_id][table_name] = metadata
 
 
 def handle_target_metadata_processing(metadata_target: dict, user_session_id: str) -> None:
@@ -230,9 +158,12 @@ def handle_target_metadata_processing(metadata_target: dict, user_session_id: st
         ):
             with st.spinner('Processing metadata...'):
                 try:
-                    doc_ids = metadata_target.get(
-                        MetadataKeys.DOCIDS, [{}]
-                    )[0].get('ids', [])
+                    docids_data = metadata_target.get(MetadataKeys.DOCIDS, [{}])
+                    if isinstance(docids_data, list) and len(docids_data) > 0:
+                        doc_ids = docids_data[0].get('ids', [])
+                    else:
+                        doc_ids = []
+                    
                     if not doc_ids:
                         st.sidebar.error("No document IDs found to process.")
                         return
@@ -246,10 +177,9 @@ def handle_target_metadata_processing(metadata_target: dict, user_session_id: st
                             MetadataKeys.DOCCATS,
                             doc_cats,
                             user_session_id)
-                        update_session(
-                            SessionKeys.HAS_META,
-                            True,
-                            user_session_id)
+                        # Use the session update function to ensure consistent format
+                        from webapp.utilities.session.session_core import update_session
+                        update_session(SessionKeys.HAS_META, True, user_session_id)
                         st.sidebar.success(
                             f"Successfully processed {unique_count} document categories!"
                         )

@@ -21,7 +21,10 @@ from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
 from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
 
 from webapp.utilities.state import SessionKeys
-from webapp.utilities.storage import add_message, add_plot
+# Add async storage import for non-blocking Firestore operations
+from webapp.utilities.storage import (
+    conditional_async_add_message, conditional_async_add_plot
+)
 from webapp.utilities.ai.shared import (
     LLM_MODEL, detect_intent,
     prune_message_thread, fig_to_svg
@@ -364,8 +367,7 @@ def plotbot_code_generate_or_update(
 
         return full_response
 
-    except Exception as e:
-        logger.error(f"Error in generating plot code: {e}")  # For developer logs
+    except Exception:
         return {
             "type": "error",
             "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
@@ -395,7 +397,6 @@ def plotbot_code_execute(plot_code: str,
         For plots, value contains the matplotlib figure.
     """
     if not isinstance(plot_code, str) or not plot_code.strip():
-        logger.error("plot_code is not a valid string.")
         return {
             "type": "error",
             "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
@@ -404,7 +405,6 @@ def plotbot_code_execute(plot_code: str,
     # Strip import statements before safety check
     plot_code = strip_imports(plot_code)
     if not is_code_safe(plot_code):
-        logger.error("Unsafe code detected in plot instructions.")
         return {
             "type": "error",
             "value": "Sorry, your request included unsafe code and could not be executed."
@@ -457,7 +457,6 @@ def plotbot_code_execute(plot_code: str,
     elif plot_lib == "plotly.express":
         allowed_globals["px"] = px
     else:
-        logger.error(f"Unknown plot_lib: {plot_lib}")
         return {
             "type": "error",
             "value": f"Unsupported plotting library: {plot_lib}"
@@ -466,7 +465,6 @@ def plotbot_code_execute(plot_code: str,
     try:
         byte_code = compile_restricted(plot_code, '<string>', 'exec')
         if byte_code is None:
-            logger.error("Failed to compile restricted code")
             return {
                 "type": "error",
                 "value": "Sorry, the code could not be compiled safely."
@@ -480,14 +478,11 @@ def plotbot_code_execute(plot_code: str,
                 "value": fig
             }
         else:
-            logger.error("No figure object ('fig') was created by the code.")
             return {
                 "type": "error",
                 "value": "Sorry, the code didn't create a figure. Please try a different request."  # noqa: E501
             }
     except Exception as e:
-        logger.error(f"Error executing plot code: {e}")
-        logger.error(f"Code that failed: {plot_code}")
         return {
             "type": "error",
             "value": f"Sorry, there was an error executing your plot: {str(e)}"
@@ -534,12 +529,12 @@ def plotbot_user_query(session_id: str,
         st.session_state[session_id][SessionKeys.AI_PLOT_INTENT] = False
 
     if cache_mode:
-        add_message(user_id=st.user.email,
-                    session_id=session_id,
-                    assistant_id=0,
-                    role="user",
-                    message_idx=prompt_position,
-                    message=user_input)
+        conditional_async_add_message(user_id=st.user.email,
+                                      session_id=session_id,
+                                      assistant_id=0,
+                                      role="user",
+                                      message_idx=prompt_position,
+                                      message=user_input)
 
     intent = detect_intent(user_input)
 
@@ -621,7 +616,6 @@ def plotbot_user_query(session_id: str,
 
             # Final validation: ensure plot_code is a valid string
             if not isinstance(plot_code, str) or not plot_code.strip():
-                logger.error("plot_code is not a valid string after generation/retrieval")
                 error_msg = "Sorry, I couldn't generate valid plot code. Please try again."
                 st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
                     {"role": "assistant", "type": "error", "value": error_msg}
@@ -648,12 +642,12 @@ def plotbot_user_query(session_id: str,
             # Cache plot if needed
             if cache_mode and plot_fig.get("type") == "plot":
                 svg_str = fig_to_svg(figure=plot_fig["value"], plot_lib=plot_lib)
-                add_plot(user_id=st.user.email,
-                         session_id=session_id,
-                         assistant_id=0,
-                         message_idx=prompt_position,
-                         plot_library=plot_lib,
-                         plot_svg=svg_str)
+                conditional_async_add_plot(user_id=st.user.email,
+                                           session_id=session_id,
+                                           assistant_id=0,
+                                           message_idx=prompt_position,
+                                           plot_library=plot_lib,
+                                           plot_svg=svg_str)
 
             # Generate SVG for export capability
             svg_str = ""

@@ -25,8 +25,10 @@ import webapp.utilities.configuration.logging_config  # noqa: F401
 from webapp.utilities.configuration.logging_config import get_logger
 # Import shared AI utilities
 from webapp.utilities.ai.shared import prune_message_thread
-from webapp.utilities.storage import add_message
+# Add async storage import for non-blocking Firestore operations
+from webapp.utilities.storage import conditional_async_add_message
 from webapp.utilities.state import SessionKeys
+from webapp.utilities.state.widget_state import safe_clear_widget_state
 
 logger = get_logger()
 # Thread-safe global lock for monkeypatching
@@ -74,10 +76,7 @@ class SessionPlotStorage:
                     pass
 
         for key in keys_to_remove:
-            try:
-                del st.session_state[key]
-            except KeyError:
-                pass
+            safe_clear_widget_state(key)
 
 
 @contextmanager
@@ -214,7 +213,7 @@ def pandabot_user_query(
     core analytical capabilities that make PandasAI powerful.
     """
     if cache_mode:
-        add_message(
+        conditional_async_add_message(
             user_id=st.user.email,
             session_id=session_id,
             assistant_id=1,
@@ -435,21 +434,18 @@ def pandabot_user_query(
                     })
 
         except MaliciousQueryError:
-            logger.error("MaliciousQueryError in pandabot")
             error = (
                 ":confused: Sorry, your request could not be processed. "
                 "It may be too complex or reference restricted operations."
             )
             response.append({"role": "assistant", "type": "error", "value": error})
         except NoResultFoundError:
-            logger.error("NoResultFoundError in pandabot")
             error = (
                 ":confused: Sorry, I couldn't find a result for your request. "
                 "Try rephrasing or checking your column names."
             )
             response.append({"role": "assistant", "type": "error", "value": error})
-        except Exception as e:
-            logger.error(f"Error in pandabot: {e}")
+        except Exception:
             error = (
                 ":confused: I couldn't process your request. "
                 "Try rephrasing it or using a different approach."

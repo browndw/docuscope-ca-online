@@ -1,7 +1,7 @@
 """
 Data table utilities for Streamlit interface.
 
-This module provides functions for formatting and configuring Streamlit
+This module provides functions for formatting and displaying Streamlit
 dataframes, including column configurations and data transformations.
 """
 
@@ -101,7 +101,8 @@ def render_data_table_interface(
     metadata_target: dict,
     base_filename: str,
     no_data_message: str = "No data available to display.",
-    apply_tag_filter: bool = True
+    apply_tag_filter: bool = True,
+    user_session_id: str = None
 ) -> None:
     """
     Render data table interface with target info and download options.
@@ -112,6 +113,7 @@ def render_data_table_interface(
         base_filename: Base filename for downloads
         no_data_message: Message to show when no data is available
         apply_tag_filter: Whether to apply tag filtering (default: True)
+        user_session_id: The user session identifier for scoped state management
 
     Example usage:
         # For pages with tag filtering (most common):
@@ -126,7 +128,7 @@ def render_data_table_interface(
 
     # Apply tag filtering if requested (this shows the filter expander)
     if apply_tag_filter:
-        df = tag_filter_multiselect(df)
+        df = tag_filter_multiselect(df, user_session_id=user_session_id)
 
     # Display the data table or warning
     if df is not None and hasattr(df, "height") and df.height > 0:
@@ -216,7 +218,8 @@ def render_excel_download_option(df, base_filename: str, location=None) -> None:
         If None, uses st.sidebar.
     """
     try:
-        excel_buffer = convert_to_excel(df.to_pandas() if hasattr(df, 'to_pandas') else df)
+        # Use optimized conversion function which handles both DataFrame types
+        excel_buffer = convert_to_excel(df)
         filename = f"{base_filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
         download_component = location if location else st.sidebar

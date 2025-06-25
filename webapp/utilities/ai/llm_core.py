@@ -12,19 +12,35 @@ import polars as pl
 import streamlit as st
 from datetime import datetime, timedelta
 
+# Core application utilities
+from webapp.utilities.core import app_core, safe_config_value
+
+# Specific utilities for this module
 from webapp.utilities.state import SessionKeys
-from webapp.utilities.state import persist
 from webapp.utilities.storage import get_query_count
 from webapp.utilities.analysis import tags_table_grouped, dtm_simplify_grouped
-from webapp.utilities.configuration import get_ai_configuration
-
-# Import centralized logging configuration and logger
-import webapp.utilities.configuration.logging_config  # noqa: F401
+from webapp.utilities.corpus import get_corpus_data_manager
 from webapp.utilities.configuration.logging_config import get_logger
+from webapp.utilities.session.session_core import safe_session_get
 
 logger = get_logger()
 
-_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
+# Register persistent AI widgets that should maintain state across sessions
+# These widgets control data selection and processing options in AI assistants
+AI_PERSISTENT_WIDGETS = [
+    "pivot_table",        # Toggle for pivot table transformation
+    "make_percent",       # Toggle for percentage conversion
+]
+
+# Register the persistent widgets using core application interface
+app_core.register_page_widgets(AI_PERSISTENT_WIDGETS)
+
+# Get AI configuration using standardized access pattern
+DESKTOP = safe_config_value('desktop', config_type='ai')
+CACHE = safe_config_value('cache', config_type='ai')
+LLM_MODEL = safe_config_value('model', config_type='ai')
+LLM_PARAMS = safe_config_value('params', config_type='ai')
+QUOTA = safe_config_value('quota', config_type='ai')
 
 
 def print_settings(dct: dict) -> str:
@@ -70,8 +86,7 @@ def is_openai_key_valid(api_key: str) -> bool:
             max_tokens=1
         )
         return True
-    except Exception as e:
-        logger.error(f"OpenAI API key validation failed: {e}")
+    except Exception:
         return False
 
 
@@ -79,18 +94,22 @@ def tables_to_list(session_id: str,
                    corpus: str,
                    categories: list[str] = None) -> list:
     """
-    Returns a list of values from all_tables if the keys in
-    st.session_state[session_id]["target"] match the keys in all_tables.
+    Returns a list of available tables for the specified corpus
+    using the new corpus data manager.
 
     Parameters
     ----------
     session_id : str
         The session identifier used to access the session state.
+    corpus : str
+        The corpus type: "Target", "Reference", "Grouped", or "Keywords".
+    categories : list[str], optional
+        Categories for grouped data.
 
     Returns
     -------
     list
-        A list of matching values from all_tables.
+        A list of matching table names.
     """
     all_tables = {
         'Tags Table: DocuScope': 'tt_ds',
@@ -107,31 +126,35 @@ def tables_to_list(session_id: str,
     }
 
     if corpus == "Target":
-        target_keys = st.session_state[session_id].get("target", [])
+        manager = get_corpus_data_manager(session_id, "target")
+        available_keys = manager.get_available_keys()
         matching_keys = [
             key for key, value in all_tables.items()
-            if value in target_keys
+            if value in available_keys
             ]
     elif corpus == "Reference":
-        reference_keys = st.session_state[session_id].get("reference", [])
+        manager = get_corpus_data_manager(session_id, "reference")
+        available_keys = manager.get_available_keys()
         matching_keys = [
             key for key, value in all_tables.items()
-            if value in reference_keys
+            if value in available_keys
             ]
     elif corpus == "Grouped":
-        target_keys = st.session_state[session_id].get("target", [])
+        manager = get_corpus_data_manager(session_id, "target")
+        available_keys = manager.get_available_keys()
         if categories is not None and len(categories) > 0:
             matching_keys = [
                 key for key, value in all_tables.items()
-                if value in target_keys
+                if value in available_keys
                 ]
         else:
             matching_keys = []
     elif corpus == "Keywords":
-        keyword_keys = st.session_state[session_id].get("target", [])
+        manager = get_corpus_data_manager(session_id, "target")
+        available_keys = manager.get_available_keys()
         matching_keys = [
             key for key, value in all_tables.items()
-            if value in keyword_keys and value.startswith('k')
+            if value in available_keys and value.startswith('k')
             ]
     return matching_keys
 
@@ -184,26 +207,26 @@ def table_from_list(session_id: str,
         'Keytags Table: Parts-of-Speech': 'kt_pos'
     }
 
-    # Get the appropriate keys based on the corpus type
+    # Get the appropriate manager and data based on the corpus type
     if corpus == "Target":
-        keys = st.session_state[session_id].get("target", [])
+        manager = get_corpus_data_manager(session_id, "target")
         matching_value = corpus_tables.get(table_name)
     elif corpus == "Reference":
-        keys = st.session_state[session_id].get("reference", [])
+        manager = get_corpus_data_manager(session_id, "reference")
         matching_value = corpus_tables.get(table_name)
     elif corpus == "Grouped":
-        keys = st.session_state[session_id].get("target", [])
+        manager = get_corpus_data_manager(session_id, "target")
         matching_value = grouped_tables.get(table_name)
     elif corpus == "Keywords":
-        keys = st.session_state[session_id].get("target", [])
+        manager = get_corpus_data_manager(session_id, "target")
         matching_value = keyness_tables.get(table_name)
     else:
         return None
 
-    # If a matching value is found and it exists in the session keys,
+    # If a matching value is found and data is available,
     # return the table
-    if matching_value and matching_value in keys:
-        df = keys[matching_value]
+    if matching_value and manager.has_data_key(matching_value):
+        df = manager.get_data(matching_value)
         if corpus == "Target" or corpus == "Reference":
             if (
                 table_name == "Tags Table: Parts-of-Speech Simplified"
@@ -412,7 +435,7 @@ def get_api_key(
                 if quota_exceeded:
                     community_key = None
             except Exception as e:
-                logger.error(f"Error checking quota: {e}")
+                logger(f"Error checking quota: {e}")
 
         # Return community key if available, otherwise user key
         if community_key is not None:
@@ -420,8 +443,7 @@ def get_api_key(
         else:
             return st.session_state[user_session_id][SessionKeys.AI_USER_KEY]
 
-    except Exception as e:
-        logger.error(f"Error getting API key: {e}")
+    except Exception:
         return None
 
 
@@ -526,10 +548,11 @@ def render_data_selection_interface(
 
         # Corpus selection
         corpus_key = SessionKeys.get_bot_corpus_key(bot_prefix)
+        app_core.widget_manager.register_persistent_key(corpus_key)  # Register dynamic key
         selected_corpus = st.radio(
             "Select corpus:",
             ("Target", "Reference", "Keywords", "Grouped"),
-            key=persist(corpus_key, user_session_id),
+            key=app_core.widget_manager.get_scoped_key(corpus_key),
             on_change=clear_function,
             args=(user_session_id,),
             index=0,
@@ -538,11 +561,12 @@ def render_data_selection_interface(
 
         # Get groups if metadata is available
         groups = []
-        if session.get('has_meta', [False])[0] and metadata_target:
+        if safe_session_get(session, SessionKeys.HAS_META, False) and metadata_target:
             groups = metadata_target.get('doccats', [{}])[0].get('cats', [])
 
         # Query selection
         query_key = SessionKeys.get_bot_query_key(bot_prefix)
+        app_core.widget_manager.register_persistent_key(query_key)  # Register dynamic key
         data_label = ("Select data to analyze:" if bot_prefix == 'pandasai'
                       else "Select data to plot:")
         selected_query = st.selectbox(
@@ -552,7 +576,7 @@ def render_data_selection_interface(
                 corpus=selected_corpus,
                 categories=groups
             ),
-            key=persist(query_key, user_session_id),
+            key=app_core.widget_manager.get_scoped_key(query_key),
             on_change=clear_function,
             args=(user_session_id,),
             index=None,
@@ -609,7 +633,7 @@ def render_data_preview_controls(
                 with col1:
                     pivot_table = st.toggle(
                         "Pivot Table",
-                        key=persist("pivot_table", user_session_id)
+                        key=app_core.widget_manager.get_scoped_key("pivot_table")
                     )
 
                     if pivot_table:
@@ -625,7 +649,7 @@ def render_data_preview_controls(
                 with col2:
                     make_percent = st.toggle(
                         "Make Percent",
-                        key=persist("make_percent", user_session_id),
+                        key=app_core.widget_manager.get_scoped_key("make_percent"),
                         value=False
                     )
 
@@ -642,6 +666,5 @@ def render_data_preview_controls(
 
         return df
 
-    except Exception as e:
-        logger.error(f"Error in data preview controls: {e}")
+    except Exception:
         return df

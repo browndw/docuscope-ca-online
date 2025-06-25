@@ -12,6 +12,27 @@ import plotly.colors
 from functools import reduce
 from typing import Dict, Optional, Callable, Tuple
 
+# Import widget key manager for centralized widget management
+from webapp.utilities.state.widget_key_manager import (
+    register_persistent_widgets,
+    get_widget_state,
+)
+
+# Import corpus data manager for unified data access
+from webapp.utilities.corpus import get_corpus_data
+
+# Register persistent widgets used across form controls
+# These widgets should persist across page loads
+PERSISTENT_FORM_WIDGETS = [
+    "tag_radio",           # Main tagset selection radio
+    "tag_type_radio",      # Sub-tagset selection (General/Specific)
+    "pval_threshold",      # p-value threshold setting
+    "swap_target",         # Target/reference swap setting
+]
+
+# Register the persistent widgets
+register_persistent_widgets(PERSISTENT_FORM_WIDGETS)
+
 
 def tagset_selection(
     user_session_id: str,
@@ -101,7 +122,8 @@ def tagset_selection(
         )
         session_key = tagset_keys[tag_radio][tag_type]
 
-        df = session_state[user_session_id]["target"].get(session_key)
+        # Use corpus data manager for unified data access
+        df = get_corpus_data(user_session_id, "target", session_key)
 
         # Apply simplify function if provided
         simplify_func = simplify_funcs.get(tag_radio, {}).get(tag_type)
@@ -117,7 +139,8 @@ def tagset_selection(
     else:
         session_key = tagset_keys[tag_radio]
 
-        df = session_state[user_session_id]["target"].get(session_key)
+        # Use corpus data manager for unified data access
+        df = get_corpus_data(user_session_id, "target", session_key)
 
         # Apply simplify function if provided
         simplify_func = simplify_funcs.get(tag_radio)
@@ -147,7 +170,8 @@ def tag_filter_multiselect(
         df,
         tag_col="Tag",
         label="Select tags to filter:",
-        key=None
+        key=None,
+        user_session_id=None
         ) -> pl.DataFrame | None:
     """
     Render a segmented control widget (inside an expander) for tag filtering and
@@ -168,7 +192,16 @@ def tag_filter_multiselect(
             key=f"{seg_key}_deselect",
             type="tertiary"
         ):
-            st.session_state[seg_key] = []
+            # Use session-scoped state management
+            if user_session_id:
+                # Set the value directly in the user's session state
+                if user_session_id not in st.session_state:
+                    st.session_state[user_session_id] = {}
+                st.session_state[user_session_id][seg_key] = []
+                # Also set the global key for immediate effect
+                st.session_state[seg_key] = []
+            else:
+                st.session_state[seg_key] = []
         selected = st.segmented_control(
             f"Select {tag_col}:",
             options=cats,
@@ -184,7 +217,8 @@ def tag_filter_multiselect(
 
 def multi_tag_filter_multiselect(
         df: pl.DataFrame,
-        tag_cols: list[str]
+        tag_cols: list[str],
+        user_session_id: str = None
         ) -> tuple[pl.DataFrame, dict]:
     """
     Render segmented control widgets (inside expanders) for multiple tag columns and
@@ -206,7 +240,16 @@ def multi_tag_filter_multiselect(
                              key=f"{seg_key}_deselect",
                              type="tertiary"
                              ):
-                    st.session_state[seg_key] = []
+                    # Use session-scoped state management
+                    if user_session_id:
+                        # Set the value directly in the user's session state
+                        if user_session_id not in st.session_state:
+                            st.session_state[user_session_id] = {}
+                        st.session_state[user_session_id][seg_key] = []
+                        # Also set the global key for immediate effect
+                        st.session_state[seg_key] = []
+                    else:
+                        st.session_state[seg_key] = []
                 selected = st.segmented_control(
                     f"Select {tag_col}:",
                     options=cats,
@@ -344,41 +387,37 @@ def color_picker_controls(
         )
 
         if color_mode == "Default colors":
-            # Use default hex for all, with special cases
-            prev_color = default_hex
-            for idx, cat in enumerate(cats):
+            for cat in cats:
                 if cat.lower() == "non-highlight":
                     color = non_highlight_default
                 elif cat.lower() == "reference corpus":
                     color = reference_corpus_default
                 else:
-                    color = prev_color
+                    color = default_hex
                 color_dict[cat] = color
-                prev_color = color
         elif color_mode == "Custom (pick colors)":
-            prev_color = default_hex
-            seen_keys = set()
             for idx, cat in enumerate(cats):
                 if cat.lower() == "non-highlight":
                     color_default = non_highlight_default
                 elif cat.lower() == "reference corpus":
                     color_default = reference_corpus_default
                 else:
-                    color_default = prev_color
-                safe_cat = str(cat).replace(" ", "_").replace(",", "_").replace("/", "_")
+                    color_default = default_hex
+                safe_cat = (str(cat)
+                            .replace(" ", "_")
+                            .replace(",", "_")
+                            .replace("/", "_")
+                            .replace("(", "")
+                            .replace(")", ""))
                 if not safe_cat:
                     safe_cat = f"cat_{idx}"
-                color_key = f"{key_prefix}_{safe_cat}_{idx}"
-                while color_key in seen_keys:
-                    color_key = f"{key_prefix}_{safe_cat}_{idx}_{len(seen_keys)}"
-                seen_keys.add(color_key)
+                color_key = f"{key_prefix}_{safe_cat}"
                 color = st.color_picker(
                     f"Color for {cat}",
-                    value=st.session_state.get(color_key, color_default),
+                    value=get_widget_state(color_key, color_default),
                     key=color_key
                 )
                 color_dict[cat] = color
-                prev_color = color
         else:  # Plotly palette
             palette = st.selectbox(
                 "Plotly palette",
@@ -391,19 +430,23 @@ def color_picker_controls(
                                   getattr(plotly.colors.sequential, palette, None))
             palette_colors = ([rgb_to_hex(c) for c in palette_colors_raw]
                               if palette_colors_raw else [default_hex])
-            prev_color = palette_colors[0] if palette_colors else default_hex
-            seen_keys = set()
             for idx, cat in enumerate(cats):
-                safe_cat = str(cat).replace(" ", "_").replace(",", "_").replace("/", "_")
+                safe_cat = (str(cat)
+                            .replace(" ", "_")
+                            .replace(",", "_")
+                            .replace("/", "_")
+                            .replace("(", "")
+                            .replace(")", ""))
                 if not safe_cat:
                     safe_cat = f"cat_{idx}"
-                color_key = f"{key_prefix}_{safe_cat}_{idx}"
-                while color_key in seen_keys:
-                    color_key = f"{key_prefix}_{safe_cat}_{idx}_{len(seen_keys)}"
-                seen_keys.add(color_key)
+                color_key = f"{key_prefix}_{safe_cat}"
+                # Always use the last selected value for this category, or palette default
+                last_value = get_widget_state(
+                    color_key, palette_colors[idx % len(palette_colors)]
+                    )
                 default_idx = (
-                    palette_colors.index(st.session_state.get(color_key, prev_color))
-                    if st.session_state.get(color_key, prev_color) in palette_colors
+                    palette_colors.index(last_value)
+                    if last_value in palette_colors
                     else idx % len(palette_colors)
                 )
                 color = st.segmented_control(
@@ -414,6 +457,4 @@ def color_picker_controls(
                     key=color_key
                 )
                 color_dict[cat] = color
-                prev_color = color
-
     return color_dict

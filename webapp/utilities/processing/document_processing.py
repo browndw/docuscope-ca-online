@@ -7,7 +7,10 @@ and generating HTML representations with various tag highlighting.
 
 import streamlit as st
 import polars as pl
-from webapp.utilities.session import update_session
+from webapp.utilities.core import app_core
+from webapp.utilities.session import get_or_init_user_session, safe_session_get
+from webapp.utilities.state import SessionKeys
+from webapp.utilities.corpus import get_corpus_data_manager
 
 
 def generate_document_html(
@@ -29,20 +32,23 @@ def generate_document_html(
     None
     """
     # --- Check if target corpus is loaded ---
-    session = pl.DataFrame.to_dict(
-        st.session_state[user_session_id]["session"], as_series=False
-    )
-    if session.get('has_target', [False])[0] is False:
+    user_session_id, session = get_or_init_user_session()
+    if safe_session_get(session, SessionKeys.HAS_TARGET, None) is False:
         st.session_state[user_session_id]["doc_warning"] = (
             "No target corpus loaded. Please load a document first.",
             ":material/info:"
         )
         return
 
-    # --- Try to get the target tokens table ---
+    # --- Try to get the target tokens table using corpus data manager ---
     try:
-        tok_pl = st.session_state[user_session_id]["target"]["ds_tokens"]
-    except KeyError:
+        manager = get_corpus_data_manager(user_session_id, "target")
+        tok_pl = manager.get_data("ds_tokens")
+
+        if tok_pl is None:
+            raise KeyError("No tokens data available")
+
+    except (KeyError, Exception):
         st.session_state[user_session_id]["doc_warning"] = (
             "No tokens found in the target corpus.",
             ":material/info:"
@@ -71,7 +77,7 @@ def generate_document_html(
     st.session_state[user_session_id]["target"]["doc_simple"] = doc_simple
     st.session_state[user_session_id]["target"]["doc_ds"] = doc_ds
 
-    update_session('doc', True, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, 'doc', True)
     st.session_state[user_session_id]["doc_warning"] = None
     st.success('Document processed!')
     st.rerun()

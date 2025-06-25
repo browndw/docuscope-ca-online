@@ -8,15 +8,17 @@ import random
 import streamlit as st
 import streamlit.components.v1 as components
 
-from webapp.utilities.session import load_metadata, update_session
+from webapp.utilities.core import app_core
+from webapp.utilities.session import load_metadata, safe_session_get
 from webapp.utilities.exports import convert_to_word
-from webapp.utilities.ui.text_visualization import (
-    generate_tag_html_legend, plot_tag_density
-)
+from webapp.utilities.ui.text_visualization import generate_tag_html_legend
+from webapp.utilities.ui.corpus_display import safe_metadata_get
+from webapp.utilities.plotting import plot_tag_density
 from webapp.utilities.ui.helpers import toggle_download, sidebar_action_button
 from webapp.utilities.plotting import plot_download_link
 from webapp.utilities.processing import generate_document_html
-from webapp.utilities.state import CorpusKeys, SessionKeys, TargetKeys, WarningKeys
+from webapp.utilities.state import CorpusKeys, SessionKeys, TargetKeys, WarningKeys, MetadataKeys  # noqa: E501
+from webapp.utilities.state.widget_state import safe_clear_widget_state
 
 # Document highlighting colors
 HEX_HIGHLIGHTS = ['#5fb7ca', '#e35be5', '#ffc701', '#fe5b05', '#cb7d60']
@@ -91,9 +93,10 @@ def render_document_selection_interface(user_session_id: str, session: dict) -> 
     st.sidebar.write("""Use the menus to select
         the tags you would like to highlight.
         """)
-
-    if session.get('has_target')[0] is True and metadata_target:
-        doc_ids = sorted(metadata_target.get('docids')[0]['ids'])
+    if (
+        safe_session_get(session, SessionKeys.HAS_TARGET, None) is True
+    ):
+        doc_ids = safe_metadata_get(metadata_target, MetadataKeys.DOCIDS, [], 'ids')
 
         # Random selection checkbox
         random_selection = st.sidebar.checkbox(
@@ -134,8 +137,7 @@ def render_document_selection_interface(user_session_id: str, session: dict) -> 
             )
             # Clear random selection state when switching back to manual
             random_key = f"sd_random_doc_{user_session_id}"
-            if random_key in st.session_state:
-                del st.session_state[random_key]
+            safe_clear_widget_state(random_key)
     else:
         doc_key = st.sidebar.selectbox(
             "Select document to view:",
@@ -146,7 +148,7 @@ def render_document_selection_interface(user_session_id: str, session: dict) -> 
         button_label="Process Document",
         button_icon=":material/manufacturing:",
         preconditions=[
-            session.get('has_target')[0],
+            safe_session_get(session, SessionKeys.HAS_TARGET, None) is True,
         ],
         action=lambda: generate_document_html(user_session_id, doc_key),
         spinner_message="Processing document..."
@@ -279,33 +281,20 @@ def render_tag_density_plot_interface(
         (should_show_plot, error_message, fig) - Whether to show plot,
         error message, and figure
     """
-    st.sidebar.markdown("---")
-    st.sidebar.markdown(
-        body="### Plot tag locations",
-        help=(
-            "This plot shows where the selected tags occur "
-            "in the document, normalized to text length. "
-            "You can visualize the distribution of tags "
-            "across the text.")
-    )
 
-    if st.sidebar.button(
-        label="Tag Density Plot",
-        icon=":material/manufacturing:"
-    ):
-        if len(tag_list) > 5:
-            return False, ":no_entry_sign: You can only plot a maximum of 5 tags.", None
-        elif len(tag_list) == 0:
-            return False, 'There are no tags to plot.', None
-        else:
-            # Prepare data for plotting
-            df_plot = tag_loc.to_pandas()
-            df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
-            df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
+    if len(tag_list) > 5:
+        return False, ":no_entry_sign: You can only plot a maximum of 5 tags.", None
+    elif len(tag_list) == 0:
+        return False, 'There are no tags to plot.', None
+    else:
+        # Prepare data for plotting
+        df_plot = tag_loc.to_pandas()
+        df_plot['X'] = (df_plot.index + 1)/(len(df_plot.index))
+        df_plot = df_plot[df_plot['Tag'].isin(tag_list)]
 
-            # Create the plotly chart
-            fig = plot_tag_density(df_plot, tag_list, tag_colors)
-            return True, None, fig
+        # Create the plotly chart
+        fig = plot_tag_density(df_plot, tag_list, tag_colors)
+        return True, None, fig
 
     return False, None, None
 
@@ -338,10 +327,11 @@ def render_document_reset_interface(user_session_id: str) -> None:
             target_session[key] = {}
 
         # Update session and clear tags
-        update_session(SessionKeys.DOC, False, user_session_id)
+        app_core.session_manager.update_session_state(
+            user_session_id, SessionKeys.DOC, False
+        )
 
-        if _TAGS in st.session_state:
-            del st.session_state[_TAGS]
+        safe_clear_widget_state(_TAGS)
         st.rerun()
 
 
@@ -373,7 +363,17 @@ def render_document_interface(
 
     # Display document title
     if doc_key:
-        st.markdown(f"### {doc_key[0]}")
+        st.markdown(
+            body=f"### {doc_key[0]}",
+            help=(
+                "Text highlighting and tag density plots "
+                "together to visualize the selected tags in the document. "
+                "A tag density plot shows where the selected tags occur "
+                "in the document, normalized to text length. "
+                "In this way, you can see both what words and phrases "
+                "are tagged, and how they are distributed in the text."
+            )
+            )
 
     # Generate tag colors for all components
     tag_colors = HEX_HIGHLIGHTS[:len(tag_list)]
