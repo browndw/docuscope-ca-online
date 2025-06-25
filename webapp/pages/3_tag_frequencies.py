@@ -1,26 +1,28 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app provides an interface for generating and viewing tag frequency tables
+for a loaded target corpus.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Users can:
+- Select different tagsets (Parts-of-Speech, DocuScope)
+- Filter tags displayed in the table
+- View tag frequencies in a bar plot
+"""
 
 import docuscospacy as ds
 import polars as pl
 import streamlit as st
 
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core
+
 from webapp.utilities.analysis import (
     generate_tags_table, load_metadata
 )
 from webapp.utilities.session import (
-    get_or_init_user_session, validate_session_state
+    get_or_init_user_session, safe_session_get
+    )
+from webapp.utilities.corpus import (
+    get_corpus_data_manager
     )
 from webapp.utilities.ui import (
     render_table_generation_interface, sidebar_help_link,
@@ -28,23 +30,28 @@ from webapp.utilities.ui import (
     tag_filter_multiselect, target_info,
     get_page_base_filename, render_data_table_interface
     )
+from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
 from webapp.utilities.plotting import (
     plot_download_link, plot_tag_frequencies_bar
     )
 from webapp.utilities.state import (
-    load_widget_state, persist
+    CorpusKeys, SessionKeys,
+    TargetKeys, WarningKeys
 )
+from webapp.utilities.state.widget_key_manager import create_persist_function
 from webapp.menu import (
     menu, require_login
     )
-from webapp.utilities.state import (
-    CorpusKeys, SessionKeys,
-    TargetKeys, WarningKeys
-    )
-
 
 TITLE = "Tag Frequencies"
 ICON = ":material/table_view:"
+
+# Register persistent widgets for this page
+TAG_FREQUENCIES_PERSISTENT_WIDGETS = [
+    "tt_radio",       # Radio button for tagset selection
+    "tt_type_radio",  # Radio button for tag type selection
+]
+app_core.register_page_widgets(TAG_FREQUENCIES_PERSISTENT_WIDGETS)
 
 # Configuration constants
 TAGSET_CONFIG = {
@@ -76,24 +83,29 @@ st.set_page_config(
 def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
     """Render the tag frequency interface with tabs for table and plot."""
     try:
-        # Validate session state first
-        if not validate_session_state(user_session_id):
+        # Validate corpus data using the new manager
+        manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+        if not manager.is_ready():
             st.error("Invalid session state. Please reload the page or reset your data.")
             return
 
-        # Load the widget state and metadata for the target
-        load_widget_state(user_session_id)
+        # Initialize widget state management
+        app_core.widget_manager.register_persistent_keys([
+            'tag_freq_sort', 'tag_freq_ascending', 'tag_freq_display_limit',
+            'tag_freq_filter_zero'
+        ])
+
         metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
         if not metadata_target:
             st.error("Could not load target corpus metadata.")
             return
 
-        # Generate the tags table
+        # Generate the tags table using the new system
         df, tag_options, tag_radio, tag_type = tagset_selection(
             user_session_id=user_session_id,
             session_state=st.session_state,
-            persist_func=persist,
+            persist_func=create_persist_function(user_session_id),
             tagset_keys=TAGSET_CONFIG,
             simplify_funcs=SIMPLIFY_CONFIG,
             tag_filters=TAG_FILTERS_CONFIG,
@@ -102,7 +114,7 @@ def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
         )
 
         # Create tabs for table and plot display
-        tab1, tab2 = st.tabs(["Table", "Plot"])
+        tab1, tab2 = st.tabs([":material/table_view: Table", ":material/bar_chart: Plot"])
 
         # Render the table in the first tab with custom key handling
         with tab1:
@@ -113,7 +125,8 @@ def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
                 metadata_target=metadata_target,
                 base_filename=base_filename,
                 no_data_message="No frequency data available to display.",
-                apply_tag_filter=True
+                apply_tag_filter=True,
+                user_session_id=user_session_id
             )
 
         # Plot the tag frequencies in the second tab
@@ -146,7 +159,7 @@ def render_tag_frequency_plot(df, metadata_target: dict) -> None:
 
     # Plot the tag frequencies bar chart
     fig = plot_tag_frequencies_bar(filtered_df, color=bar_color)
-    st.plotly_chart(fig, use_container_width=True)
+    SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
     plot_download_link(fig, filename="tag_frequency_plot.png")
 
 
@@ -173,7 +186,7 @@ def main():
     sidebar_help_link("tag-frequencies.html")
 
     # Check if the tags table is available in the session
-    if session.get(SessionKeys.TAGS_TABLE, [False])[0] is True:
+    if safe_session_get(session, SessionKeys.TAGS_TABLE, False) is True:
         render_tag_frequency_interface(user_session_id, session)
     else:
         render_table_generation_interface(

@@ -1,35 +1,29 @@
-# Copyright (C) 2025 David West Brown
+"""
+App for loading and managing corpora in the Corpus Tagger web application.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+This module provides functionality for:
+- Loading existing corpora from internal databases or user uploads.
+- Processing new corpora from text files.
+- Uploading external corpora in Parquet format.
+- Managing corpus metadata and categories.
+- Resetting corpus data and clearing session state.
+"""
 
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# Copyright (C) 2025 David West Brown
-
-import pathlib
 import spacy
 import streamlit as st
 
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core, safe_config_value
+
+# Module-specific imports
 from webapp.utilities.session import (
-    get_or_init_user_session, init_session,
-    generate_temp
+    get_or_init_user_session, generate_temp, safe_session_get
     )
 from webapp.utilities.session.metadata_handlers import (
     handle_target_metadata_processing
     )
 from webapp.utilities.analysis import (
     find_saved, find_saved_reference
-    )
-from webapp.utilities.configuration import (
-    config_manager
     )
 from webapp.utilities.processing import (
     process_external, process_internal,
@@ -48,19 +42,24 @@ from webapp.utilities.state import (
     WarningKeys
     )
 
-# Path setup is inherited from index.py entrypoint
-PROJECT_ROOT = pathlib.Path(__file__).parent.parents[1].resolve()  # Inherited path setup
+# Register persistent widgets for this page
+LOAD_CORPUS_PERSISTENT_WIDGETS = [
+    "reffiles",           # File uploader for reference files
+    "corpora_to_load",    # Selection for corpora to load
+]
+app_core.register_page_widgets(LOAD_CORPUS_PERSISTENT_WIDGETS)
 
-# Set up paths for models
-MODEL_LARGE = config_manager.model_large_path
-MODEL_SMALL = config_manager.model_small_path
+# Configuration values are read from webapp/config/options.toml
+# Only critical fallbacks are provided for system stability
+MODEL_LARGE = safe_config_value('model_large_path', config_type='global')
+MODEL_SMALL = safe_config_value('model_small_path', config_type='global')
 
-# Set global flags and limits
-DESKTOP = config_manager.desktop_mode
-CHECK_SIZE = config_manager.check_size
-ENABLE_DETECT = config_manager.enable_language_detection
-MAX_TEXT = config_manager.max_text_size
-MAX_POLARS = config_manager.max_polars_size
+# Global flags and limits from configuration
+DESKTOP = safe_config_value('desktop_mode', config_type='global')
+CHECK_SIZE = safe_config_value('check_size', config_type='global')
+ENABLE_DETECT = safe_config_value('enable_language_detection', config_type='global')
+MAX_TEXT = safe_config_value('max_text_size', config_type='global')
+MAX_POLARS = safe_config_value('max_polars_size', config_type='global')
 
 TITLE = "Manage Corpus Data"
 ICON = ":material/database:"
@@ -143,19 +142,20 @@ def main() -> None:
         )
 
     # If a target corpus is already loaded
-    if session.get('has_target', [False])[0] is True:
+    if safe_session_get(session, 'has_target', False) is True:
         # Load and display corpus information
         load_and_display_target_corpus(session, user_session_id)
 
-        # Get metadata for sidebar operations
-        metadata_target = st.session_state[user_session_id]['metadata_target'].to_dict()
+        # Get metadata for sidebar operations using the unified metadata handler
+        from webapp.utilities.session.metadata_handlers import load_metadata
+        metadata_target = load_metadata("target", user_session_id)
 
         # Sidebar: Target corpus management
-        if not session.get(SessionKeys.HAS_META, [False])[0]:
+        if not safe_session_get(session, SessionKeys.HAS_META, False):
             handle_target_metadata_processing(metadata_target, user_session_id)
 
         # If reference corpus is loaded, show info and warnings
-        has_reference = session.get(SessionKeys.HAS_REFERENCE, [False])[0] is True
+        has_reference = safe_session_get(session, SessionKeys.HAS_REFERENCE, False) is True
         if not has_reference:
             # Reference corpus not loaded: offer options to load one
             st.markdown("---")
@@ -218,7 +218,7 @@ def main() -> None:
                         )
                     saved_corpora, saved_ref = find_saved_reference(  # noqa: E501
                         metadata_target.get(LoadCorpusKeys.MODEL)[0],
-                        session.get(SessionKeys.TARGET_DB)[0]
+                        safe_session_get(session, SessionKeys.TARGET_DB, '')
                         )
                     to_load = st.sidebar.selectbox(
                         'Select a saved corpus to load:',
@@ -383,9 +383,7 @@ def main() -> None:
                 STATES.items(),
                 user_session_id
                 )
-            init_session(
-                user_session_id
-                )
+            app_core.session_manager.create_session(user_session_id)
             st.rerun()
         st.sidebar.markdown("""---""")
 

@@ -1,26 +1,28 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app allows users to compare different parts of their corpus
+by generating a keyness table based on selected categories.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Users can:
+- Generate keyness tables for target and reference using selected categories
+- Filter results by tags
+- Toggle between different tagsets (Parts-of-Speech, DocuScope)
+- Download the keyness table in Excel format
+"""
 
 import polars as pl
 import streamlit as st
 
-from webapp.utilities.session import (  # noqa: E402
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core
+
+from webapp.utilities.session import (
     get_or_init_user_session, load_metadata,
-    update_session
+    update_session, safe_session_get
     )
-# Temporary imports for unmigrated UI functions
-from webapp.utilities.ui import (   # noqa: E402
+from webapp.utilities.corpus import (
+    get_corpus_data_manager, clear_corpus_data
+)
+from webapp.utilities.ui import (
     keyness_settings_info, keyness_sort_controls,
     reference_parts, render_dataframe,
     sidebar_action_button, sidebar_help_link,
@@ -28,17 +30,21 @@ from webapp.utilities.ui import (   # noqa: E402
     tagset_selection, target_parts,
     toggle_download, color_picker_controls
 )
-from webapp.utilities.plotting import (   # noqa: E402
+from webapp.utilities.plotting import (
     update_ref, update_tar,
     plot_compare_corpus_bar, plot_download_link
 )
-from webapp.utilities.exports import (   # noqa: E402
+from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
+from webapp.utilities.exports import (
     convert_to_excel
 )
-from webapp.utilities.state import (   # noqa: E402
-    load_widget_state, persist
+from webapp.utilities.state import (
+    safe_clear_widget_state,
+    SessionKeys, CorpusKeys,
+    TargetKeys, WarningKeys
 )
-from webapp.utilities.analysis import (   # noqa: E402
+from webapp.utilities.state.widget_key_manager import create_persist_function
+from webapp.utilities.analysis import (
     has_target_corpus, render_corpus_not_loaded_error,
     freq_simplify_pl, generate_keyness_parts
 )
@@ -46,14 +52,19 @@ from webapp.menu import (   # noqa: E402
     menu,
     require_login
     )
-from webapp.utilities.state import (  # noqa: E402
-    SessionKeys, CorpusKeys,
-    TargetKeys, WarningKeys
-    )
 
 
 TITLE = "Compare Corpus Parts"
 ICON = ":material/compare_arrows:"
+
+# Register persistent widgets for this page
+COMPARE_CORPUS_PARTS_PERSISTENT_WIDGETS = [
+    "cp_radio1",  # Radio button for tagset selection
+    "cp_radio3",  # Radio button for keyness table type
+    "tar",        # Target categories segmented control
+    "ref",        # Reference categories segmented control
+]
+app_core.register_page_widgets(COMPARE_CORPUS_PARTS_PERSISTENT_WIDGETS)
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
@@ -63,12 +74,15 @@ st.set_page_config(
 
 def render_results_interface(user_session_id: str, session: dict) -> None:
     """Render the interface when keyness table has been generated."""
-    load_widget_state(user_session_id)
+    # Initialize widget state management
+    app_core.widget_manager.register_persistent_keys([
+        'corpus_parts_sort', 'corpus_parts_ascending', 'corpus_parts_display_limit',
+        'corpus_parts_metric', 'corpus_parts_filter_zero'
+    ])
 
-    metadata_target = load_metadata(
-        CorpusKeys.TARGET,
-        user_session_id
-    )
+    # Use the new corpus data manager
+    target_manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
     # Display target and reference parts information
     col1, col2 = st.columns([1, 1])
@@ -85,9 +99,7 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
     table_radio = st.sidebar.radio(
         "Select the keyness table to display:",
         ("Tokens", "Tags Only"),
-        key=persist(
-            key="cp_radio1",
-            session_id=user_session_id),
+        key="cp_radio1",
         horizontal=True,
         help="Choose between tokens with tags or tags-only analysis."
     )
@@ -95,18 +107,18 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
     st.sidebar.markdown("---")
 
     if table_radio == 'Tokens':
-        render_tokens_interface(user_session_id)
+        render_tokens_interface(user_session_id, target_manager)
     else:
-        render_tags_interface(user_session_id)
+        render_tags_interface(user_session_id, target_manager)
 
 
-def render_tokens_interface(user_session_id: str) -> None:
+def render_tokens_interface(user_session_id: str, target_manager) -> None:
     """Render the tokens analysis interface."""
     # Use the tagset selection utility for sidebar controls
     df, _, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
         session_state=st.session_state,
-        persist_func=persist,
+        persist_func=create_persist_function(user_session_id),
         tagset_keys={
             "Parts-of-Speech": {
                 "General": TargetKeys.KW_POS_CP,
@@ -129,7 +141,7 @@ def render_tokens_interface(user_session_id: str) -> None:
         key_prefix="kt_"
     )
 
-    df = tag_filter_multiselect(df)
+    df = tag_filter_multiselect(df, user_session_id=user_session_id)
 
     # Map UI label to actual DataFrame column
     sort_col_map = {
@@ -145,38 +157,33 @@ def render_tokens_interface(user_session_id: str) -> None:
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    render_sidebar_controls(df, "keywords_tokens.xlsx", user_session_id)
+    render_sidebar_controls(df, "keywords_tokens.xlsx", user_session_id, target_manager)
 
 
-def render_tags_interface(user_session_id: str) -> None:
+def render_tags_interface(user_session_id: str, target_manager) -> None:
     """Render the tags-only analysis interface."""
     # Use sidebar tagset selection
     st.sidebar.markdown("### Tagset")
     tag_radio_tags = st.sidebar.radio(
         "Select tags to display:",
         ("Parts-of-Speech", "DocuScope"),
-        key=persist(
-            key="cp_radio3",
-            session_id=user_session_id
-        ),
+        key="cp_radio3",
         horizontal=True,
         help="Choose the tagset for tag frequency analysis."
     )
 
     if tag_radio_tags == 'Parts-of-Speech':
-        df = (
-            st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.KT_POS_CP]
-            .filter(pl.col("Tag") != "FU")
-        )
+        df = target_manager.get_data(TargetKeys.KT_POS_CP)
+        if df is not None:
+            df = df.filter(pl.col("Tag") != "FU")
     else:
-        df = (
-            st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.KT_DS_CP]
-            .filter(pl.col("Tag") != "Untagged")
-        )
+        df = target_manager.get_data(TargetKeys.KT_DS_CP)
+        if df is not None:
+            df = df.filter(pl.col("Tag") != "Untagged")
 
     tab1, tab2 = st.tabs(["Keyness Table", "Keyness Plot"])
     with tab1:
-        df = tag_filter_multiselect(df)
+        df = tag_filter_multiselect(df, user_session_id=user_session_id)
         render_dataframe(df)
 
     with tab2:
@@ -190,17 +197,19 @@ def render_tags_interface(user_session_id: str) -> None:
 
             # Plot with color customization
             fig = plot_compare_corpus_bar(df, color_dict=color_dict)
-            st.plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
             plot_download_link(fig, filename="compare_corpus_parts_bar.png")
         else:
             st.info("No data available for plotting. Please adjust your filters.")
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    render_sidebar_controls(df, "keywords_tags.xlsx", user_session_id)
+    render_sidebar_controls(df, "keywords_tags.xlsx", user_session_id, target_manager)
 
 
-def render_sidebar_controls(df, filename: str, user_session_id: str) -> None:
+def render_sidebar_controls(
+        df, filename: str, user_session_id: str, target_manager
+) -> None:
     """Render common sidebar controls for downloads and table regeneration."""
     toggle_download(
         label="Excel",
@@ -227,18 +236,25 @@ def render_sidebar_controls(df, filename: str, user_session_id: str) -> None:
         icon=":material/refresh:",
         help="Reset the analysis and select new categories to compare."
     ):
-        # Clear all related session data
-        keys_to_clear = [
+        # Clear only corpus parts comparison data using the corpus data manager
+        clear_corpus_data(user_session_id, CorpusKeys.TARGET, [
             TargetKeys.KW_POS_CP, TargetKeys.KW_DS_CP,
             TargetKeys.KT_POS_CP, TargetKeys.KT_DS_CP
-        ]
-        for key in keys_to_clear:
-            st.session_state[user_session_id][CorpusKeys.TARGET][key] = {}
-        update_session(SessionKeys.KEYNESS_PARTS, False, user_session_id)
+        ])
+
+        # Reset corpus parts state using session key
+        app_core.session_manager.update_session_state(
+            user_session_id, SessionKeys.KEYNESS_PARTS, False
+        )
+
+        # Clear warnings using session key
+        st.session_state[user_session_id][WarningKeys.KEYNESS_PARTS] = None
         st.rerun()
 
 
-def render_setup_interface(user_session_id: str, session: dict) -> None:
+def render_setup_interface(
+        user_session_id: str, session: dict
+) -> None:
     """Render the interface for setting up corpus part comparison."""
     st.markdown(
         body=(
@@ -251,7 +267,7 @@ def render_setup_interface(user_session_id: str, session: dict) -> None:
         )
     )
 
-    if session.get(SessionKeys.HAS_META, [False])[0]:
+    if safe_session_get(session, SessionKeys.HAS_META, False):
         render_category_selection_interface(user_session_id, session)
     else:
         render_no_metadata_message()
@@ -268,7 +284,9 @@ def render_setup_interface(user_session_id: str, session: dict) -> None:
     render_generation_controls(user_session_id, session, pval_selected, swap_selected)
 
 
-def render_category_selection_interface(user_session_id: str, session: dict) -> None:
+def render_category_selection_interface(
+        user_session_id: str, session: dict
+) -> None:
     """Render the category selection interface using segmented controls."""
     metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
     all_cats = sorted(set(metadata_target.get('doccats')[0]['cats']))
@@ -298,7 +316,7 @@ def render_category_selection_interface(user_session_id: str, session: dict) -> 
             "Select target categories:",
             all_cats,
             selection_mode="multi",
-            key=f"tar_{user_session_id}",
+            key="tar",
             on_change=update_tar,
             args=(user_session_id,),
             help=(
@@ -313,7 +331,7 @@ def render_category_selection_interface(user_session_id: str, session: dict) -> 
             "Select reference categories:",
             all_cats,
             selection_mode="multi",
-            key=f"ref_{user_session_id}",
+            key="ref",
             on_change=update_ref,
             args=(user_session_id,),
             help=(
@@ -442,7 +460,7 @@ def render_generation_controls(
         msg, icon = st.session_state[user_session_id][WarningKeys.KEYNESS_PARTS]
         st.error(msg, icon=icon)
         # Clear the warning after displaying it
-        del st.session_state[user_session_id][WarningKeys.KEYNESS_PARTS]
+        safe_clear_widget_state(f"{user_session_id}_{WarningKeys.KEYNESS_PARTS}")
 
     st.sidebar.markdown("---")
 
@@ -474,7 +492,7 @@ def main():
     sidebar_help_link("compare-corpus-parts.html")
 
     # Check if keyness table has been generated
-    if session.get(SessionKeys.KEYNESS_PARTS, [False])[0]:
+    if safe_session_get(session, SessionKeys.KEYNESS_PARTS, False):
         render_results_interface(user_session_id, session)
     else:
         render_setup_interface(user_session_id, session)

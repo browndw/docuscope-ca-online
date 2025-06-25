@@ -1,27 +1,22 @@
-# Copyright (C) 2025 David West Brown
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+This app provides an interface for downloading corpus files
+for offline use. Users can download the target corpus and, if available,
+the reference corpus in various formats (CSV or Parquet).
+Users can choose to download the entire corpus data or just the corpus file itself.
+It requires the user to be logged in and displays options for downloading
+the target and reference corpus files.
+"""
 
 import streamlit as st
 
-from webapp.utilities.session import (   # noqa: E402
-    get_or_init_user_session
-)
-from webapp.utilities.exports import (  # noqa: E402
+from webapp.utilities.session import (
+    get_or_init_user_session, safe_session_get
+    )
+from webapp.utilities.exports import (
     handle_corpus_file_download,
     handle_all_data_download
 )
-from webapp.utilities.ui import (  # noqa: E402
+from webapp.utilities.ui import (
     render_download_page_header,
     render_data_loading_interface,
     render_corpus_selection,
@@ -29,10 +24,10 @@ from webapp.utilities.ui import (  # noqa: E402
     render_format_selection,
     check_reference_corpus_availability
 )
-from webapp.utilities.state import (  # noqa: E402
+from webapp.utilities.state import (
     SessionKeys
 )
-from webapp.menu import (   # noqa: E402
+from webapp.menu import (
     menu,
     require_login
 )
@@ -148,7 +143,7 @@ def main() -> None:
     )
 
     # Check if tables are loaded
-    if session.get(SessionKeys.TAGS_TABLE)[0] is True:
+    if safe_session_get(session, SessionKeys.TAGS_TABLE, None) is True:
         render_download_interface(user_session_id, session)
     else:
         render_data_loading_interface(user_session_id, session)

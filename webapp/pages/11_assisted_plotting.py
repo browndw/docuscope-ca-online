@@ -1,16 +1,12 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app provides an interface for AI-assisted plotting
+from a loaded target corpus. Users can interact with Plotbot to create
+and refine plots based on their data.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Users can:
+- Select a plotting library (Plotly, Matplotlib, Seaborn)
+- Interact with Plotbot to generate and refine plots
+"""
 
 import base64
 import io
@@ -18,13 +14,14 @@ import json
 import streamlit as st
 from datetime import datetime
 
-from webapp.utilities.session import (  # noqa: E402
-    get_or_init_user_session
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core, safe_config_value
+
+# Module-specific imports
+from webapp.utilities.session import (
+    get_or_init_user_session, safe_session_get
 )
-from webapp.utilities.configuration import (  # noqa: E402
-    get_ai_configuration
-)
-from webapp.utilities.ai import (   # noqa: E402
+from webapp.utilities.ai import (
     clear_plotbot, previous_code_chunk,
     plotbot_user_query, setup_ai_session_state,
     get_api_key, render_api_key_input,
@@ -33,19 +30,17 @@ from webapp.utilities.ai import (   # noqa: E402
     render_work_preservation_interface, should_show_work_preservation_interface,
     export_conversation_history
 )
-from webapp.utilities.analysis import (   # noqa: E402
+from webapp.utilities.analysis import (
     generate_tags_table
 )
-from webapp.utilities.ui import (  # noqa: E402
-    sidebar_help_link, render_table_generation_interface
+from webapp.utilities.ui import (
+    sidebar_help_link, render_table_generation_interface,
+    graceful_component
 )
-from webapp.utilities.state import (  # noqa: E402
-    load_widget_state, persist
-)
-from webapp.utilities.state import (  # noqa: E402
+from webapp.utilities.state import (
     SessionKeys, WarningKeys
 )
-from webapp.menu import (   # noqa: E402
+from webapp.menu import (
     menu, require_login
 )
 
@@ -57,8 +52,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# Get AI configuration
-_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
+# Get AI configuration using standardized access
+DESKTOP = safe_config_value('desktop', config_type='ai')
+CACHE = safe_config_value('cache', config_type='ai')
+LLM_MODEL = safe_config_value('model', config_type='ai')
+LLM_PARAMS = safe_config_value('params', config_type='ai')
+QUOTA = safe_config_value('quota', config_type='ai')
+
+# Register persistent widgets for this page
+app_core.register_page_widgets(["plot_radio"])
 
 
 def render_plotting_library_selection(user_session_id: str) -> str:
@@ -79,7 +81,7 @@ def render_plotting_library_selection(user_session_id: str) -> str:
     plot_lib = st.radio(
         "Select the plotting library:",
         ("plotly.express", "matplotlib", "seaborn"),
-        key=persist("plot_radio", user_session_id, "11_assisted_plotting"),
+        key="plot_radio",
         on_change=clear_plotbot,
         args=(user_session_id, False,),
         horizontal=True
@@ -96,6 +98,11 @@ def render_plotbot_chat_interface(
     plot_lib: str
 ) -> None:
     """Render the chat interface for Plotbot."""
+    # Convert DataFrame once for reuse in API calls
+    if hasattr(df, 'to_pandas'):
+        df_pandas = df.to_pandas()
+    else:
+        df_pandas = df
     # Display chat history
     for message in st.session_state[user_session_id]["plotbot"]:
         with st.chat_message(message["role"]):
@@ -106,36 +113,48 @@ def render_plotbot_chat_interface(
             elif message["type"] == "error":
                 st.error(message["value"], icon=":material/error:")
             elif message["type"] == "plot":
-                # Handle different plot types
+                # Handle different plot types with safe rendering
                 if plot_lib in ["matplotlib", "seaborn"]:
-                    fig = message['value']
-                    # Convert matplotlib figure to image
-                    buf = io.BytesIO()
-                    fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-                    buf.seek(0)
-                    img_bytes = buf.getvalue()
-                    st.image(img_bytes)
+                    try:
+                        fig = message['value']
+                        # Convert matplotlib figure to image
+                        buf = io.BytesIO()
+                        fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                        buf.seek(0)
+                        img_bytes = buf.getvalue()
+                        st.image(img_bytes)
 
-                    # Add download link
-                    b64 = base64.b64encode(img_bytes).decode()
-                    href = (f'<a href="data:image/png;base64,{b64}" '
-                            'download="plot.png">Download PNG</a>')
-                    st.markdown(href, unsafe_allow_html=True)
-                    buf.close()
+                        # Add download link
+                        b64 = base64.b64encode(img_bytes).decode()
+                        href = (f'<a href="data:image/png;base64,{b64}" '
+                                'download="plot.png">Download PNG</a>')
+                        st.markdown(href, unsafe_allow_html=True)
+                        buf.close()
+                    except Exception as e:
+                        st.error(
+                            f"Failed to render plot: {str(e)}",
+                            icon=":material/error:"
+                        )
 
                 elif plot_lib == "plotly.express":
-                    fig = message['value']
-                    # Only call plotly methods on plotly figures
-                    if hasattr(fig, 'update_xaxes'):
-                        fig.update_xaxes(automargin=True)
-                        fig.update_yaxes(automargin=True)
-                    img_bytes = fig.to_image(format="png", scale=2)
-                    st.image(img_bytes)
-                    # Add download link
-                    b64 = base64.b64encode(img_bytes).decode()
-                    href = (f'<a href="data:image/png;base64,{b64}" '
-                            'download="plot.png">Download PNG</a>')
-                    st.markdown(href, unsafe_allow_html=True)
+                    try:
+                        fig = message['value']
+                        # Only call plotly methods on plotly figures
+                        if hasattr(fig, 'update_xaxes'):
+                            fig.update_xaxes(automargin=True)
+                            fig.update_yaxes(automargin=True)
+                        img_bytes = fig.to_image(format="png", scale=2)
+                        st.image(img_bytes)
+                        # Add download link
+                        b64 = base64.b64encode(img_bytes).decode()
+                        href = (f'<a href="data:image/png;base64,{b64}" '
+                                'download="plot.png">Download PNG</a>')
+                        st.markdown(href, unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(
+                            f"Failed to render plot: {str(e)}",
+                            icon=":material/error:"
+                        )
 
     # Get last code chunk
     last_code = previous_code_chunk(st.session_state[user_session_id]["plotbot"])
@@ -161,7 +180,7 @@ def render_plotbot_chat_interface(
                 # Generate response
                 plotbot_user_query(
                     session_id=user_session_id,
-                    df=df.to_pandas() if hasattr(df, 'to_pandas') else df,
+                    df=df_pandas,
                     plot_lib=plot_lib,
                     user_input=input_prompt,
                     api_key=api_key,
@@ -185,7 +204,7 @@ def render_plotbot_chat_interface(
                 # Generate refined response
                 plotbot_user_query(
                     session_id=user_session_id,
-                    df=df.to_pandas() if hasattr(df, 'to_pandas') else df,
+                    df=df_pandas,
                     plot_lib=plot_lib,
                     user_input=input_refine,
                     api_key=api_key,
@@ -199,6 +218,7 @@ def render_plotbot_chat_interface(
                 st.rerun()
 
 
+@graceful_component("Plotbot Interface", show_errors=True)
 def render_plotbot_interface(user_session_id: str, session: dict) -> None:
     """Render the main Plotbot interface with data selection and plotting."""
     try:
@@ -305,13 +325,16 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
 
             # Get metadata if available
             metadata_target = None
-            if session.get(SessionKeys.HAS_TARGET, [False])[0]:
-                metadata_target = (
-                    st.session_state[user_session_id]['metadata_target'].to_dict()
-                )
+            if safe_session_get(session, SessionKeys.HAS_TARGET, False):
+                from webapp.utilities.session import load_metadata
+                from webapp.utilities.state import CorpusKeys
+                metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
-            # Load widget state
-            load_widget_state(user_session_id)
+            # Initialize widget state management
+            app_core.widget_manager.register_persistent_keys([
+                'plot_corpus_select', 'plot_query_select', 'plot_type_select',
+                'plot_x_axis', 'plot_y_axis', 'plot_color_by'
+            ])
 
             # Data selection interface
             selected_corpus, selected_query, df = render_data_selection_interface(
@@ -366,11 +389,14 @@ def main():
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
 
+    # Register persistent widgets for this page
+    app_core.register_page_widgets(["plot_radio"])
+
     # Add help link
     sidebar_help_link("assisted-plotting.html")
 
     # Check if tags table is available
-    if session.get(SessionKeys.TAGS_TABLE, [False])[0]:
+    if safe_session_get(session, SessionKeys.TAGS_TABLE, False):
         render_plotbot_interface(user_session_id, session)
     else:
         # Show generation interface for tags table

@@ -1,22 +1,19 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app provides an interface for generating and viewing KWIC (Key Word in Context) tables
+for a loaded target corpus.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Users can:
+- Configure KWIC parameters (node word, case sensitivity, search mode)
+- Generate KWIC tables based on the target corpus
+"""
 
 import streamlit as st
 
+# Core application utilities
+from webapp.utilities.core import app_core
+
 from webapp.utilities.session import (
-    get_or_init_user_session, load_metadata,
-    update_session
+    get_or_init_user_session, load_metadata, safe_session_get
     )
 from webapp.utilities.ui import (
     render_data_table_interface, sidebar_action_button,
@@ -26,7 +23,7 @@ from webapp.utilities.analysis import (
     has_target_corpus, render_corpus_not_loaded_error,
     generate_kwic
 )
-from webapp.menu import (   # noqa: E402
+from webapp.menu import (
     menu, require_login
     )
 from webapp.utilities.state import (
@@ -64,7 +61,8 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
         metadata_target=metadata_target,
         base_filename="kwic",
         no_data_message="No KWIC data available to display.",
-        apply_tag_filter=False  # KWIC tables typically don't need tag filtering
+        apply_tag_filter=False,  # KWIC tables typically don't need tag filtering
+        user_session_id=user_session_id
     )
 
     # Reset table option in sidebar
@@ -90,7 +88,9 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
             # Fallback for attribute error
             if "kwic" in target_dict:
                 target_dict["kwic"] = {}
-        update_session(SessionKeys.KWIC, False, user_session_id)
+        app_core.session_manager.update_session_state(
+            user_session_id, SessionKeys.KWIC, False
+        )
         st.rerun()
 
     st.sidebar.markdown("---")
@@ -217,7 +217,7 @@ def main():
     sidebar_help_link("kwic.html")
 
     # Check if KWIC table has been generated
-    if session.get(SessionKeys.KWIC, [False])[0]:
+    if safe_session_get(session, SessionKeys.KWIC, False):
         render_results_interface(user_session_id, session)
     else:
         render_setup_interface(user_session_id, session)

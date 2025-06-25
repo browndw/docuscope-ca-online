@@ -1,31 +1,41 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app provides an interface for advanced plotting of tag frequencies,
+scatterplots, and PCA (Principal Component Analysis) for a loaded target corpus.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Users can:
+- Generate boxplots of tag frequencies, either grouped by metadata variables or not.
+- Create scatterplots of tag frequencies, with options to highlight groups.
+- Perform PCA on tag frequencies and visualize the results.
+"""
 
 import re
 import docuscospacy as ds
 import streamlit as st
 
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core
+
+# UI error boundaries (imported directly to avoid None fallback)
+from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
+
+# Module-specific imports
 from webapp.utilities.session import (
-    get_or_init_user_session, load_metadata,
-    update_session
+    get_or_init_user_session, load_metadata, safe_session_get
     )
 from webapp.utilities.plotting import (
-    generate_boxplot, generate_boxplot_by_group
+    generate_boxplot, generate_boxplot_by_group,
+    clear_plots, clear_scatterplot_multiselect,
+    update_grpa, update_grpb,
+    update_pca_idx_tab1, update_pca_idx_tab2,
+    plot_download_link, plot_general_boxplot,
+    plot_grouped_boxplot, plot_pca_scatter_highlight,
+    plot_pca_variable_contrib_bar, plot_scatter,
+    plot_scatter_highlight
 )
 from webapp.utilities.analysis import (
     generate_pca, generate_scatterplot,
-    generate_scatterplot_with_groups, is_valid_df
+    generate_scatterplot_with_groups, is_valid_df,
+    correlation_update, update_pca_plot
 )
 from webapp.utilities.ui import (
     color_picker_controls, contribution_info,
@@ -33,29 +43,26 @@ from webapp.utilities.ui import (
     show_plot_warning, tagset_selection,
     variance_info
 )
-from webapp.utilities.plotting import (   # noqa: E402
-    clear_plots, clear_scatterplot_multiselect,
-    update_grpa, update_grpb,
-    update_pca_idx_tab1, update_pca_idx_tab2
-)
-from webapp.utilities.plotting import (  # noqa: E402
-    plot_download_link, plot_general_boxplot,
-    plot_grouped_boxplot, plot_pca_scatter_highlight,
-    plot_pca_variable_contrib_bar, plot_scatter,
-    plot_scatter_highlight
-)
-from webapp.utilities.analysis import (  # noqa: E402
-    correlation_update, update_pca_plot
-    )
-from webapp.menu import (   # noqa: E402
+from webapp.menu import (
     menu, require_login
     )
-from webapp.utilities.state import (  # noqa: E402
+from webapp.utilities.state import (
     BoxplotKeys, ScatterplotKeys,
     PCAKeys, SessionKeys,
     WarningKeys, CorpusKeys, TargetKeys,
     MetadataKeys
     )
+from webapp.utilities.state.widget_key_manager import create_persist_function
+
+# Register persistent widgets for this page
+ADVANCED_PLOTTING_PERSISTENT_WIDGETS = [
+    "tag_radio",                      # Radio button for tag selection
+    "tag_type_radio",                 # Radio button for tag type selection
+    "by_group_boxplot",              # Toggle for grouped boxplots
+    "by_group_scatter",              # Toggle for grouped scatterplots
+    "highlight_scatter_groups",       # Multiselect for scatter groups
+]
+app_core.register_page_widgets(ADVANCED_PLOTTING_PERSISTENT_WIDGETS)
 
 TITLE = "Advanced Plotting"
 ICON = ":material/line_axis:"
@@ -77,14 +84,14 @@ def render_boxplot_interface(
         st.error("Invalid session parameters.")
         return
 
-    update_session(SessionKeys.PCA, False, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, SessionKeys.PCA, False)
     st.sidebar.markdown("### Tagset")
 
     # Radio button to select tag type
     df, cats, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
         session_state=st.session_state,
-        persist_func=lambda key, user: f"{key}_{user}",
+        persist_func=create_persist_function(user_session_id),
         tagset_keys={
             "Parts-of-Speech": {"General": "dtm_pos", "Specific": "dtm_pos"},
             "DocuScope": "dtm_ds"
@@ -126,7 +133,7 @@ def render_boxplot_interface(
 
     # Handle plotting with grouping variables
     if by_group:
-        if session[SessionKeys.HAS_META][0] is False:
+        if not safe_session_get(session, SessionKeys.HAS_META, False):
             st.warning(
                 """
                 It doesn't look like you've processed any metadata yet.
@@ -241,7 +248,7 @@ def render_boxplot_interface(
                     key_prefix=f"color_picker_boxplot_{user_session_id}"
                 )
                 fig = plot_grouped_boxplot(df_plot, color=color_dict)
-                st.plotly_chart(fig, use_container_width=True)
+                SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
                 plot_download_link(fig, filename="grouped_boxplots.png")
 
                 stats = st.session_state[user_session_id][BoxplotKeys.GROUP_STATS]
@@ -313,9 +320,12 @@ def render_boxplot_interface(
             df_plot = st.session_state[user_session_id][BoxplotKeys.DF]
             # Use the confirmed selection for color controls and plotting
             confirmed_box_val2 = st.session_state[user_session_id].get(BoxplotKeys.CONFIRMED_VAL2, [])  # noqa: E501
-            color_dict = color_picker_controls(confirmed_box_val2)
+            color_dict = color_picker_controls(
+                confirmed_box_val2,
+                key_prefix=f"color_picker_boxplot_general_{user_session_id}"
+            )
             fig = plot_general_boxplot(df_plot, color=color_dict)
-            st.plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
             plot_download_link(fig, filename="boxplots.png")
 
             stats = st.session_state[user_session_id][BoxplotKeys.STATS]
@@ -342,13 +352,13 @@ def render_scatterplot_interface(
         st.error("Invalid session parameters.")
         return
 
-    update_session(SessionKeys.PCA, False, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, SessionKeys.PCA, False)
     st.sidebar.markdown("### Tagset")
 
     df, cats, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
         session_state=st.session_state,
-        persist_func=lambda key, user: f"{key}_{user}",
+        persist_func=create_persist_function(user_session_id),
         tagset_keys={
             "Parts-of-Speech": {"General": "dtm_pos", "Specific": "dtm_pos"},
             "DocuScope": "dtm_ds"
@@ -387,7 +397,7 @@ def render_scatterplot_interface(
         )
 
     if by_group_highlight:
-        if session[SessionKeys.HAS_META][0] is False:
+        if not safe_session_get(session, SessionKeys.HAS_META, False):
             st.warning(
                 """
                 It doesn't look like you've processed any metadata yet.
@@ -484,6 +494,7 @@ def render_scatterplot_interface(
             )
             show_trend = st.checkbox(
                 label="Show linear fit (regression line)",
+                key=f"trend_scatter_groups_{user_session_id}",
                 value=False
             )
             fig = plot_scatter_highlight(
@@ -495,7 +506,7 @@ def render_scatterplot_interface(
                 color=color_dict,
                 trendline=show_trend
             )
-            st.plotly_chart(fig, use_container_width=False)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=False)
             plot_download_link(fig, filename="scatterplot_highlight.png")
             cc_dict = st.session_state[user_session_id][ScatterplotKeys.GROUP_CORRELATION]
             cc_dict = correlation_update(
@@ -586,9 +597,13 @@ def render_scatterplot_interface(
             is_valid_df(st.session_state[user_session_id][ScatterplotKeys.DF], [x_col, y_col])  # noqa: E501
         ):
             df_plot = st.session_state[user_session_id][ScatterplotKeys.DF]
-            color_dict = color_picker_controls(["All Points"])
+            color_dict = color_picker_controls(
+                ["All Points"],
+                key_prefix=f"color_picker_scatter_all_{user_session_id}"
+            )
             show_trend = st.checkbox(
                 label="Show linear fit (regression line)",
+                key=f"trend_scatter_{user_session_id}",
                 value=False
                 )
             fig = plot_scatter(
@@ -598,7 +613,7 @@ def render_scatterplot_interface(
                 color=color_dict,
                 trendline=show_trend
                 )
-            st.plotly_chart(fig, use_container_width=False)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=False)
             plot_download_link(fig, filename="scatterplot.png")
             cc_dict = st.session_state[user_session_id][ScatterplotKeys.CORRELATION]
             st.info(correlation_info(cc_dict))
@@ -623,12 +638,12 @@ def render_pca_interface(
         st.error("Invalid session parameters.")
         return
 
-    update_session(SessionKeys.PCA, True, user_session_id)
+    app_core.session_manager.update_session_state(user_session_id, SessionKeys.PCA, True)
 
     df, cats, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
         session_state=st.session_state,
-        persist_func=lambda key, user: f"{key}_{user}",
+        persist_func=create_persist_function(user_session_id),
         tagset_keys={
             "Parts-of-Speech": {"General": "dtm_pos", "Specific": "dtm_pos"},
             "DocuScope": "dtm_ds"
@@ -687,7 +702,7 @@ def render_pca_interface(
 
     # Plot PCA results if PCA has been performed
     if (
-        session.get(SessionKeys.PCA)[0] is True and
+        safe_session_get(session, SessionKeys.PCA, None) is True and
         "pca_df" in st.session_state[user_session_id][CorpusKeys.TARGET] and
         is_valid_df(st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.PCA_DF], ['PC1', 'PC2'])  # noqa: E501
     ):
@@ -710,7 +725,10 @@ def render_pca_interface(
         if not (1 <= current_idx <= len(pc_cols)):
             current_idx = 1
 
-        tab1, tab2 = st.tabs(["PCA Plot", "Variable Contribution"])
+        tab1, tab2 = st.tabs([
+            ":material/scatter_plot: PCA Plot",
+            ":material/bar_chart: Variable Contribution"
+            ])
 
         # --- TAB 1 ---
         with tab1:
@@ -726,7 +744,7 @@ def render_pca_interface(
                 )
                 st.session_state[user_session_id]['pca_idx'] = selected_idx
             with col2:
-                if session.get(SessionKeys.HAS_META)[0] is True:
+                if safe_session_get(session, SessionKeys.HAS_META, None) is True:
                     doccats_list = metadata_target.get(MetadataKeys.DOCCATS, [{}])
                     doccats_data = doccats_list[0].get('cats', [])
                     groups = sorted(set(doccats_data))
@@ -758,10 +776,9 @@ def render_pca_interface(
                 x_label=pca_x,
                 y_label=pca_y
             )
-            st.plotly_chart(fig, use_container_width=False)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=False)
             plot_download_link(fig, filename="pca_scatter.png")
             st.info(variance_info(pca_x, pca_y, ve_1, ve_2))
-
         # --- TAB 2 ---
         with tab2:
             st.markdown(
@@ -808,7 +825,7 @@ def render_pca_interface(
                 pc1_label=pca_x2, pc2_label=pca_y2,
                 sort_by=sort_by
             )
-            st.plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
             plot_download_link(fig, filename="pca_variable_contrib_bar.png")
 
     else:
@@ -892,19 +909,19 @@ def main() -> None:
     st.markdown("---")
 
     # Handle Boxplot selection
-    if plot_type == "Boxplot" and session.get(SessionKeys.HAS_TARGET)[0] is True:
+    if plot_type == "Boxplot" and safe_session_get(session, SessionKeys.HAS_TARGET, None) is True:  # noqa: E501
 
-        update_session(SessionKeys.PCA, False, user_session_id)
+        app_core.session_manager.update_session_state(user_session_id, SessionKeys.PCA, False)  # noqa: E501
         render_boxplot_interface(user_session_id, session, metadata_target)
 
     # Handle Scatterplot selection
-    elif plot_type == "Scatterplot" and session.get(SessionKeys.HAS_TARGET)[0] is True:
+    elif plot_type == "Scatterplot" and safe_session_get(session, SessionKeys.HAS_TARGET, None) is True:  # noqa: E501
 
-        update_session(SessionKeys.PCA, False, user_session_id)
+        app_core.session_manager.update_session_state(user_session_id, SessionKeys.PCA, False)  # noqa: E501
         render_scatterplot_interface(user_session_id, session, metadata_target)
 
     # Handle PCA selection
-    elif plot_type == "PCA" and session.get(SessionKeys.HAS_TARGET)[0] is True:
+    elif plot_type == "PCA" and safe_session_get(session, SessionKeys.HAS_TARGET, None) is True:  # noqa: E501
 
         render_pca_interface(user_session_id, session, metadata_target)
 

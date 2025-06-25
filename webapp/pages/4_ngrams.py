@@ -1,22 +1,22 @@
-# Copyright (C) 2025 David West Brown
+"""
+This module provides functionality for generating and displaying n-grams and clusters
+from a target corpus in a Streamlit web application.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+- Users can generate n-grams or clusters based on selected configurations.
+- The interface allows filtering by tags and downloading results in Excel format.
+- It includes error handling for session state and corpus loading.
+- The app is designed to be user-friendly with clear instructions and help links.
+- It requires a valid user session and corpus data to function correctly.
+"""
 
 import streamlit as st
 
+# Core application utilities
+from webapp.utilities.core import app_core
+
 from webapp.utilities.session import (
     get_or_init_user_session, load_metadata,
-    update_session, validate_session_state
+    validate_session_state, safe_session_get
     )
 from webapp.utilities.ui import (
     sidebar_action_button, sidebar_help_link,
@@ -32,8 +32,11 @@ from webapp.menu import (
     )
 from webapp.utilities.state import (
     CorpusKeys, SessionKeys,
-    WarningKeys
+    WarningKeys, TargetKeys
     )
+from webapp.utilities.corpus import (
+    get_corpus_data_manager, clear_corpus_data
+)
 
 TITLE = "N-gram and Cluster Frequency"
 ICON = ":material/table_view:"
@@ -71,8 +74,9 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
             st.error("Could not load target corpus metadata.")
             return
 
-        # Load the session state for n-grams
-        df = st.session_state[user_session_id][CorpusKeys.TARGET][SessionKeys.NGRAMS]
+        # Use the new corpus data manager for n-grams
+        manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+        df = manager.get_data(TargetKeys.NGRAMS)
 
         # Display the target information first
         st.info(target_info(metadata_target))
@@ -84,7 +88,9 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
 
         # Apply filtering for enumerated tag columns if they exist
         if tag_columns:
-            df, _ = multi_tag_filter_multiselect(df, tag_columns)
+            df, _ = multi_tag_filter_multiselect(
+                df, tag_columns, user_session_id=user_session_id
+            )
 
         # Display the data table or warning
         if df is not None and hasattr(df, "height") and df.height > 0:
@@ -112,8 +118,16 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
             label="Create a New Table",
             icon=":material/refresh:",
         ):
-            st.session_state[user_session_id][CorpusKeys.TARGET][SessionKeys.NGRAMS] = {}
-            update_session(SessionKeys.NGRAMS, False, user_session_id)
+            # Clear only ngrams data using the corpus data manager
+            clear_corpus_data(user_session_id, CorpusKeys.TARGET, [TargetKeys.NGRAMS])
+
+            # Reset ngrams state using session key
+            app_core.session_manager.update_session_state(
+                user_session_id, SessionKeys.NGRAMS, False
+            )
+
+            # Clear warnings using session key
+            st.session_state[user_session_id][WarningKeys.NGRAM] = None
             st.rerun()
 
     except Exception as e:
@@ -121,7 +135,9 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
         st.info("Try regenerating the n-grams table if this error persists.")
 
 
-def render_ngrams_generation_interface(user_session_id: str, session: dict) -> None:
+def render_ngrams_generation_interface(
+        user_session_id: str, session: dict
+) -> None:
     """Render the interface for generating new n-grams/clusters."""
     st.markdown(
         body=(
@@ -163,7 +179,9 @@ def render_ngrams_generation_interface(user_session_id: str, session: dict) -> N
         render_clusters_config(user_session_id, session)
 
 
-def render_ngrams_config(user_session_id: str, session: dict) -> None:
+def render_ngrams_config(
+        user_session_id: str, session: dict
+) -> None:
     """Render N-grams configuration using expander layout."""
     with st.expander("N-grams Configuration", expanded=True):
         col1, col2 = st.columns(2)
@@ -225,7 +243,9 @@ def render_ngrams_config(user_session_id: str, session: dict) -> None:
         st.error(msg, icon=icon)
 
 
-def render_clusters_config(user_session_id: str, session: dict) -> None:
+def render_clusters_config(
+        user_session_id: str, session: dict
+) -> None:
     """Render clusters configuration using expander layout."""
     # Initialize variables
     tag = None
@@ -410,7 +430,7 @@ def main():
     sidebar_help_link("ngrams.html")
 
     # Check if n-grams are already generated
-    if session.get(SessionKeys.NGRAMS, [False])[0] is True:
+    if safe_session_get(session, SessionKeys.NGRAMS, False) is True:
         render_ngrams_display_interface(user_session_id, session)
     else:
         render_ngrams_generation_interface(user_session_id, session)

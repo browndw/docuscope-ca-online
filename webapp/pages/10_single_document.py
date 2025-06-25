@@ -1,36 +1,31 @@
-# Copyright (C) 2025 David West Brown
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+This app provides an interface for exploring individual documents
+from a target corpus. Users can select tags to highlight in the text,
+visualize their distribution, and download the results in a Word document.
+"""
 
 import polars as pl
 import streamlit as st
 
+from webapp.utilities.core import app_core
 from webapp.utilities.session import (
     get_or_init_user_session
 )
 from webapp.utilities.ui import (
-    tagset_selection,
-    render_document_interface,
+    tagset_selection, render_document_interface,
     render_document_selection_interface
 )
 from webapp.utilities.state import (
-    load_widget_state, persist
+    TargetKeys, SessionKeys
 )
-from webapp.menu import (   # noqa: E402
+from webapp.utilities.state.widget_key_manager import (
+    create_persist_function
+)
+from webapp.menu import (
     menu, require_login
 )
-from webapp.utilities.state import (
-    TargetKeys
+from webapp.utilities.session import (
+    safe_session_get
 )
 
 
@@ -72,8 +67,11 @@ def main() -> None:
         )
 
     # Route to appropriate interface based on whether document is loaded
-    if session.get('doc')[0] is True:
-        load_widget_state(user_session_id)
+    if safe_session_get(session, SessionKeys.DOC, None) is True:
+        # Initialize widget state management
+        app_core.widget_manager.register_persistent_keys([
+            'doc_tagset_select', 'doc_tag_radio', 'doc_display_options'
+        ])
 
         st.sidebar.markdown(
             body="### Tagset"
@@ -83,7 +81,7 @@ def main() -> None:
         tag_loc, tag_options, tag_radio, tag_type = tagset_selection(
             user_session_id=user_session_id,
             session_state=st.session_state,
-            persist_func=persist,
+            persist_func=create_persist_function(user_session_id),
             tagset_keys={
                 "Parts-of-Speech": {
                     "General": TargetKeys.DOC_SIMPLE,

@@ -1,23 +1,27 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app allows users to compare two corpora by generating keyness tables
+for tokens and tags.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+It provides functionality to:
+- Generate keyness tables for tokens and tags
+- Filter tokens and tags by tagset and tag type
+- Sort keyness tables by keyness or effect size
+- Download keyness tables in Excel format
+- Visualize keyness tables with bar plots
+- Reset keyness tables and start over
+"""
 import polars as pl
 import streamlit as st
 
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core
+
 from webapp.utilities.session import (
     get_or_init_user_session, load_metadata,
-    update_session, validate_session_state
+    update_session, safe_session_get
+    )
+from webapp.utilities.corpus import (
+    get_corpus_data_manager, clear_corpus_data
     )
 from webapp.utilities.ui import (
     keyness_sort_controls, keyness_settings_info,
@@ -28,8 +32,10 @@ from webapp.utilities.ui import (
     color_picker_controls
 )
 from webapp.utilities.state import (
-    load_widget_state, persist
+    CorpusKeys, SessionKeys,
+    TargetKeys, WarningKeys
 )
+from webapp.utilities.state.widget_key_manager import create_persist_function
 from webapp.utilities.analysis import (
     has_target_corpus, has_reference_corpus,
     render_corpus_not_loaded_error, generate_keyness_tables,
@@ -38,17 +44,20 @@ from webapp.utilities.analysis import (
 from webapp.utilities.plotting import (
     plot_compare_corpus_bar, plot_download_link
 )
+from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
 from webapp.menu import (
     menu, require_login
-    )
-from webapp.utilities.state import (
-    CorpusKeys, SessionKeys,
-    TargetKeys, WarningKeys
     )
 
 
 TITLE = "Compare Corpora"
 ICON = ":material/compare_arrows:"
+
+# Register persistent widgets for this page
+COMPARE_CORPORA_PERSISTENT_WIDGETS = [
+    "kt_radio1",  # Radio button for keyness table tagset selection
+]
+app_core.register_page_widgets(COMPARE_CORPORA_PERSISTENT_WIDGETS)
 
 TOKEN_LIMIT = 1_500_000
 
@@ -98,7 +107,7 @@ def render_tokens_keyness_interface(user_session_id: str) -> None:
     df, tag_options, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
         session_state=st.session_state,
-        persist_func=persist,
+        persist_func=create_persist_function(user_session_id),
         tagset_keys=KEYNESS_TOKEN_TAGSET_CONFIG,
         simplify_funcs=KEYNESS_SIMPLIFY_CONFIG,
         tag_filters={
@@ -115,7 +124,7 @@ def render_tokens_keyness_interface(user_session_id: str) -> None:
         key_prefix="kt_"  # or something unique per page/tab
     )
 
-    df = tag_filter_multiselect(df)
+    df = tag_filter_multiselect(df, user_session_id=user_session_id)
 
     # Map UI label to actual DataFrame column
     sort_col_map = {
@@ -144,7 +153,7 @@ def render_tags_keyness_interface(user_session_id: str) -> None:
     df, tag_options, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
         session_state=st.session_state,
-        persist_func=persist,
+        persist_func=create_persist_function(user_session_id),
         tagset_keys=KEYNESS_TAG_TAGSET_CONFIG,
         tag_filters=KEYNESS_TAG_FILTERS_CONFIG,
         tag_radio_key="kt_radio3"
@@ -154,7 +163,7 @@ def render_tags_keyness_interface(user_session_id: str) -> None:
     tab1, tab2 = st.tabs(["Keyness Table", "Keyness Plot"])
 
     with tab1:
-        df = tag_filter_multiselect(df)
+        df = tag_filter_multiselect(df, user_session_id=user_session_id)
         render_dataframe(df)
 
     with tab2:
@@ -168,7 +177,7 @@ def render_tags_keyness_interface(user_session_id: str) -> None:
 
             # Plot with color customization
             fig = plot_compare_corpus_bar(df, color_dict=color_dict)
-            st.plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
             plot_download_link(fig, filename="compare_corpus_bar.png")
 
     st.sidebar.markdown("---")
@@ -192,33 +201,37 @@ def render_keyness_reset_controls(user_session_id: str) -> None:
             )
         )
     if st.sidebar.button("Generate New Keyness Table", icon=":material/refresh:"):
-        # Clear keyness tables for this session using session keys
-        keyness_keys = [
+        # Clear keyness tables using the corpus data manager
+        clear_corpus_data(user_session_id, CorpusKeys.TARGET, [
             TargetKeys.KW_POS, TargetKeys.KW_DS,
             TargetKeys.KT_POS, TargetKeys.KT_DS
-        ]
-        for key in keyness_keys:
-            if key not in st.session_state[user_session_id][CorpusKeys.TARGET]:
-                st.session_state[user_session_id][CorpusKeys.TARGET][key] = {}
-            st.session_state[user_session_id][CorpusKeys.TARGET][key] = {}
+        ])
 
         # Reset keyness_table state using session key
-        update_session(SessionKeys.KEYNESS_TABLE, False, user_session_id)
+        app_core.session_manager.update_session_state(user_session_id, SessionKeys.KEYNESS_TABLE, False)
         # Clear warnings using session key
         st.session_state[user_session_id][WarningKeys.KEYNESS] = None
         st.rerun()
 
 
-def render_keyness_interface(user_session_id: str, session: dict) -> None:
+def render_keyness_interface(
+        user_session_id: str, session: dict
+) -> None:
     """Render the main keyness interface with validation."""
     try:
-        # Validate session state first
-        if not validate_session_state(user_session_id):
+        # Validate session state using the new manager
+        target_manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+        reference_manager = get_corpus_data_manager(user_session_id, CorpusKeys.REFERENCE)
+
+        if not target_manager.is_ready() or not reference_manager.is_ready():
             st.error("Invalid session state. Please reload the page or reset your data.")
             return
 
-        # Load the widget state for the current user session
-        load_widget_state(user_session_id)
+        # Initialize widget state management
+        app_core.widget_manager.register_persistent_keys([
+            'compare_corp_sort', 'compare_corp_ascending', 'compare_corp_display_limit',
+            'compare_corp_metric', 'compare_corp_filter_zero'
+        ])
 
         # Render corpus info headers
         render_corpus_info_headers(user_session_id)
@@ -230,7 +243,7 @@ def render_keyness_interface(user_session_id: str, session: dict) -> None:
         table_radio = st.sidebar.radio(
             "Select the keyness table to display:",
             ("Tokens", "Tags Only"),
-            key=persist("kt_radio1", user_session_id, "5_compare_corpora"),
+            key="kt_radio1",
             horizontal=True
         )
 
@@ -271,10 +284,11 @@ def main():
 
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
+
     sidebar_help_link("compare-corpora.html")
 
     # Route to appropriate interface based on whether keyness table exists
-    if session.get(SessionKeys.KEYNESS_TABLE, [False])[0]:
+    if safe_session_get(session, SessionKeys.KEYNESS_TABLE, False):
         render_keyness_interface(user_session_id, session)
     else:
         # Display instructions and options for keyness generation

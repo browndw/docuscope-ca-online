@@ -1,42 +1,43 @@
-# Copyright (C) 2025 David West Brown
+"""
+This app allows users to generate and view collocations for the loaded target corpus.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+Collocations are words that frequently occur together in a specific context.
+Users can specify a node word, the span of words to consider,
+the association measure to use, and optionally anchor the node word to a specific tag.
+The results will be displayed in a table with the collocates, their frequencies, and the
+association scores.
+"""
 
 import streamlit as st
 
-from webapp.utilities.session import (  # noqa: E402
-    get_or_init_user_session, load_metadata,
-    update_session
+# Core application utilities
+from webapp.utilities.core import app_core
+
+from webapp.utilities.session import (
+    get_or_init_user_session, load_metadata, safe_session_get
     )
-# Temporary imports for unmigrated UI functions
-from webapp.utilities.ui import (  # noqa: E402
+from webapp.utilities.corpus import (
+    get_corpus_data, clear_corpus_data
+    )
+from webapp.utilities.ui import (
     collocation_info, render_dataframe,
     render_excel_download_option, sidebar_action_button,
     sidebar_help_link, target_info,
     tag_filter_multiselect
 )
-from webapp.utilities.analysis import (  # noqa: E402
+from webapp.utilities.analysis import (
     has_target_corpus, render_corpus_not_loaded_error
 )
-from webapp.utilities.analysis import (  # noqa: E402
+from webapp.utilities.analysis import (
     generate_collocations
 )
-from webapp.menu import (   # noqa: E402
-    menu, require_login
-    )
-from webapp.utilities.state import (  # noqa: E402
+from webapp.utilities.state import (
+    safe_clear_widget_state,
     SessionKeys, CorpusKeys,
     TargetKeys, WarningKeys
+    )
+from webapp.menu import (
+    menu, require_login
     )
 
 
@@ -53,16 +54,11 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
     """Render the interface when collocations have been generated."""
     metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
-    # Get collocations data with fallback
-    try:
-        df = st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.COLLOCATIONS]
-    except (KeyError, AttributeError):
-        # Fallback to direct key access
-        target_corpus = st.session_state[user_session_id][CorpusKeys.TARGET]
-        df = target_corpus.get(TargetKeys.COLLOCATIONS)
-        if df is None:
-            st.error("Collocations data not found. Please regenerate the analysis.")
-            return
+    # Get collocations data using the new system
+    df = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.COLLOCATIONS)
+    if df is None:
+        st.error("Collocations data not found. Please regenerate the analysis.")
+        return
 
     # Display corpus and collocation info
     col1, col2 = st.columns([1, 1])
@@ -71,22 +67,32 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
     with col2:
         # Get collocation data from metadata
         collocation_data = metadata_target.get(SessionKeys.COLLOCATIONS)
-        if (
-            collocation_data
-            and isinstance(collocation_data, dict)
-            and 'temp' in collocation_data
-        ):
-            temp_data = collocation_data['temp']
-            if temp_data and isinstance(temp_data, list) and len(temp_data) > 0:
-                st.info(collocation_info(temp_data[0]))
+        if collocation_data:
+            # If it's a list with one dict, use the dict
+            if (
+                isinstance(collocation_data, list) and
+                len(collocation_data) == 1 and
+                isinstance(collocation_data[0], dict)
+            ):
+                st.info(collocation_info(collocation_data[0]))
+            elif isinstance(collocation_data, dict):
+                st.info(collocation_info(collocation_data))
+            # If it's the old 'temp' structure, display the first item in the list
+            elif (
+                isinstance(collocation_data, dict) and
+                'temp' in collocation_data and
+                isinstance(collocation_data['temp'], list) and
+                collocation_data['temp']
+            ):
+                st.info(collocation_info(collocation_data['temp'][0]))
             else:
-                st.info("No collocation parameters set yet.")
+                st.info("No collocation parameters available.")
         else:
             st.info("No collocation parameters available.")
 
     # Apply tag filtering and display table
     if df is not None and getattr(df, "height", 0) > 0:
-        df = tag_filter_multiselect(df)
+        df = tag_filter_multiselect(df, user_session_id=user_session_id)
         render_dataframe(df)
 
         # Download option
@@ -108,16 +114,11 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
         icon=":material/refresh:",
         help="Reset the analysis and configure new collocation parameters."
     ):
-        # Clear existing data
-        target_dict = st.session_state[user_session_id][CorpusKeys.TARGET]
-        try:
-            if TargetKeys.COLLOCATIONS in target_dict:
-                target_dict[TargetKeys.COLLOCATIONS] = {}
-        except AttributeError:
-            # Fallback for attribute error
-            if TargetKeys.COLLOCATIONS in target_dict:
-                target_dict[TargetKeys.COLLOCATIONS] = {}
-        update_session(SessionKeys.COLLOCATIONS, False, user_session_id)
+        # Clear existing data using the new system
+        clear_corpus_data(user_session_id, CorpusKeys.TARGET, [TargetKeys.COLLOCATIONS])
+        app_core.session_manager.update_session_state(
+            user_session_id, SessionKeys.COLLOCATIONS, False
+        )
         st.rerun()
 
     st.sidebar.markdown("---")
@@ -159,6 +160,7 @@ def render_node_word_config() -> str:
     st.markdown("Enter a node word without spaces.")
     return st.text_input(
         "Node word:",
+        key="collocation_node_word",
         help="The central word around which to find collocations."
     )
 
@@ -180,12 +182,14 @@ def render_span_config() -> tuple[int, int]:
         to_left = st.slider(
             "Left span:",
             0, 9, 4,
+            key="collocation_left_span",
             help="Number of words to the left of the node word to consider."
         )
     with col2:
         to_right = st.slider(
             "Right span:",
             0, 9, 4,
+            key="collocation_right_span",
             help="Number of words to the right of the node word to consider."
         )
 
@@ -211,6 +215,7 @@ def render_association_measure_config() -> str:
         "Select a statistic:",
         ["NPMI", "PMI 2", "PMI 3", "PMI"],
         horizontal=True,
+        key="collocation_stat_mode",
         help="Different statistical measures for word association strength."
     )
 
@@ -241,6 +246,7 @@ def render_anchor_tag_config(session: dict, metadata_target: dict) -> tuple[str,
         "Select tagset for node word:",
         ("No Tag", "Parts-of-Speech", "DocuScope"),
         horizontal=True,
+        key="collocation_tag_radio",
         help="Choose whether to anchor the node word to a specific tag."
     )
 
@@ -261,6 +267,7 @@ def render_pos_tag_selection(session: dict, metadata_target: dict) -> tuple[str,
         "Select from general or specific tags:",
         ("General", "Specific"),
         horizontal=True,
+        key="collocation_pos_tag_type",
         help=(
             "General tags are simplified categories, "
             "specific tags show detailed POS labels."
@@ -271,6 +278,7 @@ def render_pos_tag_selection(session: dict, metadata_target: dict) -> tuple[str,
         node_tag = st.selectbox(
             "Select tag:",
             ("Noun Common", "Verb Lex", "Adjective", "Adverb"),
+            key="collocation_pos_general_tag",
             help="Choose a general part-of-speech category."
         )
         # Map display names to internal tags
@@ -286,12 +294,14 @@ def render_pos_tag_selection(session: dict, metadata_target: dict) -> tuple[str,
             node_tag = st.selectbox(
                 'Choose a tag:',
                 ['No tags currently loaded'],
+                key="collocation_pos_specific_tag_empty",
                 help="Load a target corpus first to see available tags."
             )
         else:
             node_tag = st.selectbox(
                 'Choose a tag:',
                 metadata_target.get('tags_pos')[0]['tags'],
+                key="collocation_pos_specific_tag",
                 help="Choose a specific part-of-speech tag."
             )
 
@@ -306,12 +316,14 @@ def render_docuscope_tag_selection(
         node_tag = st.selectbox(
             'Choose a tag:',
             ['No tags currently loaded'],
+            key="collocation_ds_tag_empty",
             help="Load a target corpus first to see available tags."
         )
     else:
         node_tag = st.selectbox(
             'Choose a tag:',
             metadata_target.get('tags_ds')[0]['tags'],
+            key="collocation_ds_tag",
             help="Choose a DocuScope rhetorical tag."
         )
 
@@ -377,7 +389,7 @@ def render_generation_controls(
         msg, icon = st.session_state[user_session_id][WarningKeys.COLLOCATIONS]
         st.warning(msg, icon=icon)
         # Clear the warning after displaying it
-        del st.session_state[user_session_id][WarningKeys.COLLOCATIONS]
+        safe_clear_widget_state(f"{user_session_id}_{WarningKeys.COLLOCATIONS}")
 
     st.sidebar.markdown("---")
 
@@ -410,7 +422,7 @@ def main():
     sidebar_help_link("collocations.html")
 
     # Check if collocations table has been generated
-    if session.get(SessionKeys.COLLOCATIONS, [False])[0]:
+    if safe_session_get(session, SessionKeys.COLLOCATIONS, False):
         render_results_interface(user_session_id, session)
     else:
         render_setup_interface(user_session_id, session)

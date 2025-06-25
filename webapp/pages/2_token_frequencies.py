@@ -1,52 +1,53 @@
-# Copyright (C) 2025 David West Brown
+"""
+App for generating and displaying token frequency tables
+for the loaded target corpus.
 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+This app allows users to:
+- Generate frequency tables for tokens in the target corpus
+- Filter tokens by tagset and tag type
+- Download frequency tables in Excel format
+- Handle errors and session state validation
+- Provide a user-friendly interface for corpus analysis
+"""
 
 import docuscospacy as ds
 import streamlit as st
 
-from webapp.utilities.session import (  # noqa: E402
-    get_or_init_user_session,
-    load_metadata,
-    validate_session_state
+# Core application utilities with standardized patterns
+from webapp.utilities.core import app_core
+from webapp.utilities.state.widget_key_manager import create_persist_function
+
+from webapp.utilities.session import (
+    get_or_init_user_session, load_metadata, safe_session_get
     )
-from webapp.utilities.analysis import (  # noqa: E402
+from webapp.utilities.analysis import (
     generate_frequency_table
     )
-from webapp.utilities.ui import (   # noqa: E402
-    get_page_base_filename,
-    render_data_table_interface,
-    render_table_generation_interface,
-    sidebar_help_link,
+from webapp.utilities.ui import (
+    get_page_base_filename, render_data_table_interface,
+    render_table_generation_interface, sidebar_help_link,
     tagset_selection,
     )
-from webapp.utilities.state import (   # noqa: E402
-    load_widget_state,
-    persist
+from webapp.utilities.state import (
+    CorpusKeys, SessionKeys,
+    TargetKeys, WarningKeys
+)
+from webapp.utilities.corpus import (
+    get_corpus_data_manager
     )
-from webapp.utilities.state import (  # noqa: E402
-    CorpusKeys,
-    SessionKeys,
-    TargetKeys,
-    WarningKeys
-    )
-from webapp.menu import (   # noqa: E402
-    menu,
-    require_login
+from webapp.menu import (
+    menu, require_login
     )
 
 TITLE = "Token Frequencies"
 ICON = ":material/table_view:"
+
+# Register persistent widgets for this page
+TOKEN_FREQUENCIES_PERSISTENT_WIDGETS = [
+    "ft_radio",       # Radio button for frequency table type selection
+    "ft_type_radio",  # Radio button for tag type selection
+]
+app_core.register_page_widgets(TOKEN_FREQUENCIES_PERSISTENT_WIDGETS)
 
 # Configuration constants
 TAGSET_CONFIG = {
@@ -72,8 +73,9 @@ st.set_page_config(
 def render_frequency_table_interface(user_session_id: str, session: dict) -> None:
     """Render the frequency table interface with error handling."""
     try:
-        # Validate session state first
-        if not validate_session_state(user_session_id):
+        # Validate corpus data using the new manager
+        manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+        if not manager.is_ready():
             st.warning(
                 "No target corpus loaded. Please load a corpus first.",
                 icon=":material/warning:"
@@ -85,7 +87,10 @@ def render_frequency_table_interface(user_session_id: str, session: dict) -> Non
                     )
             return
 
-        load_widget_state(user_session_id)
+        # Initialize widget state management
+        app_core.widget_manager.register_persistent_keys([
+            'token_freq_sort', 'token_freq_ascending', 'token_freq_display_limit'
+        ])
 
         metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
         if not metadata_target:
@@ -96,11 +101,11 @@ def render_frequency_table_interface(user_session_id: str, session: dict) -> Non
             st.markdown("Go to **Load Corpus** page to reload your data.")
             return
 
-        # Load the tags table for the target
+        # Load the tags table for the target using the new system
         df, tag_options, tag_radio, tag_type = tagset_selection(
             user_session_id=user_session_id,
             session_state=st.session_state,
-            persist_func=persist,
+            persist_func=create_persist_function(user_session_id),
             tagset_keys=TAGSET_CONFIG,
             simplify_funcs=SIMPLIFY_CONFIG,
             tag_filters={
@@ -117,7 +122,8 @@ def render_frequency_table_interface(user_session_id: str, session: dict) -> Non
             metadata_target=metadata_target,
             base_filename=base_filename,
             no_data_message="No frequency data available to display.",
-            apply_tag_filter=True
+            apply_tag_filter=True,
+            user_session_id=user_session_id
         )
 
     except Exception as e:
@@ -148,10 +154,11 @@ def main() -> None:
 
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
+
     sidebar_help_link("token-frequencies.html")
 
     # Route to appropriate interface based on whether frequency table exists
-    if session.get(SessionKeys.FREQ_TABLE, [False])[0]:
+    if safe_session_get(session, SessionKeys.FREQ_TABLE, False):
         render_frequency_table_interface(user_session_id, session)
     else:
         render_table_generation_interface(

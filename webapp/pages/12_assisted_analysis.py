@@ -1,28 +1,24 @@
-# Copyright (C) 2025 David West Brown
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+This app provides an interface for AI-assisted analysis of tabular data
+using Pandabot, a chat assistant that can answer questions and perform
+data analysis tasks.
+"""
 
 import json
 import streamlit as st
 from datetime import datetime
 
-from webapp.utilities.session import (  # noqa: E402
-    get_or_init_user_session
+# Core application utilities with standardized patterns
+from webapp.utilities.core import safe_config_value
+
+# UI error boundaries (imported directly to avoid None fallback)
+from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
+
+# Module-specific imports
+from webapp.utilities.session import (
+    get_or_init_user_session, safe_session_get
 )
-from webapp.utilities.configuration import (  # noqa: E402
-    get_ai_configuration
-)
-from webapp.utilities.ai import (   # noqa: E402
+from webapp.utilities.ai import (
     clear_pandasai, pandabot_user_query,
     setup_ai_session_state, get_api_key,
     render_api_key_input, render_data_selection_interface,
@@ -30,19 +26,17 @@ from webapp.utilities.ai import (   # noqa: E402
     should_show_api_key_input, render_work_preservation_interface,
     should_show_work_preservation_interface, export_conversation_history
 )
-from webapp.utilities.analysis import (   # noqa: E402
+from webapp.utilities.analysis import (
     generate_tags_table
 )
-from webapp.utilities.ui import (  # noqa: E402
+from webapp.utilities.core import app_core
+from webapp.utilities.ui import (
     sidebar_help_link, render_table_generation_interface
 )
-from webapp.utilities.state import (  # noqa: E402
-    load_widget_state
-)
-from webapp.utilities.state import (  # noqa: E402
+from webapp.utilities.state import (
     SessionKeys, WarningKeys
 )
-from webapp.menu import (   # noqa: E402
+from webapp.menu import (
     menu, require_login
 )
 
@@ -54,8 +48,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# Get AI configuration
-_options, DESKTOP, CACHE, LLM_MODEL, LLM_PARAMS, QUOTA = get_ai_configuration()
+# Get AI configuration using standardized access pattern
+DESKTOP = safe_config_value('desktop', config_type='ai')
+CACHE = safe_config_value('cache', config_type='ai')
+LLM_MODEL = safe_config_value('model', config_type='ai')
+LLM_PARAMS = safe_config_value('params', config_type='ai')
+QUOTA = safe_config_value('quota', config_type='ai')
 
 
 def render_pandabot_chat_interface(
@@ -75,8 +73,10 @@ def render_pandabot_chat_interface(
             elif message["type"] == "error":
                 st.error(message["value"], icon=":material/error:")
             elif message["type"] == "plot":
-                # Display plot image
-                st.image(message["value"])
+                # Display plot image with error boundary
+                SafeComponentRenderer.safe_image(
+                    message["value"], "Generated plot unavailable"
+                )
             elif message["type"] == "dataframe":
                 st.dataframe(
                     message["value"], use_container_width=True
@@ -217,13 +217,16 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
 
             # Get metadata if available
             metadata_target = None
-            if session.get(SessionKeys.HAS_TARGET, [False])[0]:
-                metadata_target = (
-                    st.session_state[user_session_id]['metadata_target'].to_dict()
-                )
+            if safe_session_get(session, SessionKeys.HAS_TARGET, False):
+                from webapp.utilities.session import load_metadata
+                from webapp.utilities.state import CorpusKeys
+                metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
-            # Load widget state
-            load_widget_state(user_session_id)
+            # Initialize widget state management
+            app_core.widget_manager.register_persistent_keys([
+                'analysis_corpus_select', 'analysis_query_select', 'analysis_prompt',
+                'analysis_model_select'
+            ])
 
             # Data selection interface
             selected_corpus, selected_query, df = render_data_selection_interface(
@@ -278,7 +281,7 @@ def main():
     sidebar_help_link("assisted-analysis.html")
 
     # Check if tags table is available
-    if session.get(SessionKeys.TAGS_TABLE, [False])[0]:
+    if safe_session_get(session, SessionKeys.TAGS_TABLE, False):
         render_pandabot_interface(user_session_id, session)
     else:
         # Show generation interface for tags table

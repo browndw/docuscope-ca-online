@@ -1,34 +1,25 @@
-# Copyright (C) 2025 David West Brown
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+This app provides an interface for downloading tagged text files
+from a loaded target corpus.
+"""
 
 import streamlit as st
 
-from webapp.utilities.session import (  # noqa: E402
-    get_or_init_user_session
-)
-from webapp.utilities.exports import (  # noqa: E402
+from webapp.utilities.session import (
+    get_or_init_user_session, safe_session_get
+    )
+from webapp.utilities.exports import (
     handle_tagged_files_download
 )
-from webapp.utilities.ui import (  # noqa: E402
+from webapp.utilities.ui import (
     render_download_page_header, render_data_loading_interface,
     render_tagset_selection
 )
-from webapp.menu import (  # noqa: E402
-    menu, require_login
-)
-from webapp.utilities.state import (  # noqa: E402
+from webapp.utilities.state import (
     SessionKeys
+)
+from webapp.menu import (
+    menu, require_login
 )
 
 
@@ -39,6 +30,25 @@ st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def render_tagged_files_interface(user_session_id: str, session: dict) -> None:
+    """
+    Render the tagged files download interface when tables are loaded.
+
+    Parameters
+    ----------
+    user_session_id : str
+        The user session identifier
+    session : dict
+        The session state dictionary
+    """
+    # Get tagset selection
+    tagset = render_tagset_selection()
+
+    # Check if target corpus is available and handle download
+    if safe_session_get(session, SessionKeys.HAS_TARGET, None) is True:
+        handle_tagged_files_download(user_session_id, tagset)
 
 
 def main() -> None:
@@ -73,29 +83,10 @@ def main() -> None:
     )
 
     # Check if tables are loaded
-    if session.get(SessionKeys.TAGS_TABLE)[0] is True:
+    if safe_session_get(session, SessionKeys.TAGS_TABLE, None) is True:
         render_tagged_files_interface(user_session_id, session)
     else:
         render_data_loading_interface(user_session_id, session)
-
-
-def render_tagged_files_interface(user_session_id: str, session: dict) -> None:
-    """
-    Render the tagged files download interface when tables are loaded.
-
-    Parameters
-    ----------
-    user_session_id : str
-        The user session identifier
-    session : dict
-        The session state dictionary
-    """
-    # Get tagset selection
-    tagset = render_tagset_selection()
-
-    # Check if target corpus is available and handle download
-    if session.get(SessionKeys.HAS_TARGET)[0] is True:
-        handle_tagged_files_download(user_session_id, tagset)
 
 
 if __name__ == "__main__":
