@@ -16,10 +16,10 @@ import time
 import streamlit as st
 
 from webapp.utilities.storage import add_login
-from webapp.utilities.configuration import config_manager
+from webapp.utilities.core import safe_config_value
 
-GOOGLE_LOGO = config_manager.google_logo_path
-DESKTOP = config_manager.desktop_mode
+GOOGLE_LOGO = safe_config_value('google_logo_path', config_type='global')
+DESKTOP = safe_config_value('desktop_mode', config_type='global')
 
 
 def update_last_activity() -> None:
@@ -43,10 +43,18 @@ def check_session_timeouts() -> bool:
     current_time = time.time()
 
     # Get timeout settings from config
-    inactivity_timeout = config_manager.inactivity_timeout_minutes * 60
-    inactivity_warning = config_manager.inactivity_warning_minutes * 60
-    absolute_timeout = config_manager.absolute_timeout_hours * 3600
-    absolute_warning = config_manager.absolute_warning_hours * 3600
+    inactivity_timeout = (
+        safe_config_value('inactivity_timeout_minutes', config_type='global') * 60
+    )
+    inactivity_warning = (
+        safe_config_value('inactivity_warning_minutes', config_type='global') * 60
+    )
+    absolute_timeout = (
+        safe_config_value('absolute_timeout_hours', config_type='global') * 3600
+    )
+    absolute_warning = (
+        safe_config_value('absolute_warning_hours', config_type='global') * 3600
+    )
 
     # Check absolute timeout (based on login time)
     if hasattr(st.user, 'iat'):
@@ -54,7 +62,9 @@ def check_session_timeouts() -> bool:
         session_duration = current_time - login_time
 
         if session_duration >= absolute_timeout:
-            timeout_hours = config_manager.absolute_timeout_hours
+            timeout_hours = safe_config_value(
+                'absolute_timeout_hours', config_type='global'
+            )
             st.error(
                 f"Your session has expired after {timeout_hours} hours. "
                 "Please log in again.",
@@ -92,7 +102,9 @@ def check_session_timeouts() -> bool:
     inactive_duration = current_time - last_activity
 
     if inactive_duration >= inactivity_timeout:
-        timeout_minutes = config_manager.inactivity_timeout_minutes
+        timeout_minutes = safe_config_value(
+            'inactivity_timeout_minutes', config_type='global'
+        )
         st.error(
             f"You have been logged out due to inactivity ({timeout_minutes} minutes). "
             "Please log in again.",
