@@ -33,15 +33,15 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from webapp.menu import menu   # noqa: E402
-from webapp.utilities.configuration import config_manager   # noqa: E402
+from webapp.utilities.core import safe_config_value   # noqa: E402
 
-TITLE_LOGO = config_manager.docuscope_logo_path
-PL_LOGO = config_manager.porpoise_badge_path
-UG_LOGO = config_manager.user_guide_badge_path
-SPACY_META = config_manager.spacy_model_meta_path
-DESKTOP = config_manager.desktop_mode
+TITLE_LOGO = safe_config_value('docuscope_logo_path', '', 'global')
+PL_LOGO = safe_config_value('porpoise_badge_path', '', 'global')
+UG_LOGO = safe_config_value('user_guide_badge_path', '', 'global')
+SPACY_META = safe_config_value('spacy_model_meta_path', '', 'global')
+DESKTOP = safe_config_value('desktop_mode', False, 'global')
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
-__version__ = config_manager.version
+__version__ = safe_config_value('version', '1.0.0', 'global')
 
 
 st.set_page_config(
