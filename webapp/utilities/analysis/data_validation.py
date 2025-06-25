@@ -334,29 +334,16 @@ def render_corpus_not_loaded_error(corpus_type: str = "target") -> None:
     """Display standardized error message when corpus is not loaded."""
     if corpus_type == "reference":
         message = (
-            "It doesn't look like you've loaded the necessary reference corpus yet. "
-            "Most comparison apps require both target and reference corpora to be loaded "
-            "before you can run them. "
-            "You can review and update your corpus data "
-            "by navigating to **Manage Corpus Data**:"
+            "It doesn't look like you've loaded the necessary reference corpus yet."
         )
     else:
         message = (
-            f"It doesn't look like you've loaded the necessary {corpus_type} corpus yet. "
-            "Most apps require a target corpus to be loaded "
-            "before you can run them. "
-            "You can review and update your corpus data "
-            "by navigating to **Manage Corpus Data**:"
+            f"It doesn't look like you've loaded the necessary {corpus_type} corpus yet."
         )
 
-    st.error(
+    st.warning(
         body=message,
         icon=":material/sentiment_stressed:"
-    )
-    st.page_link(
-        page="pages/1_load_corpus.py",
-        label="Manage Corpus Data",
-        icon=":material/database:",
     )
 
 
