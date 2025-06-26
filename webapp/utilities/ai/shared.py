@@ -178,7 +178,7 @@ def export_conversation_history(
         return json.dumps({
             "error": f"Failed to export workflow: {str(e)}",
             "export_date": datetime.now().isoformat(),
-            "suggestion": "Please try again or contact support if the issue persists."
+            "suggestion": "Please try again."
         }, indent=2)
 
 
@@ -201,7 +201,7 @@ def get_current_plot_as_png(user_session_id: str, bot_type: str = "plotbot") -> 
     try:
         # Import here to avoid circular imports
         from webapp.utilities.state import SessionKeys
-        
+
         if bot_type == "plotbot":
             # Get the current plot from plotbot session
             plotbot_messages = st.session_state[user_session_id].get(
@@ -760,14 +760,16 @@ def validate_api_key(api_key: str) -> bool:
         return False
 
 
-def get_quota_info(user_id: str) -> dict:
+def get_quota_info(user_id: str, force_refresh: bool = False) -> dict:
     """
-    Get quota information for a user.
+    Get quota information for a user with session-based counting optimization.
 
     Parameters
     ----------
     user_id : str
         The user ID to check quota for
+    force_refresh : bool, default False
+        Force a fresh Firestore query instead of using session-based counting
 
     Returns
     -------
@@ -791,7 +793,34 @@ def get_quota_info(user_id: str) -> dict:
                 'percentage_used': 0
             }
 
-        used_queries = get_query_count(user_id)
+        # Use session-based quota counting to minimize Firestore calls
+        session_quota_key = f"quota_base_{user_id}"
+        session_count_key = f"quota_session_count_{user_id}"
+        session_time_key = f"quota_base_time_{user_id}"
+
+        current_time = datetime.now()
+
+        # Check if we need to refresh base count from Firestore
+        need_refresh = (
+            force_refresh or
+            session_quota_key not in st.session_state or
+            session_time_key not in st.session_state or
+            (current_time - st.session_state[session_time_key]) > timedelta(hours=1)
+        )
+
+        if need_refresh:
+            # Get fresh count from Firestore
+            base_count = get_query_count(user_id)
+            st.session_state[session_quota_key] = base_count
+            st.session_state[session_count_key] = 0  # Reset session counter
+            st.session_state[session_time_key] = current_time
+            used_queries = base_count
+        else:
+            # Use cached base count + session increments
+            base_count = st.session_state.get(session_quota_key, 0)
+            session_increments = st.session_state.get(session_count_key, 0)
+            used_queries = base_count + session_increments
+
         remaining_queries = max(0, total_quota - used_queries)
         percentage_used = (used_queries / total_quota * 100) if total_quota > 0 else 100
 
@@ -812,9 +841,46 @@ def get_quota_info(user_id: str) -> dict:
         }
 
 
+def increment_session_quota(user_id: str) -> None:
+    """
+    Increment the session-based quota counter when a user makes an API call.
+
+    This should be called whenever a user makes an actual API query to the LLM,
+    allowing us to track quota usage without repeatedly querying Firestore.
+
+    Parameters
+    ----------
+    user_id : str
+        The user ID to increment quota for
+    """
+    try:
+        # Only track in online mode
+        if safe_config_value('desktop', config_type='ai'):
+            return
+
+        session_count_key = f"quota_session_count_{user_id}"
+
+        # Initialize if not exists
+        if session_count_key not in st.session_state:
+            st.session_state[session_count_key] = 0
+
+        # Increment the session counter
+        st.session_state[session_count_key] += 1
+
+        # Clear display cache to force refresh on next render
+        quota_cache_key = f"quota_display_{user_id}"
+        if quota_cache_key in st.session_state:
+            del st.session_state[quota_cache_key]
+        if f"{quota_cache_key}_time" in st.session_state:
+            del st.session_state[f"{quota_cache_key}_time"]
+
+    except Exception as e:
+        logger.warning(f"Failed to increment session quota: {e}")
+
+
 def render_quota_tracker(user_id: str) -> dict:
     """
-    Render a quota tracking component in the sidebar.
+    Render a quota tracking component in the sidebar with optimized caching.
 
     Parameters
     ----------
@@ -826,20 +892,23 @@ def render_quota_tracker(user_id: str) -> dict:
     dict
         Quota information dictionary
     """
-    # Use cached quota info to avoid repeated calls during page interactions
+    # Use extended caching to reduce display refresh frequency
     try:
-        # Check if we have recent quota info cached
+        # Check if we have recent quota info cached for display
         quota_cache_key = f"quota_display_{user_id}"
         current_time = datetime.now()
+
+        # Use 5-minute cache for display (quota only changes when user makes calls)
+        cache_duration = timedelta(minutes=5)
 
         if (quota_cache_key in st.session_state and
                 hasattr(st.session_state, quota_cache_key) and
                 current_time - st.session_state.get(f"{quota_cache_key}_time",
-                                                    datetime.min) < timedelta(seconds=15)):
+                                                    datetime.min) < cache_duration):
             # Use cached quota info for display
             quota_info = st.session_state[quota_cache_key]
         else:
-            # Get fresh quota info and cache it
+            # Get quota info (which uses its own session-based optimization)
             quota_info = get_quota_info(user_id)
             st.session_state[quota_cache_key] = quota_info
             st.session_state[f"{quota_cache_key}_time"] = current_time
