@@ -27,6 +27,7 @@ from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.ai.shared import prune_message_thread
 # Add async storage import for non-blocking Firestore operations
 from webapp.utilities.storage import conditional_async_add_message
+from webapp.utilities.ai.shared import increment_session_quota
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.state.widget_state import safe_clear_widget_state
 
@@ -248,6 +249,13 @@ def pandabot_user_query(
     with thread_safe_monkeypatch(session_storage) as storage:
         try:
             result = dfs.chat(prompt)
+
+            # Increment quota tracker after successful API call
+            try:
+                if hasattr(st, 'user') and st.user and st.user.email:
+                    increment_session_quota(st.user.email)
+            except Exception:
+                pass  # Don't fail if quota tracking fails
 
             # Handle different result types based on actual PandasAI output
             # First check for PandasAI 3.0 response objects
