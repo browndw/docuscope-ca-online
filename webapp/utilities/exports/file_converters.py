@@ -14,8 +14,12 @@
 
 # File export and conversion utilities
 
-import docx
+from docx import Document
 from docx.shared import RGBColor
+from docx.opc.part import Part
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from io import BytesIO
 import pandas as pd
 import polars as pl
@@ -59,13 +63,13 @@ def convert_to_excel(df: Union[pl.DataFrame, pd.DataFrame]) -> bytes:
     return processed_data
 
 
-def add_alt_chunk(doc: docx.Document, html: str) -> None:
+def add_alt_chunk(doc: Document, html: str) -> None:
     """
     Add an HTML altChunk to a Word document.
 
     Parameters
     ----------
-    doc : docx.Document
+    doc : Document
         The Word document to which the altChunk will be added.
     html : str
         The HTML string to embed as an altChunk.
@@ -76,7 +80,7 @@ def add_alt_chunk(doc: docx.Document, html: str) -> None:
     """
     package = doc.part.package
     partname = package.next_partname('/word/altChunk%d.html')
-    alt_part = docx.opc.part.Part(
+    alt_part = Part(
         partname,
         'text/html',
         html.encode(),
@@ -84,10 +88,10 @@ def add_alt_chunk(doc: docx.Document, html: str) -> None:
         )
     r_id = doc.part.relate_to(
         alt_part,
-        docx.opc.constants.RELATIONSHIP_TYPE.A_F_CHUNK
+        RELATIONSHIP_TYPE.A_F_CHUNK
         )
-    alt_chunk = docx.oxml.OxmlElement('w:altChunk')
-    alt_chunk.set(docx.oxml.ns.qn('r:id'), r_id)
+    alt_chunk = OxmlElement('w:altChunk')
+    alt_chunk.set(qn('r:id'), r_id)
     doc.element.body.sectPr.addprevious(alt_chunk)
 
 
@@ -123,7 +127,7 @@ def convert_to_word(
                 '</head><body>' + tag_html +
                 '<br><br>' + html_str +
                 '</body></html>')
-    download_file = docx.Document()
+    download_file = Document()
     title = download_file.add_heading(doc_key)
     title.style.font.color.rgb = RGBColor(0, 0, 0)
     heading = download_file.add_heading('Highlighted tags:', 3)
