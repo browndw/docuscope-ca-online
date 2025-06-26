@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8501:8501"
-    volumes:
-      - ./:/webapp
-    command: streamlit run webapp/index.py
+    # For development with hot-reloading, uncomment the next two lines:
+    # volumes:
+    #   - ./:/app
+    # command overrides Dockerfile CMD for dev; for prod, let Dockerfile CMD run
+    # command: streamlit run webapp/index.py --server.port 8501 --server.address 0.0.0.0
