@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "index.py", "--server.port", "8501"]
+CMD ["streamlit", "run", "webapp/index.py", "--server.port", "8501"]
