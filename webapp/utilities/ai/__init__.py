@@ -20,6 +20,7 @@ from webapp.utilities.ai.shared import (
     fig_to_svg,
     validate_api_key,
     get_quota_info,
+    increment_session_quota,
     render_quota_tracker,
     should_show_api_key_input,
     export_conversation_history,
@@ -88,6 +89,7 @@ __all__ = [
 
     # Quota tracking utilities
     'get_quota_info',
+    'increment_session_quota',
     'render_quota_tracker',
     'should_show_api_key_input',
     'export_conversation_history',
