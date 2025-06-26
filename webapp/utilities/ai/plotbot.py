@@ -27,7 +27,7 @@ from webapp.utilities.storage import (
 )
 from webapp.utilities.ai.shared import (
     LLM_MODEL, detect_intent,
-    prune_message_thread, fig_to_svg
+    prune_message_thread, fig_to_svg, increment_session_quota
 )
 from webapp.utilities.ai.code_execution import is_code_safe, strip_imports
 
@@ -349,6 +349,13 @@ def plotbot_code_generate_or_update(
             chunk_content = chunk.choices[0].delta.content
             if chunk_content:
                 full_response += chunk_content
+
+        # Increment quota tracker after successful API call
+        try:
+            if hasattr(st, 'user') and st.user and st.user.email:
+                increment_session_quota(st.user.email)
+        except Exception:
+            pass  # Don't fail if quota tracking fails
 
         if "```python" in full_response:
             full_response = full_response.replace("```python", "")
