@@ -13,7 +13,8 @@ import spacy
 import streamlit as st
 
 # Core application utilities with standardized patterns
-from webapp.utilities.core import app_core, safe_config_value
+from webapp.utilities.core import app_core
+from webapp.config.unified import get_config
 
 # Module-specific imports
 from webapp.utilities.session import (
@@ -51,15 +52,16 @@ app_core.register_page_widgets(LOAD_CORPUS_PERSISTENT_WIDGETS)
 
 # Configuration values are read from webapp/config/options.toml
 # Only critical fallbacks are provided for system stability
-MODEL_LARGE = safe_config_value('model_large_path', config_type='global')
-MODEL_SMALL = safe_config_value('model_small_path', config_type='global')
+MODEL_LARGE = get_config('model_large_path', 'global')
+MODEL_SMALL = get_config('model_small_path', 'global')
 
 # Global flags and limits from configuration
-DESKTOP = safe_config_value('desktop_mode', config_type='global')
-CHECK_SIZE = safe_config_value('check_size', config_type='global')
-ENABLE_DETECT = safe_config_value('enable_language_detection', config_type='global')
-MAX_TEXT = safe_config_value('max_text_size', config_type='global')
-MAX_POLARS = safe_config_value('max_polars_size', config_type='global')
+DESKTOP = get_config('desktop_mode', 'global')
+CHECK_SIZE = get_config('check_size', 'global')
+ENABLE_DETECT = get_config('enable_language_detection', 'global')
+MAX_TEXT = get_config('max_text_size', 'global')
+MAX_POLARS = get_config('max_polars_size', 'global')
+
 
 TITLE = "Manage Corpus Data"
 ICON = ":material/database:"
@@ -84,7 +86,6 @@ STATES = {
     SessionKeys.METADATA_TARGET: {},
     SessionKeys.METADATA_REFERENCE: {},
     SessionKeys.SESSION_DATAFRAME: {},  # Container for SessionKeys DataFrame
-    # 'data': {},     # Legacy key - consider removing if unused
     WarningKeys.LOAD_CORPUS: 0,
     LoadCorpusKeys.READY_TO_PROCESS: False,
     LoadCorpusKeys.CORPUS_DF: None,
