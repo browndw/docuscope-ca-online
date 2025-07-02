@@ -10,21 +10,46 @@ in the last 24 hours to help manage query limits and quotas.
 
 import hashlib
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime
 from google.cloud import firestore
 from google.oauth2 import service_account
 
-from webapp.utilities.core import safe_config_value
+from webapp.config.static_config import get_static_value
+from webapp.utilities.storage.backend_factory import get_session_backend
 
 # Import centralized logging configuration and logger
-from webapp.utilities.configuration.logging_config import get_logger, setup_utility_logging
+from webapp.utilities.configuration.logging_config import (
+    get_logger, setup_utility_logging
+)
 
 logger = get_logger()
 
 # Set up logging for storage utilities
 setup_utility_logging("storage")
 
-DESKTOP = safe_config_value('desktop_mode', config_type='global')
+DESKTOP = get_static_value('desktop_mode', 'global', True)
+
+
+def should_store_to_firestore(enable_firestore: bool = None) -> bool:
+    """
+    Check if data should be stored to Firestore for research purposes.
+
+    Parameters
+    ----------
+    enable_firestore : bool, optional
+        Override for Firestore storage. If None, uses static TOML default.
+
+    Returns
+    -------
+    bool
+        True if Firestore storage is enabled
+    """
+    if enable_firestore is not None:
+        return enable_firestore
+
+    # Fall back to static TOML configuration
+    return get_static_value('cache_mode', 'cache', False)
+
 
 if DESKTOP is False:
     # Set up the Google Cloud Firestore credentials
@@ -60,7 +85,8 @@ def add_message(user_id: str,
                 assistant_id: int,
                 role: str,
                 message_idx: int,
-                message: str):
+                message: str,
+                enable_firestore: bool = None):
     """
     Adds a message to the Firestore database.
 
@@ -76,11 +102,22 @@ def add_message(user_id: str,
             The role of the message sender ('user' or 'assistant').
         message: str
             The content of the message.
+        enable_firestore: bool, optional
+            Whether to store to Firestore. If None, uses configuration.
 
     Returns
     -------
         None
     """
+    # Check if Firestore storage is enabled
+    if not should_store_to_firestore(enable_firestore):
+        logger.debug("Firestore storage disabled - skipping message storage")
+        return
+
+    if DESKTOP:
+        logger.debug("Desktop mode - skipping Firestore message storage")
+        return
+
     timestamp = datetime.now()
     user_id = persistent_hash(user_id)
 
@@ -112,8 +149,9 @@ def add_message(user_id: str,
             'message_idx': message_idx,
             'message': message
         })
+        logger.debug(f"Message stored to Firestore: {doc_id}")
     except Exception as e:
-        logger(f"Failed to add message to Firestore: {e}")
+        logger.error(f"Failed to add message to Firestore: {e}")
 
 
 def add_plot(user_id: str,
@@ -121,9 +159,10 @@ def add_plot(user_id: str,
              assistant_id: int,
              message_idx: int,
              plot_library: str,
-             plot_svg: str) -> None:
+             plot_svg: str,
+             enable_firestore: bool = None) -> None:
     """
-    Adds a plot arry to the Firestore database.
+    Adds a plot array to the Firestore database.
 
     Parameters
     ----------
@@ -133,15 +172,28 @@ def add_plot(user_id: str,
             The ID of the session associated with the message.
         assistant_id: int
             The ID of the assistant involved in the conversation.
-        role: str
-            The role of the message sender ('user' or 'assistant').
-        message: str
-            The content of the message.
+        message_idx: int
+            Index of the message in the conversation.
+        plot_library: str
+            The plotting library used.
+        plot_svg: str
+            The SVG content of the plot.
+        enable_firestore: bool, optional
+            Whether to store to Firestore. If None, uses configuration.
 
     Returns
     -------
         None
     """
+    # Check if Firestore storage is enabled
+    if not should_store_to_firestore(enable_firestore):
+        logger.debug("Firestore storage disabled - skipping plot storage")
+        return
+
+    if DESKTOP:
+        logger.debug("Desktop mode - skipping Firestore plot storage")
+        return
+
     timestamp = datetime.now()
     user_id = persistent_hash(user_id)
     type = 1
@@ -171,12 +223,14 @@ def add_plot(user_id: str,
             'plot_library': plot_library,
             'plot_svg': plot_svg
         })
+        logger.debug(f"Plot stored to Firestore: {doc_id}")
     except Exception as e:
-        logger(f"Failed to add plot to Firestore: {e}")
+        logger.error(f"Failed to add plot to Firestore: {e}")
 
 
 def add_login(user_id: str,
-              session_id: str):
+              session_id: str,
+              enable_firestore: bool = None):
     """
     Adds a user login instance to the Firestore database.
 
@@ -184,11 +238,22 @@ def add_login(user_id: str,
     ----------
         user_id: The ID of the user.
         session_id: The ID of the session.
+        enable_firestore: bool, optional
+            Whether to store to Firestore. If None, uses configuration.
 
     Returns
     -------
         None
     """
+    # Check if Firestore storage is enabled
+    if not should_store_to_firestore(enable_firestore):
+        logger.debug("Firestore storage disabled - skipping login storage")
+        return
+
+    if DESKTOP:
+        logger.debug("Desktop mode - skipping Firestore login storage")
+        return
+
     timestamp = datetime.now()
     from_cmu = user_id.endswith(".cmu.edu")
     user_id = persistent_hash(user_id)
@@ -207,13 +272,18 @@ def add_login(user_id: str,
             'session_id': session_id,
             'time_stamp': timestamp
         })
+        logger.debug(f"Login stored to Firestore: {doc_id}")
     except Exception as e:
-        logger(f"Failed to add login to Firestore: {e}")
+        logger.error(f"Failed to add login to Firestore: {e}")
 
 
 def get_query_count(user_id):
     """
-    Get the count of user queries in the last 24 hours.
+    Get the count of user queries in the last 24 hours from SQLite.
+
+    This function now uses local SQLite storage for instant quota checking
+    instead of querying Firestore, providing better performance and
+    eliminating API costs for quota management.
 
     Parameters
     ----------
@@ -226,31 +296,133 @@ def get_query_count(user_id):
         Number of user queries in the last 24 hours
     """
     try:
-        # Only proceed if we're in online mode and have credentials
-        if DESKTOP or creds is None:
-            return 0
+        # Use SQLite for quota checking (fast, local, always available)
 
-        db = firestore.Client(credentials=creds, project="docuscope-ca-data")
-        collection_ref = db.collection("messages")
-        timestamp = datetime.now()
-        hashed_user_id = persistent_hash(user_id)
-
-        # Calculate the timestamp for 24 hours ago
-        last_24_hours = timestamp - timedelta(hours=24)
-
-        # Create a query using the newer filter syntax
-        query = (
-            collection_ref
-            .where(filter=firestore.FieldFilter("user_id", "==", hashed_user_id))
-            .where(filter=firestore.FieldFilter("role", "==", "user"))
-            .where(filter=firestore.FieldFilter("time_stamp", ">=", last_24_hours))
-        )
-
-        docs = query.get()
-        count = len(docs)
-
+        backend = get_session_backend()
+        count = backend.get_user_query_count_24h(user_id)
         return count
 
     except Exception as e:
-        logger(f"Failed to get query count from Firestore: {e}")
-        return 0
+        logger.error(f"Failed to get query count from SQLite: {e}")
+        return 0  # Fail-safe: allow usage when quota check fails
+
+
+# Enhanced functions that use SQLite + optional Firestore
+
+def log_user_query_local(user_id: str, session_id: str, assistant_type: str = None,
+                         message_content: str = None) -> bool:
+    """
+    Log user query to local SQLite for quota tracking.
+
+    This function should be called whenever a user makes a query to any AI assistant.
+    It provides instant quota tracking without external API dependencies.
+
+    Parameters
+    ----------
+    user_id : str
+        The user ID making the query
+    session_id : str
+        The session ID for the query
+    assistant_type : str, optional
+        Type of assistant ('plotbot', 'pandasai', etc.)
+    message_content : str, optional
+        The actual query content
+
+    Returns
+    -------
+    bool
+        True if logged successfully
+    """
+    try:
+
+        backend = get_session_backend()
+        success = backend.log_user_query(
+            user_id, session_id, assistant_type, message_content
+        )
+
+        if success:
+            logger.debug(f"Logged user query for {user_id} in session {session_id}")
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Failed to log user query locally: {e}")
+        return False
+
+
+def add_message_enhanced(user_id: str, session_id: str, assistant_id: int,
+                         role: str, message_idx: int, message: str,
+                         enable_firestore: bool = None):
+    """
+    Enhanced message logging that uses SQLite + optional Firestore.
+
+    This function logs to SQLite for quota tracking and optionally to Firestore
+    for research data collection if enabled in configuration.
+
+    Parameters
+    ----------
+    user_id : str
+        The ID of the user sending or receiving the message
+    session_id : str
+        The ID of the session associated with the message
+    assistant_id : int
+        The ID of the assistant involved in the conversation
+    role : str
+        The role of the message sender ('user' or 'assistant')
+    message_idx : int
+        Index of the message in the conversation
+    message : str
+        The content of the message
+    enable_firestore : bool, optional
+        Whether to store to Firestore. If None, uses configuration.
+
+    Returns
+    -------
+    None
+    """
+    # Always log to SQLite for quota tracking (if it's a user query)
+    if role == "user":
+        assistant_type = f"assistant_{assistant_id}"  # Map assistant_id to type
+        log_user_query_local(user_id, session_id, assistant_type, message)
+
+    # Optionally log to Firestore for research data
+    firestore_enabled = get_static_value('enabled', 'firestore', False)
+    if (enable_firestore or firestore_enabled) and not DESKTOP and creds is not None:
+        try:
+            # Use the original Firestore logging function
+            add_message(
+                user_id, session_id, assistant_id, role, message_idx, message,
+                enable_firestore
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log to Firestore (research data): {e}")
+            # Don't fail the operation if Firestore logging fails
+
+
+def get_session_analytics() -> dict:
+    """
+    Get session and usage analytics from SQLite.
+
+    Returns comprehensive statistics about application usage
+    for monitoring and capacity planning.
+
+    Returns
+    -------
+    dict
+        Analytics data including session counts, query patterns, etc.
+    """
+    try:
+
+        backend = get_session_backend()
+        stats = backend.get_session_stats()
+
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'database_stats': stats,
+            'firestore_enabled': get_static_value('enabled', 'firestore', False),
+            'desktop_mode': DESKTOP
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get session analytics: {e}")
+        return {}

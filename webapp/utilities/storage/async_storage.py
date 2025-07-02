@@ -5,6 +5,8 @@ This module provides background processing for analytics and research data
 that should not block the user experience.
 """
 
+
+import atexit
 import queue
 import threading
 import time
@@ -13,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from webapp.utilities.storage import add_message, add_plot
-from webapp.utilities.core.integration import safe_config_value
+from webapp.config.static_config import get_static_value
 
 # Import centralized logging configuration and logger
 import webapp.utilities.configuration.logging_config  # noqa: F401
@@ -158,7 +160,6 @@ def get_storage_manager() -> AsyncStorageManager:
         _storage_manager.start()
 
         # Register cleanup on app shutdown
-        import atexit
         atexit.register(_storage_manager.stop)
 
     return _storage_manager
@@ -178,16 +179,31 @@ def async_add_plot(**kwargs):
 
 def is_desktop_mode() -> bool:
     """Check if the application is running in desktop mode."""
-    return safe_config_value('desktop_mode', False, 'global')
+    return get_static_value('desktop_mode', 'global', True)
+
+
+def should_use_async_storage() -> bool:
+    """
+    Check if async storage should be used.
+
+    Returns True only if:
+    1. Not in desktop mode
+    2. Firestore collection is enabled (static config only)
+    """
+    return not is_desktop_mode() and get_static_value('cache_mode', 'cache', False)
 
 
 def conditional_async_add_message(**kwargs):
-    """Add message data, using async storage only when not in desktop mode."""
-    if not is_desktop_mode():
+    """Add message data, using async storage only when enabled."""
+    if should_use_async_storage():
         async_add_message(**kwargs)
+    else:
+        logger.debug("Async storage disabled - skipping message storage")
 
 
 def conditional_async_add_plot(**kwargs):
-    """Add plot data, using async storage only when not in desktop mode."""
-    if not is_desktop_mode():
+    """Add plot data, using async storage only when enabled."""
+    if should_use_async_storage():
         async_add_plot(**kwargs)
+    else:
+        logger.debug("Async storage disabled - skipping plot storage")

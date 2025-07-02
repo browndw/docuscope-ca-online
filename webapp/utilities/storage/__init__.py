@@ -20,6 +20,12 @@ from webapp.utilities.storage.async_storage import (
     get_storage_manager
 )
 
+# Import backend factory for session persistence
+from webapp.utilities.storage.backend_factory import (
+    backend_factory,
+    get_session_backend
+)
+
 __all__ = [
     'persistent_hash',
     'get_query_count',
@@ -29,5 +35,8 @@ __all__ = [
     # Async storage functions
     'conditional_async_add_message',
     'conditional_async_add_plot',
-    'get_storage_manager'
+    'get_storage_manager',
+    # Session backend factory
+    'backend_factory',
+    'get_session_backend'
 ]
