@@ -7,10 +7,9 @@ configuration access, error handling, UI boundaries, and session management.
 """
 
 # Configuration Access Patterns
-from webapp.utilities.configuration.access_patterns import (
-    config_accessor,
-    get_config_value,
-    safe_config_access
+from webapp.config.unified import (
+    get_config,
+    get_ai_config
 )
 
 # Error Handling and Boundaries
@@ -62,7 +61,6 @@ class ApplicationCore:
 
     def __init__(self):
         """Initialize the application core interface."""
-        self.config = config_accessor
         self.error_handler = error_handler
         self.core_error_handler = core_error_handler
         self.session_validator = enhanced_validator
@@ -88,10 +86,13 @@ class ApplicationCore:
         Any
             Configuration value or default
         """
-        return safe_config_access(
-            lambda: get_config_value(key, default, config_type),
-            fallback=default
-        )
+        try:
+            if config_type == 'ai':
+                return get_ai_config(key, default)
+            else:
+                return get_config(key, config_type, default)
+        except Exception:
+            return default
 
     def validate_and_repair_session(self, user_session_id: str) -> bool:
         """
@@ -270,7 +271,6 @@ __all__ = [
     'get_session_diagnostics',
 
     # Direct imports for flexibility
-    'config_accessor',
     'error_handler',
     'enhanced_validator',
     'widget_key_manager',
