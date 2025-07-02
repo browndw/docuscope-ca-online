@@ -33,15 +33,23 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from webapp.menu import menu   # noqa: E402
-from webapp.utilities.core import safe_config_value   # noqa: E402
+from webapp.config.unified import get_config   # noqa: E402
 
-TITLE_LOGO = safe_config_value('docuscope_logo_path', '', 'global')
-PL_LOGO = safe_config_value('porpoise_badge_path', '', 'global')
-UG_LOGO = safe_config_value('user_guide_badge_path', '', 'global')
-SPACY_META = safe_config_value('spacy_model_meta_path', '', 'global')
-DESKTOP = safe_config_value('desktop_mode', False, 'global')
+# Initialize session backend early to ensure database is created
+try:
+    from webapp.utilities.storage.backend_factory import get_session_backend
+    # This will create the database and tables if they don't exist
+    _session_backend = get_session_backend()
+except Exception:
+    pass
+
+TITLE_LOGO = get_config('docuscope_logo_path', 'global', '')
+PL_LOGO = get_config('porpoise_badge_path', 'global', '')
+UG_LOGO = get_config('user_guide_badge_path', 'global', '')
+SPACY_META = get_config('spacy_model_meta_path', 'global', '')
+DESKTOP = get_config('desktop_mode', 'global', False)
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
-__version__ = safe_config_value('version', '1.0.0', 'global')
+VERSION = get_config('version', 'version', '1.0.0')
 
 
 st.set_page_config(
@@ -163,7 +171,7 @@ def main() -> None:
         model_version = json_data["version"]
         st.markdown(
             version_info(
-                __version__,
+                VERSION,
                 model_name,
                 model_version),
             unsafe_allow_html=True
