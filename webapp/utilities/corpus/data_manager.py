@@ -16,6 +16,7 @@ import docuscospacy as ds
 
 from webapp.utilities.memory import DataFrameCache, lazy_computation
 from webapp.utilities.configuration.logging_config import get_logger
+from webapp.utilities.session.session_persistence import auto_persist_session
 
 logger = get_logger()
 
@@ -105,6 +106,8 @@ class CorpusDataManager:
         self.session_corpus_data["ds_tokens"] = ds_tokens
         # Clear any cached derived data since core data changed
         self._invalidate_derived_cache()
+        # Persist the session with new core data
+        auto_persist_session(self.user_session_id)
 
     def _invalidate_derived_cache(self) -> None:
         """Clear cached derived data when core data changes."""
@@ -200,6 +203,8 @@ class CorpusDataManager:
                 # Cache both tables
                 self.session_corpus_data["ft_pos"] = ft_pos
                 self.session_corpus_data["ft_ds"] = ft_ds
+                # Persist session with new cached data
+                auto_persist_session(self.user_session_id)
                 return ft_ds if key == "ft_ds" else ft_pos
 
             elif key in ["tt_pos", "tt_ds"]:
@@ -207,6 +212,8 @@ class CorpusDataManager:
                 # Cache both tables
                 self.session_corpus_data["tt_pos"] = tt_pos
                 self.session_corpus_data["tt_ds"] = tt_ds
+                # Persist session with new cached data
+                auto_persist_session(self.user_session_id)
                 return tt_ds if key == "tt_ds" else tt_pos
 
             elif key in ["dtm_pos", "dtm_ds"]:
@@ -214,6 +221,8 @@ class CorpusDataManager:
                 # Cache both tables
                 self.session_corpus_data["dtm_pos"] = dtm_pos
                 self.session_corpus_data["dtm_ds"] = dtm_ds
+                # Persist session with new cached data
+                auto_persist_session(self.user_session_id)
                 return dtm_ds if key == "dtm_ds" else dtm_pos
 
             return None
@@ -242,6 +251,9 @@ class CorpusDataManager:
         if key in self.core_keys:
             self._invalidate_derived_cache()
 
+        # Persist the session with new data
+        auto_persist_session(self.user_session_id)
+
     def load_all_data(self, data_dict: Dict[str, pl.DataFrame]) -> None:
         """
         Load all data at once (for legacy compatibility).
@@ -253,6 +265,9 @@ class CorpusDataManager:
         """
         for key, data in data_dict.items():
             self.session_corpus_data[key] = data
+
+        # Persist the session with all loaded data
+        auto_persist_session(self.user_session_id)
 
     def get_available_keys(self) -> list[str]:
         """Get list of available data keys."""
