@@ -1,13 +1,23 @@
+[version]
+version = "0.4.0"  # Update this version when making changes
+
 [global]
 check_size = false
 check_language = false
-desktop_mode = true
+desktop_mode = false
 max_bytes_text = 20000000
 max_bytes_polars = 150000000
 
 # Model paths
 model_large_path = "webapp/_models/en_docusco_spacy"
 model_small_path = "webapp/_models/en_docusco_spacy_cd"
+
+# Static assets paths
+docuscope_logo_path = "webapp/_static/docuscope-logo.png"
+porpoise_badge_path = "webapp/_static/porpoise_badge.svg"
+google_logo_path = "webapp/_static/web_light_rd_na.svg"
+spacy_model_meta_path = "webapp/_models/en_docusco_spacy/meta.json"
+corpus_dir_path = "webapp/_corpora"
 
 # Language detection
 enable_language_detection = false
@@ -17,15 +27,97 @@ max_text_size = 20000000
 max_polars_size = 150000000
 
 [llm]
+# AI configuration for both desktop and enterprise modes
 llm_parameters = { temperature = 0.7, top_p = 0.7, max_tokens = 500, frequency_penalty = 0, presence_penalty = 0 }
 llm_model = "gpt-4o-mini"
 quota = 10
 
+[llm.enterprise]
+# Community key protection (classroom scenarios - high concurrent pressure)
+community_circuit_breaker_failure_threshold = 3
+community_circuit_breaker_recovery_timeout = 30
+community_circuit_breaker_success_threshold = 2
+community_max_concurrent_requests = 5
+community_request_timeout_seconds = 10
+community_requests_per_minute_per_user = 20
+
+# Individual key handling (desktop mode + quota exhausted users)
+individual_circuit_breaker_failure_threshold = 5
+individual_circuit_breaker_recovery_timeout = 60
+individual_circuit_breaker_success_threshold = 3
+individual_max_concurrent_requests = 10
+individual_request_timeout_seconds = 20
+individual_requests_per_minute_per_user = 40
+
+# Enterprise reliability features
+enable_request_deduplication = true
+enable_aggressive_caching = true
+response_cache_duration_minutes = 60
+enable_load_shedding = true
+max_queue_size = 1000
+enable_circuit_breaker_metrics = true
+
 [cache]
+# IMPORTANT: cache_mode is ONLY for Firestore research data collection
+# This is completely separate from session management and enterprise caching
 cache_mode = false
 cache_location = "firestore"
 
+[authorization]
+enable_user_authorization = true
+default_admin_email = "dwb2@andrew.cmu.edu"  # First admin user
+session_cache_authorization = true
+audit_access_attempts = true
+
 [session]
+# Session persistence backend: "memory", "sqlite", "sharded_sqlite"
+# Backend automatically switches based on desktop_mode:
+# - desktop_mode = true: uses "sqlite" (single database)
+# - desktop_mode = false: uses "sharded_sqlite" (enterprise scale)
+backend = "sqlite"
+storage_path = "webapp/_session"
+
+# Enterprise session/analysis caching (separate from Firestore cache_mode)
+# Automatically enabled when desktop_mode = false
+enable_session_caching = true
+enable_corpus_cache = true
+enable_analysis_cache = true
+cache_compression = true
+
+# Enterprise cache settings (when desktop_mode = false)
+cache_backend = "sqlite_sharded"  # "sqlite", "sqlite_sharded"
+cache_db_path = "webapp/_session/cache.db"
+cache_max_size_mb = 500
+cache_ttl_hours = 24
+cache_cleanup_interval_minutes = 30
+
+# Enterprise sharding (only when desktop_mode = false)
+# Automatically enabled for enterprise deployments
+enable_sharding = false  # Auto-enabled when desktop_mode = false
+shard_count = 8
+shard_strategy = "user_hash"  # "user_hash", "round_robin", "load_based"
+
+# Primary databases (sharded)
+sessions_shard_pattern = "webapp/_session/sessions_shard_{}.db"
+cache_shard_pattern = "webapp/_session/cache_shard_{}.db"
+
+# Shared databases (not sharded)
+analytics_db_path = "webapp/_session/analytics.db"
+temp_db_path = "webapp/_session/temp.db"
+health_db_path = "webapp/_session/health.db"
+
+# Connection pool settings for enterprise scale
+connection_pool_size = 20
+cache_pool_size = 15
+analytics_pool_size = 8
+health_pool_size = 3
+
+# Connection pool monitoring
+pool_health_check_interval = 30
+max_connection_age_minutes = 60
+connection_timeout_seconds = 30
+
+# Session timeouts
 # Inactivity timeout in minutes (user hasn't interacted)
 inactivity_timeout_minutes = 90
 inactivity_warning_minutes = 85
@@ -33,3 +125,74 @@ inactivity_warning_minutes = 85
 # Absolute session timeout in hours (since login)
 absolute_timeout_hours = 24
 absolute_warning_hours = 23.5
+
+# Cleanup settings
+cleanup_interval_minutes = 60
+max_session_age_hours = 24
+
+# Optional Firestore research data collection
+[firestore]
+enabled = false
+collection_name = "user_sessions"
+batch_upload = true
+batch_interval_minutes = 60
+
+# Enterprise monitoring and health checks
+[monitoring]
+enable_health_endpoints = true
+enable_metrics_collection = true
+metrics_retention_hours = 168  # 7 days
+health_check_interval_seconds = 30
+
+# Performance targets for enterprise scale
+performance_targets = { page_load_ms = 2000, api_response_ms = 500, session_init_ms = 100 }
+
+# Alerting thresholds
+alert_thresholds = { error_rate_percent = 1.0, response_time_p95_ms = 3000, pool_utilization_percent = 85 }
+
+# Enterprise performance thresholds
+max_response_time_ms = 2000
+max_memory_usage_percent = 85
+max_cpu_usage_percent = 80
+min_available_disk_percent = 20
+max_error_rate_percent = 5
+max_concurrent_sessions = 500
+
+# Alerting configuration for operations team
+enable_alerts = true
+alert_email = "ops-team@your-domain.com"
+slack_webhook_url = ""
+pagerduty_api_key = ""
+
+# Advanced monitoring features
+enable_detailed_metrics = true
+track_shard_performance = true
+enable_predictive_scaling = false
+
+# Load balancing and failover
+[deployment]
+enable_health_checks = true
+health_check_path = "/health"
+ready_check_path = "/ready"
+metrics_path = "/metrics"
+
+# Graceful shutdown
+shutdown_timeout_seconds = 30
+drain_connections_timeout_seconds = 15
+
+# Zero-downtime deployment support
+enable_graceful_reload = true
+max_concurrent_requests = 1000
+request_queue_size = 2000
+
+# Resource limits for enterprise stability
+[limits]
+max_session_size_mb = 50
+max_corpus_size_mb = 100
+max_concurrent_sessions_per_user = 3
+max_file_upload_mb = 200
+
+# Memory management
+memory_warning_threshold_mb = 1024
+memory_critical_threshold_mb = 1536
+gc_collection_interval_minutes = 5
