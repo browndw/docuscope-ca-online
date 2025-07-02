@@ -11,7 +11,6 @@ import hashlib
 import pandas as pd
 import polars as pl
 import matplotlib.pyplot as plt
-import openai
 import streamlit as st
 import seaborn as sns
 import plotly.express as px
@@ -30,12 +29,9 @@ from webapp.utilities.ai.shared import (
     prune_message_thread, fig_to_svg, increment_session_quota
 )
 from webapp.utilities.ai.code_execution import is_code_safe, strip_imports
-
-# Import centralized logging configuration and logger
-import webapp.utilities.configuration.logging_config  # noqa: F401
-from webapp.utilities.configuration.logging_config import get_logger
-
-logger = get_logger()
+from webapp.utilities.ai.enterprise_integration import (
+    make_protected_openai_call
+)
 
 # Plotbot-specific constants
 FORBIDDEN_PATTERNS = [
@@ -329,20 +325,34 @@ def plotbot_code_generate_or_update(
     """  # noqa: E501
 
     try:
-        openai.api_key = api_key
-        response = openai.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            stream=True,
-            temperature=llm_params["temperature"],
-            max_tokens=llm_params["max_tokens"],
-            top_p=llm_params["top_p"],
-            frequency_penalty=llm_params["frequency_penalty"],
-            presence_penalty=llm_params["presence_penalty"]
+        # Use enterprise-protected OpenAI call with circuit breaker and fallback
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        request_params = {
+            "model": LLM_MODEL,
+            "messages": messages,
+            "stream": True,
+            "temperature": llm_params["temperature"],
+            "max_tokens": llm_params["max_tokens"],
+            "top_p": llm_params["top_p"],
+            "frequency_penalty": llm_params["frequency_penalty"],
+            "presence_penalty": llm_params["presence_penalty"]
+        }
+
+        # Make the protected call using enterprise infrastructure
+        response = make_protected_openai_call(
+            api_key=api_key,
+            request_params=request_params,
+            request_type="chat_completion",
+            cache_key=f"plotbot_code_{user_request}_{plot_lib}_{len(str(df.shape))}"
         )
+
+        # Handle error responses from circuit breaker
+        if isinstance(response, dict) and response.get("type") == "error":
+            return response
 
         full_response = ""
         for chunk in response:
@@ -611,6 +621,23 @@ def plotbot_user_query(session_id: str,
                         plot_code.get("value") if isinstance(plot_code, dict) else
                         "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
                     )
+                    
+                    # Add specific messaging for enterprise circuit breaker events
+                    if (isinstance(plot_code, dict) and
+                            "circuit breaker" in error_message.lower()):
+                        error_message = (
+                            ":warning: **AI Service Temporarily Unavailable**\n\n"
+                            "The AI plotting assistant is experiencing high demand. "
+                            "Please try again in a few moments, or consider using "
+                            "manual plotting tools in the meantime."
+                        )
+                    elif (isinstance(plot_code, dict) and
+                          "rate limit" in error_message.lower()):
+                        error_message = (
+                            ":hourglass_flowing_sand: **Rate Limit Reached**\n\n"
+                            "Please wait a moment before making another plotting request."
+                        )
+                    
                     st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
                         {"role": "assistant", "type": "error", "value": error_message}
                     )

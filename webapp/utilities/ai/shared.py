@@ -15,12 +15,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import streamlit as st
 
-from webapp.utilities.core import safe_config_value
+from webapp.config.unified import get_config
 from webapp.utilities.storage.cache_management import get_query_count
 
 # Import centralized logging configuration and logger
 import webapp.utilities.configuration.logging_config  # noqa: F401
 from webapp.utilities.configuration.logging_config import get_logger
+
+from webapp.utilities.state import SessionKeys
 
 logger = get_logger()
 
@@ -70,9 +72,6 @@ def export_conversation_history(
         JSON formatted workflow export with embedded plots
     """
     try:
-        # Import here to avoid circular imports
-        from webapp.utilities.state import SessionKeys
-
         # Get messages from session state based on bot type
         if bot_type == "plotbot":
             messages_key = SessionKeys.AI_PLOTBOT_CHAT
@@ -500,7 +499,7 @@ def should_show_work_preservation_interface(
         return False
 
     # In desktop mode, don't show preservation interface
-    if safe_config_value('desktop', config_type='ai'):
+    if get_config('desktop_mode', 'global'):
         return False
 
     # Check if user has already acknowledged quota exhaustion
@@ -781,10 +780,10 @@ def get_quota_info(user_id: str, force_refresh: bool = False) -> dict:
         - 'percentage_used': Percentage of quota used (0-100)
     """
     try:
-        total_quota = safe_config_value('quota', config_type='ai')
+        total_quota = get_config('quota', 'llm')
 
         # Only check usage in online mode
-        if safe_config_value('desktop', config_type='ai'):
+        if get_config('desktop_mode', 'global'):
             # In desktop mode, no quota limits
             return {
                 'total': total_quota,
@@ -832,7 +831,7 @@ def get_quota_info(user_id: str, force_refresh: bool = False) -> dict:
         }
     except Exception:
         # Return safe defaults
-        quota = safe_config_value('quota', config_type='ai')
+        quota = get_config('quota', 'llm')
         return {
             'total': quota,
             'used': 0,
@@ -855,7 +854,7 @@ def increment_session_quota(user_id: str) -> None:
     """
     try:
         # Only track in online mode
-        if safe_config_value('desktop', config_type='ai'):
+        if get_config('desktop_mode', 'global'):
             return
 
         session_count_key = f"quota_session_count_{user_id}"
@@ -917,7 +916,7 @@ def render_quota_tracker(user_id: str) -> dict:
         quota_info = get_quota_info(user_id)
 
     # Only show quota tracker in online mode when secrets are available
-    if not safe_config_value('desktop', config_type='ai'):
+    if not get_config('desktop_mode', 'global'):
         try:
             import streamlit as st
             # Check if we have access to community key (secrets)
@@ -969,7 +968,7 @@ def render_quota_tracker(user_id: str) -> dict:
                         )
         except Exception as e:
             # If we can't access secrets or any other error, don't show quota tracker
-            logger(f"Cannot render quota tracker: {e}")
+            logger.error(f"Cannot render quota tracker: {e}")
 
     return quota_info
 
@@ -991,7 +990,7 @@ def should_show_api_key_input(user_id: str, has_user_key: bool = False) -> bool:
         True if API key input should be shown
     """
     # In desktop mode, always require user to provide their own API key
-    if safe_config_value('desktop', config_type='ai'):
+    if get_config('desktop_mode', 'global'):
         return not has_user_key
 
     # In online mode, check if secrets are available for community key access

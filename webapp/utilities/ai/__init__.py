@@ -30,6 +30,26 @@ from webapp.utilities.ai.shared import (
     should_show_work_preservation_interface
 )
 
+# Import enterprise circuit breaker and routing
+from webapp.utilities.ai.enterprise_circuit_breaker import (
+    get_circuit_breaker,
+    get_circuit_breaker_manager,
+    circuit_breaker_protected_call,
+    CircuitBreakerError,
+    CircuitBreakerState
+)
+from webapp.utilities.ai.enterprise_router import (
+    get_ai_router,
+    route_ai_request
+)
+from webapp.utilities.ai.enterprise_integration import (
+    determine_api_key_type,
+    protected_openai_call,
+    with_circuit_breaker_protection,
+    get_circuit_breaker_status,
+    reset_circuit_breakers
+)
+
 # Import core LLM utilities (non-circular)
 from webapp.utilities.ai.llm_core import (
     print_settings,
@@ -97,6 +117,22 @@ __all__ = [
     'get_current_plot_as_png',
     'render_work_preservation_interface',
     'should_show_work_preservation_interface',
+
+    # Enterprise circuit breaker and routing
+    'get_circuit_breaker',
+    'get_circuit_breaker_manager',
+    'circuit_breaker_protected_call',
+    'CircuitBreakerError',
+    'CircuitBreakerState',
+    'get_ai_router',
+    'route_ai_request',
+    
+    # Enterprise integration helpers
+    'determine_api_key_type',
+    'protected_openai_call',
+    'with_circuit_breaker_protection',
+    'get_circuit_breaker_status',
+    'reset_circuit_breakers',
 
     # Plotbot functions
     'clear_plotbot',

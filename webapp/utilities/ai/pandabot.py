@@ -20,18 +20,15 @@ from pandasai.exceptions import MaliciousQueryError, NoResultFoundError
 from pandasai_openai import OpenAI
 import pandasai as pai
 
-# Import centralized logging configuration and logger
-import webapp.utilities.configuration.logging_config  # noqa: F401
-from webapp.utilities.configuration.logging_config import get_logger
 # Import shared AI utilities
 from webapp.utilities.ai.shared import prune_message_thread
 # Add async storage import for non-blocking Firestore operations
 from webapp.utilities.storage import conditional_async_add_message
 from webapp.utilities.ai.shared import increment_session_quota
+from webapp.utilities.ai.enterprise_integration import enterprise_ai_call
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.state.widget_state import safe_clear_widget_state
 
-logger = get_logger()
 # Thread-safe global lock for monkeypatching
 _monkeypatch_lock = threading.RLock()
 
@@ -198,6 +195,7 @@ def clear_pandasai(session_id):
     st.session_state[session_id][SessionKeys.AI_PANDABOT_PROMPT_COUNT] = 0
 
 
+@enterprise_ai_call("pandabot_analysis")
 def pandabot_user_query(
     df: pd.DataFrame,
     api_key: str,
@@ -453,11 +451,31 @@ def pandabot_user_query(
                 "Try rephrasing or checking your column names."
             )
             response.append({"role": "assistant", "type": "error", "value": error})
-        except Exception:
-            error = (
-                ":confused: I couldn't process your request. "
-                "Try rephrasing it or using a different approach."
-            )
+        except Exception as e:
+            # Handle enterprise circuit breaker and rate limiting errors
+            error_msg = str(e).lower()
+            if "circuit breaker" in error_msg:
+                error = (
+                    ":warning: **AI Analysis Service Temporarily Unavailable**\n\n"
+                    "The AI analysis assistant is experiencing high demand. "
+                    "Please try again in a few moments."
+                )
+            elif "rate limit" in error_msg:
+                error = (
+                    ":hourglass_flowing_sand: **Rate Limit Reached**\n\n"
+                    "Please wait a moment before making another analysis request."
+                )
+            elif "quota" in error_msg or "usage" in error_msg:
+                error = (
+                    ":information_source: **Usage Limit Reached**\n\n"
+                    "You've reached your AI analysis quota. "
+                    "Consider using manual analysis tools or try again later."
+                )
+            else:
+                error = (
+                    ":confused: I couldn't process your request. "
+                    "Try rephrasing it or using a different approach."
+                )
             response.append({"role": "assistant", "type": "error", "value": error})
 
     # Prune conversation history

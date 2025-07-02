@@ -13,15 +13,19 @@ import streamlit as st
 from datetime import datetime, timedelta
 
 # Core application utilities
-from webapp.utilities.core import app_core, safe_config_value
+from webapp.utilities.core import app_core
+from webapp.config.unified import get_ai_config
 
 # Specific utilities for this module
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.storage import get_query_count
 from webapp.utilities.analysis import tags_table_grouped, dtm_simplify_grouped
 from webapp.utilities.corpus import get_corpus_data_manager
-from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.session.session_core import safe_session_get
+
+# Import centralized logging configuration and logger
+import webapp.utilities.configuration.logging_config  # noqa: F401
+from webapp.utilities.configuration.logging_config import get_logger
 
 logger = get_logger()
 
@@ -35,12 +39,13 @@ AI_PERSISTENT_WIDGETS = [
 # Register the persistent widgets using core application interface
 app_core.register_page_widgets(AI_PERSISTENT_WIDGETS)
 
-# Get AI configuration using standardized access pattern
-DESKTOP = safe_config_value('desktop', config_type='ai')
-CACHE = safe_config_value('cache', config_type='ai')
-LLM_MODEL = safe_config_value('model', config_type='ai')
-LLM_PARAMS = safe_config_value('params', config_type='ai')
-QUOTA = safe_config_value('quota', config_type='ai')
+# Get AI configuration using standardized access
+AI_CONFIG = get_ai_config()
+DESKTOP = AI_CONFIG['desktop_mode']
+CACHE = AI_CONFIG['cache_enabled']
+LLM_MODEL = AI_CONFIG['model']
+LLM_PARAMS = AI_CONFIG['parameters']
+QUOTA = AI_CONFIG['quota']
 
 
 def print_settings(dct: dict) -> str:
@@ -81,7 +86,7 @@ def is_openai_key_valid(api_key: str) -> bool:
         client = openai.OpenAI(api_key=api_key)
         # Make a minimal API call to test the key
         client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": "Hi"}],
             max_tokens=1
         )
@@ -435,7 +440,7 @@ def get_api_key(
                 if quota_exceeded:
                     community_key = None
             except Exception as e:
-                logger(f"Error checking quota: {e}")
+                logger.error(f"Error checking quota: {e}")
 
         # Return community key if available, otherwise user key
         if community_key is not None:
