@@ -6,6 +6,55 @@ session state across the application.
 """
 
 import streamlit as st
+from webapp.utilities.session.session_persistence import (
+    load_persistent_session,
+    auto_persist_session
+)
+
+
+def ensure_session_loaded(session_id: str) -> bool:
+    """
+    Ensure session is loaded from persistent storage if it exists.
+
+    Parameters
+    ----------
+    session_id : str
+        The session ID to ensure is loaded
+
+    Returns
+    -------
+    bool
+        True if session is available (loaded or already in memory)
+    """
+    # If session already exists in memory, we're good
+    if session_id in st.session_state:
+        return True
+
+    # Try to load from persistent storage
+    if load_persistent_session(session_id):
+        return True
+
+    # Session doesn't exist anywhere
+    return False
+
+
+def persist_session_changes(session_id: str) -> bool:
+    """
+    Persist session changes to storage if needed.
+
+    Parameters
+    ----------
+    session_id : str
+        The session ID to persist
+
+    Returns
+    -------
+    bool
+        True if session was persisted or is current
+    """
+    if session_id in st.session_state:
+        return auto_persist_session(session_id)
+    return False
 
 
 def init_ai_assist(
@@ -23,6 +72,13 @@ def init_ai_assist(
     -------
     None
     """
+    # Ensure session is loaded before initializing
+    ensure_session_loaded(session_id)
+
+    # Initialize if not already present
+    if session_id not in st.session_state:
+        st.session_state[session_id] = {}
+
     if "messages" not in st.session_state[session_id]:
         st.session_state[session_id]["messages"] = [
             {"role": "assistant",
@@ -31,6 +87,9 @@ def init_ai_assist(
 
     if "plot_intent" not in st.session_state[session_id]:
         st.session_state[session_id]["plot_intent"] = False
+
+    # Persist the initialization
+    persist_session_changes(session_id)
 
 
 # update_session function moved to session_core.py to eliminate duplication
@@ -162,11 +221,21 @@ def generate_temp(states: dict, session_id: str) -> None:
     -------
     None
     """
+    # Ensure session is loaded first
+    ensure_session_loaded(session_id)
+
     if session_id not in st.session_state:
         st.session_state[session_id] = {}
+
+    changes_made = False
     for key, value in states:
         if key not in st.session_state[session_id]:
             st.session_state[session_id][key] = value
+            changes_made = True
+
+    # Persist changes if any were made
+    if changes_made:
+        persist_session_changes(session_id)
 
 
 # init_session function moved to session_core.py to eliminate duplication

@@ -7,6 +7,10 @@ import streamlit as st
 
 from webapp.utilities.state import SessionKeys, MetadataKeys
 from webapp.utilities.common import get_doc_cats
+from webapp.utilities.session.session_persistence import (
+    load_persistent_session,
+    auto_persist_session
+)
 
 
 def init_session(session_id: str) -> None:
@@ -22,6 +26,11 @@ def init_session(session_id: str) -> None:
     -------
     None
     """
+    # First try to load from persistent storage
+    if load_persistent_session(session_id):
+        return  # Session was loaded from storage
+
+    # If no existing session, create new one
     session = {
         SessionKeys.HAS_TARGET: False,
         SessionKeys.TARGET_DB: '',
@@ -40,7 +49,14 @@ def init_session(session_id: str) -> None:
         SessionKeys.DOC: False,
     }
     df = pl.from_dict(session)
+
+    # Initialize session state
+    if session_id not in st.session_state:
+        st.session_state[session_id] = {}
     st.session_state[session_id]["session"] = df
+
+    # Persist the initial session
+    auto_persist_session(session_id)
 
 
 def update_session(key: str, value: any, session_id: str) -> None:
@@ -62,7 +78,7 @@ def update_session(key: str, value: any, session_id: str) -> None:
     None
     """
     session_raw = st.session_state[session_id]["session"]
-    
+
     # Handle both DataFrame and dict cases (unified session management)
     if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
         # It's a Polars DataFrame (has both to_dict and columns attributes)
@@ -72,10 +88,10 @@ def update_session(key: str, value: any, session_id: str) -> None:
         # It's already a dictionary or other object
         session = session_raw.copy() if isinstance(session_raw, dict) else {}
         was_dataframe = False
-    
+
     # Update the session dictionary
     session[key] = value
-    
+
     # Store back in the same format it was in originally
     if was_dataframe:
         # Convert back to DataFrame and store
@@ -84,6 +100,9 @@ def update_session(key: str, value: any, session_id: str) -> None:
     else:
         # Store as dictionary
         st.session_state[session_id]["session"] = session
+
+    # Persist the session changes
+    auto_persist_session(session_id)
 
 
 def get_corpus_categories(doc_ids: list, user_session_id: str) -> tuple[list, int]:
@@ -104,17 +123,20 @@ def get_corpus_categories(doc_ids: list, user_session_id: str) -> tuple[list, in
         st.session_state[user_session_id] = {}
     st.session_state[user_session_id][cache_key] = result
 
+    # Persist the session with new cache data
+    auto_persist_session(user_session_id)
+
     return result
 
 
 def safe_session_get(session: dict, key: str, default=None):
     """
     Safely get a value from session dict, handling both list and scalar formats.
-    
+
     When session data comes from DataFrame.to_dict(), values are lists.
     When session data is already a dict, values are scalars.
     This function normalizes access to always return the scalar value.
-    
+
     Parameters
     ----------
     session : dict
@@ -123,18 +145,18 @@ def safe_session_get(session: dict, key: str, default=None):
         The key to access
     default : any
         Default value if key not found
-        
+
     Returns
     -------
     any
         The scalar value from the session
     """
     value = session.get(key, default)
-    
+
     # If it's a list (from DataFrame conversion), return first element
     if isinstance(value, list) and len(value) > 0:
         return value[0]
-    
+
     # If it's already a scalar or empty list, return as-is
     return value if not isinstance(value, list) else default
 
@@ -186,6 +208,9 @@ def init_metadata_target(session_id: str) -> None:
     }
     df = pl.from_dict(temp_metadata_target, strict=False)
     st.session_state[session_id]["metadata_target"] = df
+
+    # Persist the session with new metadata
+    auto_persist_session(session_id)
 
 
 def init_metadata_reference(session_id: str) -> None:
@@ -240,3 +265,6 @@ def init_metadata_reference(session_id: str) -> None:
     }
     df = pl.from_dict(temp_metadata_reference, strict=False)
     st.session_state[session_id]["metadata_reference"] = df
+
+    # Persist the session with new metadata
+    auto_persist_session(session_id)

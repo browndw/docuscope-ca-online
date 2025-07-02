@@ -52,7 +52,7 @@ def load_metadata(corpus_type: str, session_id: str) -> dict:
         raise ValueError("corpus_type must be 'target' or 'reference'")
 
     metadata_raw = st.session_state[session_id][table_name]
-    
+
     # Handle both DataFrame and dict cases (unified session management)
     if hasattr(metadata_raw, 'to_dict') and hasattr(metadata_raw, 'columns'):
         # It's a Polars DataFrame (has both to_dict and columns attributes)
@@ -60,7 +60,7 @@ def load_metadata(corpus_type: str, session_id: str) -> dict:
     else:
         # It's already a dictionary or other object
         metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
-    
+
     return metadata
 
 
@@ -98,7 +98,7 @@ def update_metadata(
         raise ValueError("corpus_type must be 'target' or 'reference'")
 
     metadata_raw = st.session_state[session_id][table_name]
-    
+
     # Handle both DataFrame and dict cases (unified session management)
     if hasattr(metadata_raw, 'to_dict') and hasattr(metadata_raw, 'columns'):
         # It's a Polars DataFrame (has both to_dict and columns attributes)
@@ -163,7 +163,7 @@ def handle_target_metadata_processing(metadata_target: dict, user_session_id: st
                         doc_ids = docids_data[0].get('ids', [])
                     else:
                         doc_ids = []
-                    
+
                     if not doc_ids:
                         st.sidebar.error("No document IDs found to process.")
                         return

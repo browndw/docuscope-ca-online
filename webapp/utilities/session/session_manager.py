@@ -57,23 +57,23 @@ logger = get_logger()
 class SessionManager:
     """
     Unified session manager providing comprehensive session state management.
-    
+
     This class consolidates all session-related functionality into a single,
     consistent interface with built-in validation, health checking, and
     automatic repair capabilities.
     """
-    
+
     def __init__(self):
         """Initialize the session manager."""
         self.health_checker = SessionHealthChecker()
         self.validator = SessionStateValidator()
         self._initialized_sessions = set()
         self._session_timestamps = {}
-        
+
     def create_session(self, user_session_id: str) -> bool:
         """
         Create and initialize a new session with all required components.
-        
+
         Parameters
         ----------
         user_session_id : str
@@ -90,33 +90,33 @@ class SessionManager:
 
             # Initialize base session structure
             st.session_state[user_session_id] = {}
-            
+
             # Initialize core session state
             core_init_session(user_session_id)
-            
+
             # Initialize AI assistant state
             init_ai_assist(user_session_id)
-            
+
             # Mark session as initialized
             self._initialized_sessions.add(user_session_id)
             self._session_timestamps[user_session_id] = datetime.now()
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to create session {user_session_id}: {e}")
             return False
-    
+
     def get_or_create_session(
         self, user_session_id: Optional[str] = None
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Get existing session or create new one with auto-detection.
-        
+
         Parameters
         ----------
         user_session_id : str, optional
             Session ID. If None, will auto-detect from Streamlit context
-            
+
         Returns
         -------
         Tuple[str, Dict[str, Any]]
@@ -131,11 +131,11 @@ class SessionManager:
             except Exception as e:
                 logger.error(f"Failed to auto-detect session ID: {e}")
                 raise RuntimeError("Cannot determine session ID")
-        
+
         # Create session if it doesn't exist
         if user_session_id not in st.session_state:
             self.create_session(user_session_id)
-        
+
         # Get session data
         try:
             session_data_raw = st.session_state[user_session_id]["session"]
@@ -159,20 +159,20 @@ class SessionManager:
             else:
                 session_data = (session_data_raw if isinstance(session_data_raw, dict)
                                 else {})
-        
+
         return user_session_id, session_data
-    
+
     def validate_session(self, user_session_id: str, with_repair: bool = True) -> bool:
         """
         Validate session state with optional auto-repair.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID to validate
         with_repair : bool
             Whether to attempt automatic repairs
-            
+
         Returns
         -------
         bool
@@ -183,43 +183,43 @@ class SessionManager:
         else:
             is_valid, _ = self.validator.validate_session_with_report(user_session_id)
             return is_valid
-    
+
     def get_health_report(self, user_session_id: str) -> Dict[str, Any]:
         """
         Get comprehensive session health report.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID to check
-            
+
         Returns
         -------
         Dict[str, Any]
             Detailed health report
         """
         return self.health_checker.perform_health_check(user_session_id)
-    
+
     def get_session_diagnostics(self, user_session_id: str) -> Dict[str, Any]:
         """
         Get detailed session diagnostics for debugging.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID to diagnose
-            
+
         Returns
         -------
         Dict[str, Any]
             Comprehensive diagnostics
         """
         return self.validator.get_session_diagnostics(user_session_id)
-    
+
     def update_session_state(self, user_session_id: str, key: str, value: Any) -> bool:
         """
         Safely update session state value.
-        
+
         Parameters
         ----------
         user_session_id : str
@@ -228,7 +228,7 @@ class SessionManager:
             Key to update
         value : Any
             New value
-            
+
         Returns
         -------
         bool
@@ -240,11 +240,11 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Failed to update session {user_session_id} key {key}: {e}")
             return False
-    
+
     def get_session_value(self, user_session_id: str, key: str, default: Any = None) -> Any:
         """
         Safely get session state value.
-        
+
         Parameters
         ----------
         user_session_id : str
@@ -253,20 +253,20 @@ class SessionManager:
             Key to retrieve
         default : Any
             Default value if key not found
-            
+
         Returns
         -------
         Any
             Session value or default
         """
         return get_session_value(user_session_id, key, default)
-    
+
     def ensure_session_key(
         self, user_session_id: str, key: str, default_value: Any = None
     ) -> None:
         """
         Ensure session key exists with default value.
-        
+
         Parameters
         ----------
         user_session_id : str
@@ -277,20 +277,20 @@ class SessionManager:
             Default value if key doesn't exist
         """
         ensure_session_key(user_session_id, key, default_value)
-    
+
     def initialize_metadata(
         self, user_session_id: str, corpus_type: str = "target"
     ) -> bool:
         """
         Initialize metadata for specified corpus type.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID
         corpus_type : str
             Type of corpus ('target' or 'reference')
-            
+
         Returns
         -------
         bool
@@ -304,39 +304,39 @@ class SessionManager:
             else:
                 raise ValueError(f"Unknown corpus type: {corpus_type}")
             return True
-            
+
         except Exception as e:
             msg = (f"Failed to initialize {corpus_type} metadata for session "
                    f"{user_session_id}: {e}")
             logger.error(msg)
             return False
-    
+
     def load_metadata(
         self, user_session_id: str, corpus_type: str = "target"
     ) -> Optional[pl.DataFrame]:
         """
         Load metadata for specified corpus type.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID
         corpus_type : str
             Type of corpus ('target' or 'reference')
-            
+
         Returns
         -------
         Optional[pl.DataFrame]
             Metadata DataFrame or None if not found
         """
         return load_metadata(user_session_id, corpus_type)
-    
+
     def update_metadata(
         self, user_session_id: str, corpus_type: str, updates: Dict[str, Any]
     ) -> bool:
         """
         Update metadata for specified corpus type.
-        
+
         Parameters
         ----------
         user_session_id : str
@@ -345,7 +345,7 @@ class SessionManager:
             Type of corpus ('target' or 'reference')
         updates : Dict[str, Any]
             Metadata updates to apply
-            
+
         Returns
         -------
         bool
@@ -361,20 +361,20 @@ class SessionManager:
                    f"{user_session_id}: {e}")
             logger.error(msg)
             return False
-    
+
     def handle_target_metadata_processing(
         self, user_session_id: str, df: pl.DataFrame
     ) -> bool:
         """
         Handle target metadata processing with category validation.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID
         df : pl.DataFrame
             Target corpus data
-            
+
         Returns
         -------
         bool
@@ -387,38 +387,38 @@ class SessionManager:
             msg = f"Failed to process target metadata for session {user_session_id}: {e}"
             logger.error(msg)
             return False
-    
+
     def get_corpus_categories(
         self, user_session_id: str, doc_ids: List[str]
     ) -> Tuple[List[str], int]:
         """
         Get document categories with session-scoped caching.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID
         doc_ids : List[str]
             Document IDs to get categories for
-            
+
         Returns
         -------
         Tuple[List[str], int]
             Categories list and count
         """
         return get_corpus_categories(doc_ids, user_session_id)
-    
+
     def initialize_temp_states(self, user_session_id: str, states: Dict[str, Any]) -> bool:
         """
         Initialize temporary session states.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID
         states : Dict[str, Any]
             State key-value pairs to initialize
-            
+
         Returns
         -------
         bool
@@ -431,16 +431,16 @@ class SessionManager:
             msg = f"Failed to initialize temp states for session {user_session_id}: {e}"
             logger.error(msg)
             return False
-    
+
     def clear_session(self, user_session_id: str) -> bool:
         """
         Safely clear session state.
-        
+
         Parameters
         ----------
         user_session_id : str
             Session ID to clear
-            
+
         Returns
         -------
         bool
@@ -451,11 +451,11 @@ class SessionManager:
             self._initialized_sessions.discard(user_session_id)
             self._session_timestamps.pop(user_session_id, None)
         return success
-    
+
     def get_session_stats(self) -> Dict[str, Any]:
         """
         Get session manager statistics.
-        
+
         Returns
         -------
         Dict[str, Any]
@@ -465,23 +465,23 @@ class SessionManager:
             sid for sid in self._initialized_sessions
             if sid in st.session_state
         ])
-        
+
         return {
             'total_sessions_created': len(self._initialized_sessions),
             'active_sessions': active_sessions,
             'session_timestamps': dict(self._session_timestamps),
             'widget_manager_stats': widget_key_manager.get_widget_statistics()
         }
-    
+
     def cleanup_expired_sessions(self, max_age_hours: float = 24.0) -> int:
         """
         Clean up expired sessions based on age.
-        
+
         Parameters
         ----------
         max_age_hours : float
             Maximum session age in hours
-            
+
         Returns
         -------
         int
@@ -518,11 +518,11 @@ class SessionManager:
             'repaired_sessions': 0,
             'failed_sessions': []
         }
-        
+
         for session_id in list(st.session_state.keys()):
             if isinstance(st.session_state.get(session_id), dict):
                 results['total_sessions'] += 1
-                
+
                 try:
                     is_valid = self.validate_session(session_id, with_repair=True)
                     if is_valid:
@@ -533,7 +533,7 @@ class SessionManager:
                 except Exception as e:
                     results['failed_sessions'].append(session_id)
                     logger.error(f"Failed to validate session {session_id}: {e}")
-        
+
         return results
 
 
