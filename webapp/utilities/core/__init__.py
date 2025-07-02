@@ -18,7 +18,6 @@ from .integration import (
     validate_session_health,
     get_session_diagnostics,
     # Direct imports for flexibility
-    config_accessor,
     error_handler,
     enhanced_validator,
     widget_key_manager,
@@ -34,7 +33,6 @@ __all__ = [
     'validate_session_health',
     'get_session_diagnostics',
     # Direct imports for flexibility
-    'config_accessor',
     'error_handler',
     'enhanced_validator',
     'widget_key_manager',
