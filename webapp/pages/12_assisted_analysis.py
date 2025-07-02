@@ -9,7 +9,7 @@ import streamlit as st
 from datetime import datetime
 
 # Core application utilities with standardized patterns
-from webapp.utilities.core import safe_config_value
+from webapp.config.unified import get_ai_config
 
 # UI error boundaries (imported directly to avoid None fallback)
 from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
@@ -48,12 +48,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# Get AI configuration using standardized access pattern
-DESKTOP = safe_config_value('desktop', config_type='ai')
-CACHE = safe_config_value('cache', config_type='ai')
-LLM_MODEL = safe_config_value('model', config_type='ai')
-LLM_PARAMS = safe_config_value('params', config_type='ai')
-QUOTA = safe_config_value('quota', config_type='ai')
+# Get AI configuration using standardized access
+AI_CONFIG = get_ai_config()
+DESKTOP = AI_CONFIG['desktop_mode']
+CACHE = AI_CONFIG['cache_enabled']
+LLM_MODEL = AI_CONFIG['model']
+LLM_PARAMS = AI_CONFIG['parameters']
+QUOTA = AI_CONFIG['quota']
 
 
 def render_pandabot_chat_interface(
