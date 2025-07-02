@@ -16,19 +16,23 @@ import time
 import streamlit as st
 
 from webapp.utilities.storage import add_login
+from webapp.config.unified import get_config
 from webapp.utilities.core import safe_config_value
+from webapp.utilities.session import get_or_init_user_session
+from webapp.utilities.auth import is_user_authorized
 
-GOOGLE_LOGO = safe_config_value('google_logo_path', config_type='global')
-DESKTOP = safe_config_value('desktop_mode', config_type='global')
+GOOGLE_LOGO = get_config('google_logo_path', 'global', 'webapp/_static/web_light_rd_na.svg')
+DESKTOP = get_config('desktop_mode', 'global')
+CACHE = get_config('cache_mode', 'cache')
 
 
-def update_last_activity() -> None:
+def update_last_activity(session_id) -> None:
     """Update the last activity timestamp for the current user session."""
     if not DESKTOP and hasattr(st, "user") and getattr(st.user, "is_logged_in", False):
-        st.session_state["last_activity_time"] = time.time()
+        st.session_state[session_id]["last_activity_time"] = time.time()
 
 
-def check_session_timeouts() -> bool:
+def check_session_timeouts(session_id) -> bool:
     """
     Check both inactivity and absolute session timeouts.
 
@@ -44,16 +48,16 @@ def check_session_timeouts() -> bool:
 
     # Get timeout settings from config
     inactivity_timeout = (
-        safe_config_value('inactivity_timeout_minutes', config_type='global') * 60
+        safe_config_value('inactivity_timeout_minutes', config_type='session') * 60
     )
     inactivity_warning = (
-        safe_config_value('inactivity_warning_minutes', config_type='global') * 60
+        safe_config_value('inactivity_warning_minutes', config_type='session') * 60
     )
     absolute_timeout = (
-        safe_config_value('absolute_timeout_hours', config_type='global') * 3600
+        safe_config_value('absolute_timeout_hours', config_type='session') * 3600
     )
     absolute_warning = (
-        safe_config_value('absolute_warning_hours', config_type='global') * 3600
+        safe_config_value('absolute_warning_hours', config_type='session') * 3600
     )
 
     # Check absolute timeout (based on login time)
@@ -93,10 +97,10 @@ def check_session_timeouts() -> bool:
                 )
 
     # Check inactivity timeout
-    last_activity = st.session_state.get("last_activity_time")
+    last_activity = st.session_state[session_id].get("last_activity_time")
     if last_activity is None:
         # First time - set activity time
-        update_last_activity()
+        update_last_activity(session_id)
         return True
 
     inactive_duration = current_time - last_activity
@@ -208,6 +212,20 @@ def authenticated_menu():
                      label="Download Tagged Files",
                      icon=":material/download:")
 
+        # Admin-only features (only show in online mode with authorization)
+        if (not DESKTOP and hasattr(st, "user") and
+                getattr(st.user, "is_logged_in", False) and
+                is_user_authorized(st.user.email, 'admin')):
+
+            st.markdown("---")
+            st.markdown("**Admin Features**")
+            st.page_link("pages/98_user_management.py",
+                         label="User Management",
+                         icon=":material/admin_panel_settings:")
+            st.page_link("pages/99_health_monitor.py",
+                         label="Health Monitor",
+                         icon=":material/monitor_heart:")
+
 
 def require_login():
     """
@@ -227,55 +245,44 @@ def menu():
         st.sidebar.markdown("---")
         return
 
+    user_session_id, _ = get_or_init_user_session()
     # Check current login state
     current_login_state = hasattr(st, "user") and getattr(st.user, "is_logged_in", False)
 
     if current_login_state:
         # Check session timeouts first - this may log the user out
-        if not check_session_timeouts():
+        if not check_session_timeouts(user_session_id):
             # User was logged out due to timeout
-            st.session_state["previous_login_state"] = False
+            st.session_state[user_session_id]["previous_login_state"] = False
             unauthenticated_menu()
             return
 
         # Update activity timestamp for valid interaction
-        update_last_activity()
-
-        # Ensure session_id is properly stored
-        if "session_id" not in st.session_state:
-            # Get the actual session ID from Streamlit's script run context
-            try:
-                user_session = (
-                    st.runtime.scriptrunner_utils.script_run_context
-                    .get_script_run_ctx()
-                )
-                st.session_state["session_id"] = user_session.session_id
-            except Exception:
-                # Fallback to a generated session ID
-                import uuid
-                st.session_state["session_id"] = str(uuid.uuid4())
+        update_last_activity(user_session_id)
 
         # Check if this is a new login (state changed from False to True)
-        previous_login_state = st.session_state.get("previous_login_state", False)
+        previous_login_state = st.session_state[user_session_id].get(
+            "previous_login_state", False
+            )
 
-        if not previous_login_state:
+        if CACHE and not previous_login_state:
             # User just logged in - record the login
             try:
                 add_login(
                     user_id=st.user.email,
-                    session_id=st.session_state["session_id"]
+                    session_id=user_session_id
                 )
             except Exception:
                 # Silently handle any errors
                 pass
 
         # Update the login state
-        st.session_state["previous_login_state"] = True
+        st.session_state[user_session_id]["previous_login_state"] = True
 
         authenticated_menu()
         st.sidebar.markdown("---")
         return
     else:
         # User is not logged in
-        st.session_state["previous_login_state"] = False
+        st.session_state[user_session_id]["previous_login_state"] = False
         unauthenticated_menu()
