@@ -32,6 +32,7 @@ from webapp.utilities.ai.code_execution import is_code_safe, strip_imports
 from webapp.utilities.ai.enterprise_integration import (
     make_protected_openai_call
 )
+from webapp.utilities.storage.backend_factory import get_session_backend
 
 # Plotbot-specific constants
 FORBIDDEN_PATTERNS = [
@@ -330,7 +331,7 @@ def plotbot_code_generate_or_update(
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt}
         ]
-        
+
         request_params = {
             "model": LLM_MODEL,
             "messages": messages,
@@ -363,7 +364,23 @@ def plotbot_code_generate_or_update(
         # Increment quota tracker after successful API call
         try:
             if hasattr(st, 'user') and st.user and st.user.email:
-                increment_session_quota(st.user.email)
+                user_email = st.user.email
+                # Update session quota (for current session)
+                increment_session_quota(user_email)
+
+                # Log to database for persistent quota tracking
+                try:
+                    backend = get_session_backend()
+                    backend.log_user_query(
+                        user_id=user_email,
+                        session_id=None,  # Use NULL to avoid foreign key constraints
+                        assistant_type="plotbot",
+                        message_content=user_request[:500] if user_request else None
+                    )
+                except Exception as log_error:
+                    # Log the error but don't fail the main request
+                    st.error(f"Warning: Failed to log query for quota tracking: "
+                             f"{log_error}")
         except Exception:
             pass  # Don't fail if quota tracking fails
 
@@ -621,7 +638,7 @@ def plotbot_user_query(session_id: str,
                         plot_code.get("value") if isinstance(plot_code, dict) else
                         "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
                     )
-                    
+
                     # Add specific messaging for enterprise circuit breaker events
                     if (isinstance(plot_code, dict) and
                             "circuit breaker" in error_message.lower()):
@@ -637,7 +654,7 @@ def plotbot_user_query(session_id: str,
                             ":hourglass_flowing_sand: **Rate Limit Reached**\n\n"
                             "Please wait a moment before making another plotting request."
                         )
-                    
+
                     st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
                         {"role": "assistant", "type": "error", "value": error_message}
                     )
