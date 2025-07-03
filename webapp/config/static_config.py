@@ -14,40 +14,40 @@ from pathlib import Path
 class StaticConfigManager:
     """
     Static configuration manager that reads only from TOML files.
-    
+
     This class has zero external dependencies to avoid circular imports.
     It serves as the foundation for all configuration access.
     """
-    
+
     def __init__(self):
         """Initialize static configuration manager."""
         self._config_cache: Optional[Dict[str, Any]] = None
         self._config_path = self._find_config_path()
-    
+
     def _find_config_path(self) -> Path:
         """Find the configuration file path."""
         # Start from current directory and work up to find config
         current_dir = Path.cwd()
-        
+
         # Common config paths to check
         config_paths = [
             current_dir / "webapp" / "config" / "options.toml",
             current_dir / "config" / "options.toml",
             current_dir / "options.toml"
         ]
-        
+
         for path in config_paths:
             if path.exists():
                 return path
-                
+
         # Default fallback
         return current_dir / "webapp" / "config" / "options.toml"
-    
+
     def _load_config(self) -> Dict[str, Any]:
         """Load configuration from TOML file."""
         if self._config_cache is not None:
             return self._config_cache
-            
+
         try:
             if self._config_path.exists():
                 with open(self._config_path, 'r', encoding='utf-8') as f:
@@ -58,13 +58,13 @@ class StaticConfigManager:
         except Exception:
             # Fail-safe: return empty config on any error
             self._config_cache = {}
-            
+
         return self._config_cache
-    
+
     def get_value(self, key: str, section: str = 'global', default: Any = None) -> Any:
         """
         Get a configuration value from the specified section.
-        
+
         Parameters
         ----------
         key : str
@@ -73,7 +73,7 @@ class StaticConfigManager:
             Configuration section (default: 'global')
         default : Any
             Default value if key not found
-            
+
         Returns
         -------
         Any
@@ -85,16 +85,16 @@ class StaticConfigManager:
             return section_config.get(key, default)
         except Exception:
             return default
-    
+
     def get_section(self, section: str) -> Dict[str, Any]:
         """
         Get entire configuration section.
-        
+
         Parameters
         ----------
         section : str
             Configuration section name
-            
+
         Returns
         -------
         Dict[str, Any]
@@ -105,27 +105,27 @@ class StaticConfigManager:
             return config.get(section, {})
         except Exception:
             return {}
-    
+
     def get_all(self) -> Dict[str, Any]:
         """
         Get all configuration data.
-        
+
         Returns
         -------
         Dict[str, Any]
             Complete configuration or empty dict
         """
         return self._load_config()
-    
+
     def has_section(self, section: str) -> bool:
         """
         Check if configuration section exists.
-        
+
         Parameters
         ----------
         section : str
             Section name to check
-            
+
         Returns
         -------
         bool
@@ -136,18 +136,18 @@ class StaticConfigManager:
             return section in config
         except Exception:
             return False
-    
+
     def has_key(self, key: str, section: str = 'global') -> bool:
         """
         Check if configuration key exists in section.
-        
+
         Parameters
         ----------
         key : str
             Key name to check
         section : str
             Section to check in
-            
+
         Returns
         -------
         bool
@@ -158,7 +158,7 @@ class StaticConfigManager:
             return key in config.get(section, {})
         except Exception:
             return False
-    
+
     def clear_cache(self) -> None:
         """Clear cached configuration."""
         self._config_cache = None
