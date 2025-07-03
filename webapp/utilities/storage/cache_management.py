@@ -1,5 +1,5 @@
 """
-Resources for managing storage and caching in the web application.
+Resources for storage and caching in the web application.
 
 This module provides functions for handling persistent storage of messages,
 plots, and user logins in a Firestore database. It includes utilities for
@@ -14,7 +14,7 @@ from datetime import datetime
 from google.cloud import firestore
 from google.oauth2 import service_account
 
-from webapp.config.static_config import get_static_value
+from webapp.config.unified import get_config
 from webapp.utilities.storage.backend_factory import get_session_backend
 
 # Import centralized logging configuration and logger
@@ -27,7 +27,8 @@ logger = get_logger()
 # Set up logging for storage utilities
 setup_utility_logging("storage")
 
-DESKTOP = get_static_value('desktop_mode', 'global', True)
+# Use fallback-aware config to prevent initialization with invalid secrets
+DESKTOP = get_config('desktop_mode', 'global', True)
 
 
 def should_store_to_firestore(enable_firestore: bool = None) -> bool:
@@ -37,7 +38,7 @@ def should_store_to_firestore(enable_firestore: bool = None) -> bool:
     Parameters
     ----------
     enable_firestore : bool, optional
-        Override for Firestore storage. If None, uses static TOML default.
+        Override for Firestore storage. If None, uses configuration with fallback logic.
 
     Returns
     -------
@@ -47,8 +48,8 @@ def should_store_to_firestore(enable_firestore: bool = None) -> bool:
     if enable_firestore is not None:
         return enable_firestore
 
-    # Fall back to static TOML configuration
-    return get_static_value('cache_mode', 'cache', False)
+    # Use fallback-aware config - automatically disabled in desktop mode
+    return get_config('cache_mode', 'cache', False)
 
 
 if DESKTOP is False:
@@ -386,7 +387,7 @@ def add_message_enhanced(user_id: str, session_id: str, assistant_id: int,
         log_user_query_local(user_id, session_id, assistant_type, message)
 
     # Optionally log to Firestore for research data
-    firestore_enabled = get_static_value('enabled', 'firestore', False)
+    firestore_enabled = get_config('enabled', 'firestore', False)
     if (enable_firestore or firestore_enabled) and not DESKTOP and creds is not None:
         try:
             # Use the original Firestore logging function
@@ -419,7 +420,7 @@ def get_session_analytics() -> dict:
         return {
             'timestamp': datetime.now().isoformat(),
             'database_stats': stats,
-            'firestore_enabled': get_static_value('enabled', 'firestore', False),
+            'firestore_enabled': get_config('enabled', 'firestore', False),
             'desktop_mode': DESKTOP
         }
 
