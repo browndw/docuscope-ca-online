@@ -28,6 +28,7 @@ from webapp.utilities.ai.shared import increment_session_quota
 from webapp.utilities.ai.enterprise_integration import enterprise_ai_call
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.state.widget_state import safe_clear_widget_state
+from webapp.utilities.storage.backend_factory import get_session_backend
 
 # Thread-safe global lock for monkeypatching
 _monkeypatch_lock = threading.RLock()
@@ -251,7 +252,23 @@ def pandabot_user_query(
             # Increment quota tracker after successful API call
             try:
                 if hasattr(st, 'user') and st.user and st.user.email:
-                    increment_session_quota(st.user.email)
+                    user_email = st.user.email
+                    # Update session quota (for current session)
+                    increment_session_quota(user_email)
+
+                    # Log to database for persistent quota tracking
+                    try:
+                        backend = get_session_backend()
+                        backend.log_user_query(
+                            user_id=user_email,
+                            session_id=None,  # Use NULL to avoid foreign key constraints
+                            assistant_type="pandabot",
+                            message_content=prompt[:500] if prompt else None
+                        )
+                    except Exception as log_error:
+                        # Log the error but don't fail the main request
+                        st.error(f"Warning: Failed to log query for quota tracking: "
+                                 f"{log_error}")
             except Exception:
                 pass  # Don't fail if quota tracking fails
 
