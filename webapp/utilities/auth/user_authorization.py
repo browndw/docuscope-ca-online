@@ -15,7 +15,7 @@ Features:
 
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
@@ -205,7 +205,7 @@ def get_user_role(email: str) -> Optional[str]:
             # Cache the result
             st.session_state[cache_key] = {
                 'role': role,
-                'cached_at': datetime.now()
+                'cached_at': datetime.now(timezone.utc)
             }
 
             return role
