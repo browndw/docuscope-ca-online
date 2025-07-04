@@ -52,6 +52,11 @@ class RuntimeConfigManager:
         if self._initialized:
             return
 
+        # Skip initialization in desktop mode
+        if self._desktop_mode:
+            self._initialized = True
+            return
+
         try:
             backend = get_session_backend()
             with backend.get_health_connection() as conn:
@@ -91,6 +96,10 @@ class RuntimeConfigManager:
 
     def _get_from_database(self, config_key: str) -> Optional[Any]:
         """Get configuration value from shared database."""
+        # Skip database operations in desktop mode
+        if self._desktop_mode:
+            return None
+
         try:
             backend = get_session_backend()
             with backend.get_health_connection() as conn:
@@ -123,6 +132,11 @@ class RuntimeConfigManager:
     def _set_in_database(self, config_key: str, value: Any,
                          updated_by: str = None, description: str = None):
         """Set configuration value in shared database."""
+        # Skip database operations in desktop mode
+        if self._desktop_mode:
+            logger.debug(f"Skipping runtime config set in desktop mode: {config_key}")
+            return
+
         try:
             backend = get_session_backend()
             with backend.get_health_connection() as conn:
