@@ -7,7 +7,7 @@ deployment monitoring, supporting 99.9% uptime requirements.
 
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 import streamlit as st
@@ -39,7 +39,7 @@ class HealthMonitor:
 
     def __init__(self):
         """Initialize the health monitor."""
-        self.last_comprehensive_check = datetime.now()
+        self.last_comprehensive_check = datetime.now(timezone.utc)
         self.check_interval = get_config('health_check_interval', 'monitoring', 30)
         self.performance_thresholds = self._load_performance_thresholds()
         self.alert_history = []
@@ -81,7 +81,7 @@ class HealthMonitor:
 
         try:
             health_status = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'overall_status': 'healthy',
                 'response_time_ms': 0,
                 'uptime_seconds': self._get_uptime(),
@@ -143,7 +143,7 @@ class HealthMonitor:
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             return {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'overall_status': 'critical',
                 'error': str(e),
                 'response_time_ms': (time.time() - start_time) * 1000
@@ -494,7 +494,7 @@ class HealthMonitor:
                 memory_total_mb = 0
 
             metrics = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'response_metrics': {
                     'avg_response_time_ms': 0,  # Would need to track this
                     'p95_response_time_ms': 0,
@@ -537,7 +537,7 @@ class HealthMonitor:
         except Exception as e:
             logger.error(f"Failed to get performance metrics: {e}")
             return {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'error': str(e)
             }
 
@@ -573,7 +573,7 @@ class HealthMonitor:
 
             return {
                 'ready': ready,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'response_time_ms': response_time,
                 'issues': issues
             }
@@ -582,7 +582,7 @@ class HealthMonitor:
             logger.error(f"Readiness check failed: {e}")
             return {
                 'ready': False,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'error': str(e)
             }
 
@@ -594,7 +594,7 @@ class HealthMonitor:
         """
         return {
             'alive': True,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'uptime_seconds': self._get_uptime()
         }
 
@@ -647,7 +647,11 @@ def render_health_dashboard():
 
     # Response time metric
     response_time = health_status.get('response_time_ms', 0)
-    st.metric("Health Check Response Time", f"{response_time:.1f}ms")
+    st.metric(
+        "Health Check Response Time",
+        f"{response_time:.1f}ms",
+        border=True
+        )
 
     # Subsystem status
     st.markdown("### :material/readiness_score: Subsystem Status")
@@ -702,30 +706,54 @@ def render_health_dashboard():
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Active Sessions", session_metrics.get('active_sessions', 0))
+        st.metric(
+            "Active Sessions",
+            session_metrics.get('active_sessions', 0),
+            border=True
+            )
     with col2:
-        st.metric("Queries/Hour",
-                  f"{session_metrics.get('queries_per_hour', 0):.1f}")
+        st.metric(
+            "Queries/Hour",
+            f"{session_metrics.get('queries_per_hour', 0):.1f}",
+            border=True
+            )
     with col3:
-        st.metric("Avg Session Size",
-                  f"{session_metrics.get('avg_session_size_kb', 0):.1f}KB")
+        st.metric(
+            "Avg Session Size",
+            f"{session_metrics.get('avg_session_size_kb', 0):.1f}KB",
+            border=True
+            )
     with col4:
         st.metric(
             "System Memory",
-            f"{metrics.get('system_metrics', {}).get('memory_usage_percent', 0):.1f}%")
+            f"{metrics.get('system_metrics', {}).get('memory_usage_percent', 0):.1f}%",
+            border=True
+            )
 
     # Shard information (if available)
     if 'shard_metrics' in metrics:
-        st.subheader("🗄️ Database Shards")
+        st.subheader(":material/database: Database Shards")
         shard_metrics = metrics['shard_metrics']
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Shards", shard_metrics.get('shard_count', 0))
+            st.metric(
+                "Total Shards",
+                shard_metrics.get('shard_count', 0),
+                border=True
+                )
         with col2:
-            st.metric("Healthy Shards", shard_metrics.get('healthy_shards', 0))
+            st.metric(
+                "Healthy Shards",
+                shard_metrics.get('healthy_shards', 0),
+                border=True
+                )
         with col3:
-            st.metric("Total DB Size", f"{shard_metrics.get('total_size_mb', 0):.1f}MB")
+            st.metric(
+                "Total DB Size",
+                f"{shard_metrics.get('total_size_mb', 0):.1f}MB",
+                border=True
+                )
 
         # Shard details
         shards = shard_metrics.get('shards', {})
@@ -875,52 +903,88 @@ def get_request_router_health() -> Dict[str, Any]:
 
 def render_ai_service_status():
     """Render AI service status including circuit breakers and request routing."""
-    st.subheader("🤖 AI Service Status")
+    st.subheader(":material/smart_toy: AI Service Status")
 
     try:
         cb_health = get_circuit_breaker_health()
         router_health = get_request_router_health()
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown("### Circuit Breakers")
-
+            st.markdown("##### Community Circuit Breakers")
             # Community key status
             community_state = cb_health.get("community", {}).get("state", "unknown")
             if community_state == "closed":
-                st.success("✅ Community Key: Available")
+                st.success(
+                    body="Community Key: Available",
+                    icon="🟢"
+                    )
             elif community_state == "half_open":
-                st.warning("⚠️ Community Key: Testing")
+                st.warning(
+                    body="Community Key: Testing",
+                    icon="🟡"
+                    )
             else:
-                st.error("❌ Community Key: Protected")
-
+                st.error(
+                    body="Community Key: Protected",
+                    icon="🔴"
+                    )
+        with col2:
+            st.markdown("##### Individual Circuit Breakers")
             # Individual key status
             individual_state = cb_health.get("individual", {}).get("state", "unknown")
             if individual_state == "closed":
-                st.success("✅ Individual Key: Available")
+                st.success(
+                    body="Individual Key: Available",
+                    icon="🟢"
+                    )
             elif individual_state == "half_open":
-                st.warning("⚠️ Individual Key: Testing")
+                st.warning(
+                    body="Individual Key: Testing",
+                    icon="🟡"
+                    )
             else:
-                st.error("❌ Individual Key: Protected")
+                st.error(
+                    body="Individual Key: Protected",
+                    icon="🔴"
+                    )
 
-        with col2:
-            st.markdown("### Request Router")
+        with col3:
+            st.markdown("##### Request Router")
 
             router_status = router_health.get("status", "unknown")
             queue_size = router_health.get("queue_size", 0)
             active_requests = router_health.get("active_requests", 0)
 
             if router_status == "healthy":
-                st.success(f"✅ Router: Healthy ({queue_size} queued)")
+                st.success(
+                    body=f"Router: Healthy ({queue_size} queued)",
+                    icon="🟢"
+                    )
             elif router_status == "degraded":
-                st.warning(f"⚠️ Router: Degraded ({queue_size} queued)")
+                st.warning(
+                    body=f"Router: Degraded ({queue_size} queued)",
+                    icon="🟡"
+                    )
             else:
-                st.error(f"❌ Router: Critical ({queue_size} queued)")
-
-            st.metric("Active Requests", active_requests)
-            st.metric("Deduplication Saves",
-                      router_health.get("deduplication_saves", 0))
+                st.error(
+                    body=f"Router: Critical ({queue_size} queued)",
+                    icon="🔴"
+                    )
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(
+                label="Active Requests",
+                value=active_requests,
+                border=True
+                )
+        with col2:
+            st.metric(
+                label="Deduplication Saves",
+                value=router_health.get("deduplication_saves", 0),
+                border=True
+                )
 
     except Exception as e:
         st.error(f"Failed to load AI service status: {e}")
