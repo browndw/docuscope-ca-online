@@ -18,7 +18,7 @@ Key Features:
 from typing import Dict, Any, List, Optional, Tuple
 import streamlit as st
 import polars as pl
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Core utilities
 from webapp.utilities.configuration.logging_config import get_logger
@@ -99,7 +99,7 @@ class SessionManager:
 
             # Mark session as initialized
             self._initialized_sessions.add(user_session_id)
-            self._session_timestamps[user_session_id] = datetime.now()
+            self._session_timestamps[user_session_id] = datetime.now(timezone.utc)
             return True
 
         except Exception as e:
@@ -488,7 +488,7 @@ class SessionManager:
             Number of sessions cleaned up
         """
         cleanup_count = 0
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
         expired_sessions = []
 
         for session_id, timestamp in self._session_timestamps.items():
