@@ -13,7 +13,7 @@ Features:
 - No analytics or health monitoring overhead
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
 from webapp.config.unified import get_config
@@ -75,7 +75,7 @@ class InMemorySessionBackend:
         """
         try:
             # Calculate expiration
-            expires_at = datetime.now() + timedelta(hours=self._session_timeout_hours)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=self._session_timeout_hours)  # noqa: E501
 
             # Store session data
             self._sessions[session_id] = data.copy()
@@ -83,8 +83,8 @@ class InMemorySessionBackend:
             # Store metadata
             self._session_metadata[session_id] = {
                 'user_id': user_id or 'desktop_user',
-                'created_at': datetime.now(),
-                'updated_at': datetime.now(),
+                'created_at': datetime.now(timezone.utc),
+                'updated_at': datetime.now(timezone.utc),
                 'expires_at': expires_at,
                 'access_count': self._session_metadata.get(
                     session_id, {}).get('access_count', 0) + 1,
@@ -123,7 +123,7 @@ class InMemorySessionBackend:
             # Check expiration
             metadata = self._session_metadata.get(session_id, {})
             expires_at = metadata.get('expires_at')
-            if expires_at and datetime.now() > expires_at:
+            if expires_at and datetime.now(timezone.utc) > expires_at:
                 # Session expired, clean it up
                 self._cleanup_session(session_id)
                 return None
@@ -131,7 +131,7 @@ class InMemorySessionBackend:
             # Update access count and last access time
             if session_id in self._session_metadata:
                 self._session_metadata[session_id]['access_count'] += 1
-                self._session_metadata[session_id]['last_accessed'] = datetime.now()
+                self._session_metadata[session_id]['last_accessed'] = datetime.now(timezone.utc)  # noqa: E501
 
             logger.debug(f"Loaded session {session_id} from memory")
             return self._sessions[session_id].copy()
@@ -163,7 +163,7 @@ class InMemorySessionBackend:
                 return 0
 
             # Filter queries from last 24 hours
-            twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+            twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
             recent_queries = [
                 q for q in self._user_queries[user_id]
                 if q.get('timestamp', datetime.min) >= twenty_four_hours_ago
@@ -189,7 +189,7 @@ class InMemorySessionBackend:
 
             query_record = {
                 'session_id': session_id,
-                'timestamp': datetime.now(),
+                'timestamp': datetime.now(timezone.utc),
                 'assistant_type': assistant_type,
                 # Don't store full message content to save memory
                 'has_content': bool(message_content)
@@ -210,7 +210,7 @@ class InMemorySessionBackend:
     def cleanup_expired_sessions(self) -> int:
         """Clean up expired sessions from memory."""
         try:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
             expired_sessions = []
 
             for session_id, metadata in self._session_metadata.items():
@@ -236,7 +236,7 @@ class InMemorySessionBackend:
     def get_session_stats(self) -> Dict[str, Any]:
         """Get session statistics."""
         try:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
             active_sessions = 0
             total_size_estimate = 0
             total_queries = 0
@@ -286,12 +286,12 @@ class InMemorySessionBackend:
     ) -> bool:
         """Set cache value in memory."""
         try:
-            expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
 
             self._cache[key] = {
                 'value': value,
                 'expires_at': expires_at,
-                'created_at': datetime.now()
+                'created_at': datetime.now(timezone.utc)
             }
 
             return True
@@ -309,7 +309,7 @@ class InMemorySessionBackend:
             cache_entry = self._cache[key]
 
             # Check expiration
-            if datetime.now() > cache_entry['expires_at']:
+            if datetime.now(timezone.utc) > cache_entry['expires_at']:
                 del self._cache[key]
                 return None
 
@@ -332,7 +332,7 @@ class InMemorySessionBackend:
     def cache_cleanup(self) -> int:
         """Clean up expired cache entries."""
         try:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
             expired_keys = [
                 key for key, entry in self._cache.items()
                 if current_time > entry['expires_at']
@@ -350,7 +350,7 @@ class InMemorySessionBackend:
     def health_check(self) -> Dict[str, Any]:
         """Perform health check (always healthy for in-memory backend)."""
         return {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'overall_healthy': True,
             'backend_type': 'in_memory',
             'memory_usage': {
