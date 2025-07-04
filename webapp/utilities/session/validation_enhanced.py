@@ -7,7 +7,7 @@ capabilities for common session state corruption issues.
 
 from typing import Dict, List, Any, Tuple
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 
 from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.state import SessionKeys, CorpusKeys, TargetKeys
@@ -72,7 +72,7 @@ class SessionHealthChecker:
             'repairs_applied': [],
             'warnings': [],
             'metadata': {
-                'check_time': datetime.now().isoformat(),
+                'check_time': datetime.now(timezone.utc).isoformat(),
                 'session_id': user_session_id
             }
         }
@@ -118,7 +118,7 @@ class SessionHealthChecker:
             elif len(report['warnings']) > 0:
                 report['overall_health'] = 'warning'
 
-            self.last_check_time = datetime.now()
+            self.last_check_time = datetime.now(timezone.utc)
 
         except Exception as e:
             logger.error(f"Health check failed: {e}")
