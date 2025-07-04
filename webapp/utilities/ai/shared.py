@@ -9,7 +9,7 @@ import io
 import re
 import json
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -19,7 +19,6 @@ from webapp.config.unified import get_config
 from webapp.utilities.storage.cache_management import get_query_count
 
 # Import centralized logging configuration and logger
-import webapp.utilities.configuration.logging_config  # noqa: F401
 from webapp.utilities.configuration.logging_config import get_logger
 
 from webapp.utilities.state import SessionKeys
@@ -91,7 +90,7 @@ def export_conversation_history(
         # Combine and organize all workflow data
         workflow_data = {
             "workflow_type": f"{bot_type}_analysis",
-            "export_date": datetime.now().isoformat(),
+            "export_date": datetime.now(timezone.utc).isoformat(),
             "user_session_id": user_session_id,
             "summary": {
                 "total_interactions": 0,
@@ -152,7 +151,7 @@ def export_conversation_history(
         if not workflow_data["workflow_steps"]:
             return json.dumps({
                 "workflow_type": f"{bot_type}_analysis",
-                "export_date": datetime.now().isoformat(),
+                "export_date": datetime.now(timezone.utc).isoformat(),
                 "message": ("No conversation history found. Start a conversation "
                             "with the AI assistant to generate a workflow to export."),
                 "suggestion": ("Try asking the assistant to create a plot or "
@@ -176,7 +175,7 @@ def export_conversation_history(
     except Exception as e:
         return json.dumps({
             "error": f"Failed to export workflow: {str(e)}",
-            "export_date": datetime.now().isoformat(),
+            "export_date": datetime.now(timezone.utc).isoformat(),
             "suggestion": "Please try again."
         }, indent=2)
 
@@ -387,7 +386,7 @@ def render_work_preservation_interface(
                 st.write("**Analysis workflow** available")
 
             # Download button
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = f"{bot_type}_workflow_{timestamp}.json"
             st.download_button(
                 label="Download Analysis Workflow",
@@ -413,7 +412,7 @@ def render_work_preservation_interface(
                 st.image(plot_png, width=300)
 
             # Download button for plot
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
             filename = f"{bot_type}_plot_{timestamp}.png"
             st.download_button(
                 label="Download Current Plot (PNG)",
@@ -797,7 +796,7 @@ def get_quota_info(user_id: str, force_refresh: bool = False) -> dict:
         session_count_key = f"quota_session_count_{user_id}"
         session_time_key = f"quota_base_time_{user_id}"
 
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
 
         # Check if we need to refresh base count from Firestore
         need_refresh = (
@@ -895,7 +894,7 @@ def render_quota_tracker(user_id: str) -> dict:
     try:
         # Check if we have recent quota info cached for display
         quota_cache_key = f"quota_display_{user_id}"
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
 
         # Use 5-minute cache for display (quota only changes when user makes calls)
         cache_duration = timedelta(minutes=5)
