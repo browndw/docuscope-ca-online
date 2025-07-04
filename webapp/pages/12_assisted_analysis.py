@@ -6,7 +6,7 @@ data analysis tasks.
 
 import json
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Core application utilities with standardized patterns
 from webapp.config.unified import get_ai_config
@@ -202,7 +202,7 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
                     st.sidebar.write("Workflow available")
 
                 # Download button
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
                 filename = f"pandabot_workflow_{timestamp}.json"
 
                 st.sidebar.download_button(
