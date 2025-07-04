@@ -219,9 +219,12 @@ def main() -> None:
             )
     else:
         st.markdown(
-            """
-            Please log in to access the tool.
-            """)
+            body=":material/lock: **Please log in to access the tool.**",
+            help=(
+                "Use a Google account to log in and access the tool. "
+                "The login button is in the sidebar on the left."
+            )
+            )
 
 
 if __name__ == "__main__":
