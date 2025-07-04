@@ -2,9 +2,13 @@
 version = "0.4.0"  # Update this version when making changes
 
 [global]
+# Set to true for desktop mode (single user, local storage)
+# Set to false for enterprise mode (multi-user, sharded storage)
+# This affects session management, caching, and AI configuration
+# Desktop mode is for local, single-user applications
+desktop_mode = false
 check_size = false
 check_language = false
-desktop_mode = false
 max_bytes_text = 20000000
 max_bytes_polars = 150000000
 
