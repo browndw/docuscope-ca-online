@@ -10,7 +10,7 @@ import os
 import tempfile
 import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 # Add the project root to Python path for imports
@@ -60,7 +60,7 @@ def test_sqlite_session_backend():
             "user_id": "test_user",
             "has_target": [True],
             "metadata_target": {"test": "data"},
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
 
         # Save session
@@ -208,7 +208,7 @@ def get_deployment_readiness_report() -> Dict[str, Any]:
     """
 
     report = {
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'backend_type': 'sqlite',
         'status': 'unknown',
         'tests_passed': 0,
@@ -224,7 +224,7 @@ def get_deployment_readiness_report() -> Dict[str, Any]:
 
         # Test 2: Database operations
         test_session_id = "readiness_test"
-        test_data = {"test": True, "timestamp": datetime.now().isoformat()}
+        test_data = {"test": True, "timestamp": datetime.now(timezone.utc).isoformat()}
 
         if (backend.save_session(test_session_id, test_data) and
                 backend.load_session(test_session_id) and
