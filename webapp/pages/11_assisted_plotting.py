@@ -12,7 +12,7 @@ import base64
 import io
 import json
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
@@ -311,7 +311,7 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                     st.sidebar.write("Workflow available")
 
                 # Download button
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
                 filename = f"plotbot_workflow_{timestamp}.json"
 
                 st.sidebar.download_button(
