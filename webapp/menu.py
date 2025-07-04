@@ -224,7 +224,7 @@ def authenticated_menu():
                          icon=":material/admin_panel_settings:")
             st.page_link("pages/99_health_monitor.py",
                          label="Health Monitor",
-                         icon=":material/monitor_heart:")
+                         icon=":material/cardiology:")
 
 
 def require_login():
