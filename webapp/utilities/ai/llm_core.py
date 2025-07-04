@@ -5,12 +5,13 @@ This module provides shared functionality for integrating large language models
 into the corpus analysis workflow, including API validation, settings management,
 and common utilities used by both plotbot and pandabot assistants.
 """
+
 import openai
 import docuscospacy as ds
 import pandas as pd
 import polars as pl
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 # Core application utilities
 from webapp.utilities.core import app_core
@@ -24,7 +25,6 @@ from webapp.utilities.corpus import get_corpus_data_manager
 from webapp.utilities.session.session_core import safe_session_get
 
 # Import centralized logging configuration and logger
-import webapp.utilities.configuration.logging_config  # noqa: F401
 from webapp.utilities.configuration.logging_config import get_logger
 
 logger = get_logger()
@@ -420,7 +420,7 @@ def get_api_key(
             try:
                 # Cache quota check for 30 seconds to avoid repeated Firestore calls
                 quota_cache_key = SessionKeys.get_quota_cache_key(st.user.email)
-                current_time = datetime.now()
+                current_time = datetime.now(timezone.utc)
 
                 # Check if we have a recent quota check cached
                 cache_time_key = SessionKeys.get_quota_time_key(quota_cache_key)
