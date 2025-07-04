@@ -9,7 +9,7 @@ import sqlite3
 import pickle
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
@@ -216,7 +216,7 @@ class SQLiteSessionBackend:
             size_bytes = len(serialized_data)
 
             # Calculate expiration (24 hours from now)
-            expires_at = datetime.now() + timedelta(hours=24)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
             with self.pool.get_connection() as conn:
                 cursor = conn.cursor()
@@ -327,7 +327,7 @@ class SQLiteSessionBackend:
             hashed_user_id = persistent_hash(user_id)
 
             # Calculate 24 hours ago
-            twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+            twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
 
             with self.pool.get_connection() as conn:
                 cursor = conn.cursor()
@@ -415,7 +415,7 @@ class SQLiteSessionBackend:
                 sessions_deleted = cursor.rowcount
 
                 # Clean up old query logs (keep 7 days for research)
-                seven_days_ago = datetime.now() - timedelta(days=7)
+                seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
                 cursor.execute(
                     "DELETE FROM user_queries WHERE query_timestamp < ?",
                     (seven_days_ago,)
