@@ -10,7 +10,7 @@ import pickle
 import hashlib
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
 from webapp.config.unified import get_config
@@ -39,7 +39,7 @@ class ShardedSQLiteSessionBackend:
         self._start_cleanup_thread()
 
         # Health monitoring
-        self._last_health_check = datetime.now()
+        self._last_health_check = datetime.now(timezone.utc)
         self._health_check_interval = get_config(
             'pool_health_check_interval', 'session', 30
         )
@@ -290,7 +290,7 @@ class ShardedSQLiteSessionBackend:
 
             # Calculate expiration
             session_timeout_hours = get_config('session_timeout_hours', 'session', 24)
-            expires_at = datetime.now() + timedelta(hours=session_timeout_hours)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=session_timeout_hours)
 
             # Save to appropriate shard
             with self.shard_manager.get_session_connection(shard_key) as (conn, shard_id):
@@ -425,7 +425,7 @@ class ShardedSQLiteSessionBackend:
             from webapp.utilities.storage.cache_management import persistent_hash
             hashed_user_id = persistent_hash(user_id)
 
-            twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+            twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
             total_count = 0
 
             # Check primary shard for this user
@@ -507,7 +507,7 @@ class ShardedSQLiteSessionBackend:
                     sessions_deleted = cursor.rowcount
 
                     # Clean up old queries (keep 7 days)
-                    seven_days_ago = datetime.now() - timedelta(days=7)
+                    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
                     cursor.execute(
                         "DELETE FROM user_queries WHERE query_timestamp < ?",
                         (seven_days_ago,)
@@ -640,7 +640,7 @@ class ShardedSQLiteSessionBackend:
 
     def health_check(self) -> Dict[str, Any]:
         """Perform health check across all shards."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Only run health check if enough time has passed
         if (now - self._last_health_check).seconds < self._health_check_interval:
@@ -710,7 +710,7 @@ class ShardedSQLiteSessionBackend:
         try:
             serialized_value = pickle.dumps(value)
             size_bytes = len(serialized_value)
-            expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
 
             with self.shard_manager.get_cache_connection(key) as (conn, shard_id):
                 cursor = conn.cursor()
