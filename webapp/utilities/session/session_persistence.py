@@ -7,7 +7,7 @@ session state management and syncing with the SQLite session backend.
 
 import streamlit as st
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 
@@ -102,7 +102,7 @@ class SessionPersistenceManager:
                 # Restore to Streamlit session state
                 st.session_state[session_id] = session_data
                 self._session_cache[session_id] = self._hash_session_data(session_data)
-                self._last_sync[session_id] = datetime.now()
+                self._last_sync[session_id] = datetime.now(timezone.utc)
 
                 logger.info(f"Loaded session {session_id} from SQLite")
                 return True
@@ -151,7 +151,7 @@ class SessionPersistenceManager:
             if success:
                 # Update cache
                 self._session_cache[session_id] = self._hash_session_data(session_data)
-                self._last_sync[session_id] = datetime.now()
+                self._last_sync[session_id] = datetime.now(timezone.utc)
                 return True
 
         except Exception as e:
@@ -239,7 +239,7 @@ class SessionPersistenceManager:
             return hashlib.md5(json_str.encode()).hexdigest()
         except Exception:
             # Fallback to timestamp if hashing fails
-            return str(datetime.now().timestamp())
+            return str(datetime.now(timezone.utc).timestamp())
 
     def _is_session_current(self, session_id: str) -> bool:
         """
