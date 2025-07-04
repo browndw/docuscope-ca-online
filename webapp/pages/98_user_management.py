@@ -9,7 +9,7 @@ Access is restricted to users with admin role.
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 
 from webapp.menu import menu
 from webapp.config.unified import get_config
@@ -38,6 +38,17 @@ st.set_page_config(
 
 def get_quota_statistics():
     """Get system-wide quota usage statistics across ALL users."""
+    # Return empty stats in desktop mode
+    desktop_mode = get_config('desktop_mode', 'global', True)
+    if desktop_mode:
+        return {
+            'total_queries_24h': 0,
+            'total_users_with_queries': 0,
+            'avg_queries_per_user': 0,
+            'community_api_load': 0,
+            'error': None
+        }
+
     try:
         backend = get_session_backend()
 
@@ -126,7 +137,7 @@ def get_quota_statistics():
 
 def render_user_management_tab():
     """Render the user management interface."""
-    st.subheader("👥 User Authorization Management")
+    st.subheader(":material/manage_accounts: User Authorization Management")
 
     if not is_authorization_enabled():
         st.warning(
@@ -135,9 +146,18 @@ def render_user_management_tab():
         )
         return
 
+    st.markdown(
+        "Manage user access and roles for the DocuScope Corpus Analysis system. "
+        "Only users with admin role can modify user permissions."
+    )
+
     # Add new user section
-    with st.expander("➕ Add New User", expanded=False):
-        col1, col2, col3 = st.columns([2, 1, 1])
+    with st.expander(
+        label="Add New User",
+        icon=":material/person_add:",
+        expanded=False
+    ):
+        col1, col2 = st.columns(2, gap="large")
 
         with col1:
             new_email = st.text_input(
@@ -153,21 +173,18 @@ def render_user_management_tab():
                 help="Select the user's role and permissions"
             )
 
-        with col3:
-            st.write("")  # Spacing
-            st.write("")  # Spacing
-            if st.button("Add User", type="primary"):
-                if new_email:
-                    if add_authorized_user(new_email, new_role):
-                        st.success(f"Added {new_email} with role '{new_role}'")
-                        st.rerun()
-                    else:
-                        st.error("Failed to add user. User may already exist.")
+        if st.button("Add User", type="primary"):
+            if new_email:
+                if add_authorized_user(new_email, new_role):
+                    st.success(f"Added {new_email} with role '{new_role}'")
+                    st.rerun()
                 else:
-                    st.error("Please enter an email address")
+                    st.error("Failed to add user. User may already exist.")
+            else:
+                st.error("Please enter an email address")
 
     # Current users table
-    st.markdown("### Current Authorized Users")
+    st.markdown("#### Current Authorized Users")
 
     users = list_authorized_users()
 
@@ -205,23 +222,33 @@ def render_user_management_tab():
     )
 
     # User management actions
-    st.markdown("### User Actions")
+    st.markdown("---")
+    st.markdown("#### User Actions")
+    st.markdown("Edit user roles or remove users from the system.")
 
-    col1, col2 = st.columns(2)
+    with st.expander(
+        label="Update User Role",
+        icon=":material/person_edit:",
+        expanded=False
+    ):
+        # Columns for layout
+        col1, col2 = st.columns(2, gap="large")
 
-    with col1:
-        st.markdown("**Update User Role**")
-        user_emails = [user['email'] for user in users if user.get('active', True)]
+        with col1:
+            user_emails = [user['email'] for user in users if user.get('active', True)]
 
-        if user_emails:
-            selected_user = st.selectbox(
-                "Select User",
-                options=user_emails,
-                key="role_update_user"
-            )
+            if user_emails:
+                selected_user = st.selectbox(
+                    "Select User",
+                    options=user_emails,
+                    index=None,
+                    placeholder="Select a user to update",
+                    key="role_update_user"
+                )
 
-            current_role = get_user_role(selected_user) if selected_user else None
+                current_role = get_user_role(selected_user) if selected_user else None
 
+        with col2:
             new_role_options = ["user", "instructor", "admin"]
             if current_role in new_role_options:
                 current_index = new_role_options.index(current_role)
@@ -235,30 +262,34 @@ def render_user_management_tab():
                 key="new_role_select"
             )
 
-            if st.button("Update Role", key="update_role_btn"):
-                if selected_user and updated_role != current_role:
-                    admin_user = st.session_state.get('user_email', 'admin')
-                    if update_user_role(selected_user, updated_role, admin_user):
-                        st.success(f"Updated {selected_user} to role '{updated_role}'")
-                        st.rerun()
-                    else:
-                        st.error("Failed to update user role")
-                elif updated_role == current_role:
-                    st.info("Role is already set to the selected value")
+        if st.button("Update Role", type="primary", key="update_role_btn"):
+            if selected_user and updated_role != current_role:
+                admin_user = st.session_state.get('user_email', 'admin')
+                if update_user_role(selected_user, updated_role, admin_user):
+                    st.success(f"Updated {selected_user} to role '{updated_role}'")
+                    st.rerun()
+                else:
+                    st.error("Failed to update user role")
+            elif updated_role == current_role:
+                st.info("Role is already set to the selected value")
         else:
             st.info("No active users available for role updates")
 
-    with col2:
-        st.markdown("**Remove User Access**")
-
+    with st.expander(
+        label="Remove User",
+        icon=":material/person_remove:",
+        expanded=False
+    ):
         if user_emails:
             user_to_remove = st.selectbox(
                 "Select User to Remove",
                 options=user_emails,
+                index=None,
+                placeholder="Select a user to remove",
                 key="remove_user_select"
             )
 
-            if st.button("Remove User", type="secondary", key="remove_user_btn"):
+            if st.button("Remove User", type="primary", key="remove_user_btn"):
                 if user_to_remove:
                     if remove_authorized_user(user_to_remove):
                         st.success(f"Removed access for {user_to_remove}")
@@ -271,7 +302,7 @@ def render_user_management_tab():
 
 def render_system_config_tab():
     """Render system configuration controls."""
-    st.subheader("🔧 Runtime Configuration")
+    st.subheader(":material/build_circle: Runtime Configuration")
 
     desktop_mode = get_config('desktop_mode', 'global', True)
 
@@ -283,7 +314,8 @@ def render_system_config_tab():
         return
 
     # AI Quota Usage Statistics
-    st.markdown("### 🤖 Community API Key Usage Analytics")
+    st.markdown("---")
+    st.markdown("#### :material/smart_toy: Community API Key Usage Analytics")
 
     quota_stats = get_quota_statistics()
 
@@ -296,6 +328,7 @@ def render_system_config_tab():
             st.metric(
                 "Total AI Queries (24h)",
                 quota_stats['total_queries_24h'],
+                border=True,
                 help="Total AI queries from all users (authorized and unauthorized) in the last 24 hours"  # noqa: E501
             )
 
@@ -303,6 +336,7 @@ def render_system_config_tab():
             st.metric(
                 "Active Users (24h)",
                 quota_stats['total_users_with_queries'],
+                border=True,
                 help="Number of unique users who made AI queries in the last 24 hours"
             )
 
@@ -310,171 +344,237 @@ def render_system_config_tab():
             st.metric(
                 "Avg Queries/User",
                 quota_stats['avg_queries_per_user'],
+                border=True,
                 help="Average number of AI queries per active user in the last 24 hours"
             )
 
         # System health assessment
-        st.markdown("#### 📊 System Health Assessment")
+        st.markdown("#### :material/health_metrics: AI Usage Health Assessment")
 
-        current_quota_limit = runtime_config.get_config_value(
-            'quota',
-            get_config('quota', 'llm', 10),
-            'llm'
-        )
+        # Get current quota limit safely for desktop mode
+        try:
+            current_quota_limit = runtime_config.get_config_value(
+                'quota',
+                get_config('quota', 'llm', 10),
+                'llm'
+            )
+        except Exception as e:
+            logger.warning(f"Failed to get runtime quota limit: {e}")
+            current_quota_limit = get_config('quota', 'llm', 10)
 
         total_queries = quota_stats['total_queries_24h']
         avg_per_user = quota_stats['avg_queries_per_user']
 
         # Health indicators
-        col_health1, col_health2 = st.columns(2)
+        col_health1, col_health2 = st.columns(2, gap="large")
 
         with col_health1:
+            st.markdown("**System Status**")
             if total_queries == 0:
-                st.info("🟢 **System Status**: No AI usage detected")
+                st.metric(
+                    label="System Status",
+                    value="🟢",
+                    border=True,
+                    help="No AI usage detected"
+                )
             elif avg_per_user <= current_quota_limit * 0.5:
-                st.success("🟢 **System Status**: Light usage - API key healthy")
+                st.metric(
+                    label="System Status",
+                    value="🟢",
+                    border=True,
+                    help="Light usage - API key healthy"
+                )
             elif avg_per_user <= current_quota_limit * 0.8:
-                st.warning("🟡 **System Status**: Moderate usage - monitor closely")
+                st.metric(
+                    label="System Status",
+                    value="🟡",
+                    border=True,
+                    help="Moderate usage - monitor closely"
+                )
             else:
-                st.error("🔴 **System Status**: Heavy usage - consider quota adjustments")
+                st.metric(
+                    label="System Status",
+                    value="🔴",
+                    border=True,
+                    help="Heavy usage - consider quota adjustments"
+                )
 
         with col_health2:
             # API load indicator
             # Rough estimate if current rate continues
+            st.markdown(
+                body="**Daily Load**",
+                help="Estimated total daily queries if current 24h rate continues")
             estimated_daily_load = total_queries * 24
             st.metric(
-                "Estimated Daily Load",
-                f"{estimated_daily_load:,}",
-                help="Estimated total daily queries if current 24h rate continues"
+                label="Estimated Daily Queries",
+                value=f"{estimated_daily_load:,}",
+                border=True
             )
 
     st.divider()
 
-    col1, col2 = st.columns(2)
+    # Runtime configuration overrides
+    st.markdown("#### :material/settings: Runtime Configuration Overrides")
 
-    with col1:
-        st.markdown("**Firestore Research Data Collection**")
+    st.markdown("**Active Configuration Overrides**")
 
-        # Get current state
-        current_state = runtime_config.is_firestore_enabled()
-        toml_default = get_config('cache_mode', 'cache', False)
+    try:
+        overrides = runtime_config.get_all_overrides()
+    except Exception as e:
+        logger.warning(f"Failed to get runtime overrides: {e}")
+        overrides = {}
 
-        # Show current status
-        status_text = "✅ Enabled" if current_state else "❌ Disabled"
-        st.markdown(f"**Current Status**: {status_text}")
-        st.markdown(f"**TOML Default**: {toml_default}")
+    if overrides:
+        for key, data in overrides.items():
+            with st.container():
+                st.markdown(f"**{key}**: `{data['value']}`")
+                st.caption(f"Updated by {data['updated_by']} at {data['updated_at']}")
+                if st.button(f"Clear {key}", key=f"clear_{key}"):
+                    admin_user = st.session_state.get('user_email', 'admin')
+                    runtime_config.clear_runtime_override(key, admin_user)
+                    st.success(f"Cleared override for {key}")
+                    st.rerun()
+    else:
+        st.info("No runtime overrides active")
 
-        # Toggle control
-        new_state = st.toggle(
-            "Enable Firestore Collection",
-            value=current_state,
-            help="Toggle research data collection without restart",
-            key="firestore_toggle"
-        )
+    st.write(" ")
+    st.markdown("##### :material/expand: **Community Key Quota Limit Configuration**")
 
-        if new_state != current_state:
-            admin_user = st.session_state.get('user_email', 'admin')
-            runtime_config.toggle_firestore_collection(new_state, admin_user)
-            st.success(f"Firestore collection {'enabled' if new_state else 'disabled'}")
-            st.rerun()
-
-        # Reset to default button
-        if st.button("Reset to TOML Default", key="reset_firestore"):
-            admin_user = st.session_state.get('user_email', 'admin')
-            runtime_config.clear_firestore_override(admin_user)
-            st.success("Reset to TOML default")
-            st.rerun()
-
-        st.markdown("---")
-        st.markdown("**AI Quota Limit Configuration**")
-
-        # Get current quota limit
+    # Get current quota limit
+    try:
         current_quota_limit = runtime_config.get_config_value(
             'quota',
             get_config('quota', 'llm', 10),
             'llm'
         )
-        toml_quota_default = get_config('quota', 'llm', 10)
+    except Exception as e:
+        logger.warning(f"Failed to get runtime quota limit: {e}")
+        current_quota_limit = get_config('quota', 'llm', 10)
+    toml_quota_default = get_config('quota', 'llm', 10)
 
-        # Show current status
-        st.markdown(f"**Current Limit**: {current_quota_limit} queries/24h")
-        st.markdown(f"**TOML Default**: {toml_quota_default} queries/24h")
+    # Show current status
+    st.markdown(f"**Current Limit**: {current_quota_limit} queries/24h")
+    st.markdown(f"**TOML Default**: {toml_quota_default} queries/24h")
 
-        # Show usage recommendation based on system-wide statistics
-        if not quota_stats['error'] and quota_stats['avg_queries_per_user'] > 0:
-            avg_usage = quota_stats['avg_queries_per_user']
-            recommended_limit = max(
-                int(avg_usage * 2),  # Allow 2x average usage as buffer
-                toml_quota_default
-            )
-
-            if avg_usage > current_quota_limit * 0.8:
-                st.warning(
-                    f"⚠️ Average usage ({avg_usage}) is approaching the quota limit "
-                    f"({current_quota_limit}). Consider increasing to {recommended_limit}."
-                )
-            elif avg_usage > current_quota_limit * 0.6:
-                st.info(
-                    f"💡 Average usage ({avg_usage}) is moderate. "
-                    f"Current limit ({current_quota_limit}) appears adequate."
-                )
-            else:
-                st.success(
-                    f"✅ Average usage ({avg_usage}) is well below the limit. "
-                    f"System is operating efficiently."
-                )
-
-        # Quota limit input
-        new_quota_limit = st.number_input(
-            "Set AI Quota Limit (queries per 24h)",
-            min_value=1,
-            max_value=1000,
-            value=current_quota_limit,
-            step=5,
-            help="Set the maximum number of AI queries per user per 24-hour period",
-            key="quota_limit_input"
+    # Show usage recommendation based on system-wide statistics
+    if not quota_stats['error'] and quota_stats['avg_queries_per_user'] > 0:
+        avg_usage = quota_stats['avg_queries_per_user']
+        recommended_limit = max(
+            int(avg_usage * 2),  # Allow 2x average usage as buffer
+            toml_quota_default
         )
 
-        if new_quota_limit != current_quota_limit:
-            if st.button("Update Quota Limit", type="primary", key="update_quota_limit"):
-                admin_user = st.session_state.get('user_email', 'admin')
-                runtime_config.set_runtime_override(
-                    'quota', 'llm', new_quota_limit, admin_user
-                )
-                st.success(f"Updated AI quota limit to {new_quota_limit} queries per 24h")
-                st.rerun()
-
-        # Reset quota limit to default
-        if current_quota_limit != toml_quota_default:
-            if st.button("Reset Quota to TOML Default", key="reset_quota_limit"):
-                admin_user = st.session_state.get('user_email', 'admin')
-                runtime_config.clear_runtime_override(
-                    'quota', 'llm', admin_user
-                )
-                st.success(f"Reset quota limit to TOML default ({toml_quota_default})")
-                st.rerun()
-
-    with col2:
-        st.markdown("**Active Configuration Overrides**")
-
-        overrides = runtime_config.get_all_overrides()
-        if overrides:
-            for key, data in overrides.items():
-                with st.container():
-                    st.markdown(f"**{key}**: `{data['value']}`")
-                    st.caption(f"Updated by {data['updated_by']} at {data['updated_at']}")
-                    if st.button(f"Clear {key}", key=f"clear_{key}"):
-                        admin_user = st.session_state.get('user_email', 'admin')
-                        runtime_config.clear_runtime_override(key, admin_user)
-                        st.success(f"Cleared override for {key}")
-                        st.rerun()
+        if avg_usage > current_quota_limit * 0.8:
+            st.warning(
+                body=(
+                    f"Average usage ({avg_usage}) is approaching the quota limit "
+                    f"({current_quota_limit}). Consider increasing to {recommended_limit}."
+                ),
+                icon="🔴"
+            )
+        elif avg_usage > current_quota_limit * 0.6:
+            st.info(
+                body=(
+                    f"Average usage ({avg_usage}) is moderate. "
+                    f"Current limit ({current_quota_limit}) appears adequate."
+                ),
+                icon="🟡"
+            )
         else:
-            st.info("No runtime overrides active")
+            st.success(
+                body=(
+                    f"Average usage ({avg_usage}) is well below the limit. "
+                    f"System is operating efficiently."
+                ),
+                icon="🟢"
+            )
+
+    # Quota limit input
+    new_quota_limit = st.number_input(
+        "Set AI Quota Limit (queries per 24h)",
+        min_value=1,
+        max_value=1000,
+        value=current_quota_limit,
+        step=5,
+        help="Set the maximum number of AI queries per user per 24-hour period",
+        key="quota_limit_input"
+    )
+
+    if new_quota_limit != current_quota_limit:
+        if st.button("Update Quota Limit", type="primary", key="update_quota_limit"):
+            admin_user = st.session_state.get('user_email', 'admin')
+            runtime_config.set_runtime_override(
+                'quota', 'llm', new_quota_limit, admin_user
+            )
+            st.success(f"Updated AI quota limit to {new_quota_limit} queries per 24h")
+            st.rerun()
+
+    # Reset quota limit to default
+    if current_quota_limit != toml_quota_default:
+        if st.button("Reset Quota to TOML Default", key="reset_quota_limit"):
+            admin_user = st.session_state.get('user_email', 'admin')
+            runtime_config.clear_runtime_override(
+                'quota', 'llm', admin_user
+            )
+            st.success(f"Reset quota limit to TOML default ({toml_quota_default})")
+            st.rerun()
+
+    st.write(" ")
+    st.markdown("##### :material/backup: **Firestore Research Data Collection**")
+
+    # Get current state
+    try:
+        current_state = runtime_config.is_firestore_enabled()
+    except Exception as e:
+        logger.warning(f"Failed to get firestore state: {e}")
+        current_state = get_config('cache_mode', 'cache', False)
+    toml_default = get_config('cache_mode', 'cache', False)
+
+    # Show current status
+    if current_state:
+        st.success(
+            body=(
+                "Firestore collection is currently enabled. "
+                "This allows research data to be stored and analyzed."
+            ),
+            icon="🟢"
+        )
+    else:
+        st.error(
+            body=(
+                "Firestore collection is currently disabled. "
+                "This prevents research data from being stored."
+            ),
+            icon="🔴"
+        )
+    st.markdown(f"**TOML Default**: {toml_default}")
+
+    # Toggle control
+    new_state = st.toggle(
+        "Enable Firestore Collection",
+        value=current_state,
+        help="Toggle research data collection without restart",
+        key="firestore_toggle"
+    )
+
+    if new_state != current_state:
+        admin_user = st.session_state.get('user_email', 'admin')
+        runtime_config.toggle_firestore_collection(new_state, admin_user)
+        st.success(f"Firestore collection {'enabled' if new_state else 'disabled'}")
+        st.rerun()
+
+    # Reset to default button
+    if st.button("Reset to TOML Default", key="reset_firestore"):
+        admin_user = st.session_state.get('user_email', 'admin')
+        runtime_config.clear_firestore_override(admin_user)
+        st.success("Reset to TOML default")
+        st.rerun()
 
 
 def render_audit_log_tab():
     """Render audit log viewing interface."""
-    st.subheader("📋 System Audit Logs")
+    st.subheader(":material/policy: System Audit Logs")
 
     desktop_mode = get_config('desktop_mode', 'global', True)
 
@@ -486,31 +586,31 @@ def render_audit_log_tab():
         return
 
     # Configuration changes audit log
-    st.markdown("### Configuration Changes")
+    st.markdown("#### Configuration Changes")
 
-    col1, col2 = st.columns([1, 3])
+    log_limit = st.number_input(
+        "Number of entries",
+        min_value=5,
+        max_value=100,
+        value=20,
+        step=5,
+        help="Number of recent audit log entries to display"
+    )
 
-    with col1:
-        log_limit = st.number_input(
-            "Number of entries",
-            min_value=5,
-            max_value=100,
-            value=20,
-            step=5,
-            help="Number of recent audit log entries to display"
-        )
+    if st.button("Refresh Logs", key="refresh_audit"):
+        st.rerun()
 
-    with col2:
-        if st.button("Refresh Logs", key="refresh_audit"):
-            st.rerun()
-
-    audit_log = runtime_config.get_audit_log(limit=log_limit)
+    try:
+        audit_log = runtime_config.get_audit_log(limit=log_limit)
+    except Exception as e:
+        logger.warning(f"Failed to get audit log: {e}")
+        audit_log = []
 
     if audit_log:
         # Convert to DataFrame for better display
         audit_df_data = []
         for entry in audit_log:
-            change_type = "🔄 Update" if entry['new_value'] != 'CLEARED' else "🗑️ Clear"
+            change_type = "UPDATE" if entry['new_value'] != 'CLEARED' else "DELETE"
             audit_df_data.append({
                 "Timestamp": entry['updated_at'],
                 "Action": change_type,
@@ -532,8 +632,8 @@ def render_audit_log_tab():
                 "Configuration Key": st.column_config.TextColumn(
                     "Config Key", width="medium"
                 ),
-                "Old Value": st.column_config.TextColumn("Old Value", width="medium"),
-                "New Value": st.column_config.TextColumn("New Value", width="medium"),
+                "Old Value": st.column_config.TextColumn("Old Value", width="small"),
+                "New Value": st.column_config.TextColumn("New Value", width="small"),
                 "Updated By": st.column_config.TextColumn("Updated By", width="medium")
             }
         )
@@ -541,45 +641,59 @@ def render_audit_log_tab():
         st.info("No configuration changes recorded")
 
     # User authorization audit log (future enhancement)
-    st.markdown("### User Authorization Changes")
+    st.markdown("#### User Authorization Changes")
     st.info("User authorization audit log will be implemented in a future update")
 
 
 def render_system_info_tab():
     """Render system information and status."""
-    st.subheader("ℹ️ System Information")
+    st.subheader(":material/settings_applications: Configuration")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         st.markdown("**Application Mode**")
         desktop_mode = get_config('desktop_mode', 'global', True)
-        mode_text = "🖥️ Desktop" if desktop_mode else "🏢 Enterprise"
-        st.metric("Mode", mode_text)
+        mode_text = "Desktop" if desktop_mode else "Online"
+        st.metric("Mode", mode_text, border=True)
 
         st.markdown("**Authorization Status**")
         auth_enabled = is_authorization_enabled()
-        auth_text = "✅ Enabled" if auth_enabled else "❌ Disabled"
-        st.metric("User Authorization", auth_text)
+        auth_text = "Enabled" if auth_enabled else "Disabled"
+        st.metric("User Authorization", auth_text, border=True)
 
     with col2:
         st.markdown("**Session Backend**")
-        backend = get_config('backend', 'session', 'sqlite')
-        st.metric("Session Storage", backend.upper())
+        try:
+            backend = get_session_backend()
+            backend_type = type(backend).__name__
+            # Convert class name to readable format
+            if backend_type == "InMemorySessionBackend":
+                backend_display = "MEMORY"
+            elif backend_type == "ShardedSQLiteSessionBackend":
+                backend_display = "SQLITE"
+            else:
+                backend_display = backend_type.upper()
+        except Exception:
+            # Fallback to config value
+            backend_display = get_config('backend', 'session', 'sqlite').upper()
+
+        st.metric("Session Storage", backend_display, border=True)
 
         st.markdown("**Current User**")
-        current_user = st.session_state.get('user_email', 'Not logged in')
-        st.metric("Logged in as", current_user)
+        current_user = st.user.get('email', 'Guest')
+        st.metric("Logged in as", current_user, border=True)
 
     with col3:
         st.markdown("**System Status**")
-        st.metric("Status", "✅ Online")
+        st.metric("Status", "Running", border=True)
 
         st.markdown("**Last Updated**")
-        st.metric("Timestamp", datetime.now().strftime("%H:%M:%S"))
+        st.metric("Timestamp", datetime.now(timezone.utc).strftime("%H:%M:%S"), border=True)
 
     # System-wide usage overview
-    st.markdown("### 📊 System-Wide Usage Overview")
+    st.divider()
+    st.markdown("#### :material/monitoring: System-Wide Usage Overview")
 
     desktop_mode = get_config('desktop_mode', 'global', True)
     if desktop_mode:
@@ -590,11 +704,15 @@ def render_system_info_tab():
             quota_stats = get_quota_statistics()
 
             # Get basic system statistics
-            current_quota_limit = runtime_config.get_config_value(
-                'quota',
-                get_config('quota', 'llm', 10),
-                'llm'
-            )
+            try:
+                current_quota_limit = runtime_config.get_config_value(
+                    'quota',
+                    get_config('quota', 'llm', 10),
+                    'llm'
+                )
+            except Exception as e:
+                logger.warning(f"Failed to get runtime quota limit: {e}")
+                current_quota_limit = get_config('quota', 'llm', 10)
 
             # Get authorized user count for context
             authorized_users = list_authorized_users()
@@ -609,6 +727,7 @@ def render_system_info_tab():
                 st.metric(
                     "Authorized Users",
                     total_authorized,
+                    border=True,
                     help="Number of users with system authorization"
                 )
 
@@ -616,6 +735,7 @@ def render_system_info_tab():
                 st.metric(
                     "Current Quota Limit",
                     f"{current_quota_limit}/user/24h",
+                    border=True,
                     help="Current AI query limit per user per 24 hours"
                 )
 
@@ -630,19 +750,22 @@ def render_system_info_tab():
                     st.metric(
                         "Avg Quota Utilization",
                         f"{utilization:.1f}%",
+                        border=True,
                         help="Average quota usage across all active users"
                     )
                 else:
                     st.metric("Avg Quota Utilization", "N/A")
 
             # Usage pattern insights
+            st.divider()
             if (
                 quota_stats and not quota_stats['error'] and
                 quota_stats['total_queries_24h'] > 0
             ):
-                st.markdown("#### 🔍 Usage Pattern Insights")
+                st.markdown("#### :material/query_stats: Usage Pattern Insights")
 
                 insights = []
+                insights_icons = []
                 total_queries = quota_stats['total_queries_24h']
                 active_users = quota_stats['total_users_with_queries']
                 avg_per_user = quota_stats['avg_queries_per_user']
@@ -650,44 +773,53 @@ def render_system_info_tab():
                 # Generate insights based on usage patterns
                 if active_users > total_authorized:
                     insights.append(
-                        f"📈 **High Adoption**: {active_users} active users vs "
+                        f"**High Adoption**: {active_users} active users vs "
                         f"{total_authorized} authorized (includes unauthorized usage)"
                     )
+                    insights_icons.append(":material/water_full:")
                 elif active_users < total_authorized * 0.5:
                     insights.append(
-                        f"📉 **Low Adoption**: Only {active_users} of "
+                        f"**Low Adoption**: Only {active_users} of "
                         f"{total_authorized} authorized users are active"
                     )
+                    insights_icons.append(":material/water_loss:")
                 else:
                     insights.append(
-                        f"📊 **Normal Adoption**: {active_users} of "
+                        f"**Normal Adoption**: {active_users} of "
                         f"{total_authorized} authorized users are active"
                     )
-
+                    insights_icons.append(":material/water_medium:")
                 if avg_per_user > current_quota_limit * 0.8:
                     insights.append(
-                        f"⚠️ **High Usage**: Average {avg_per_user} queries/user "
+                        f"**High Usage**: Average {avg_per_user} queries/user "
                         f"approaching limit of {current_quota_limit}"
                     )
+                    insights_icons.append(":material/warning:")
                 elif avg_per_user < current_quota_limit * 0.3:
                     insights.append(
-                        f"✅ **Conservative Usage**: Average {avg_per_user} "
+                        f"**Conservative Usage**: Average {avg_per_user} "
                         f"queries/user well below limit"
                     )
+                    insights_icons.append(":material/check_circle:")
 
                 if total_queries > 100:
                     insights.append(
-                        f"🚀 **High Volume**: {total_queries} total queries "
+                        f"**High Volume**: {total_queries} total queries "
                         f"indicate heavy system usage"
                     )
+                    insights_icons.append(":material/traffic_jam:")
                 elif total_queries < 10:
                     insights.append(
-                        f"🐌 **Low Volume**: {total_queries} total queries "
+                        f"**Low Volume**: {total_queries} total queries "
                         f"indicate light system usage"
                     )
+                    insights_icons.append(":material/no_crash:")
 
                 for insight in insights:
-                    st.markdown(f"- {insight}")
+                    st.info(
+                        body=f"- {insight}",
+                        icon=insights_icons[insights.index(insight)]
+                    )
             else:
                 st.info("💡 No usage data available for pattern analysis")
 
@@ -696,13 +828,37 @@ def render_system_info_tab():
 
     st.markdown("### Configuration Details")
 
+    # Detect actual session backend being used
+    try:
+        backend = get_session_backend()
+        backend_type = type(backend).__name__
+        if backend_type == "InMemorySessionBackend":
+            actual_backend = "memory"
+        elif backend_type == "ShardedSQLiteSessionBackend":
+            actual_backend = "sqlite"
+        else:
+            actual_backend = backend_type.lower()
+    except Exception:
+        # Fallback to config value
+        actual_backend = get_config('backend', 'session', 'sqlite')
+
     config_details = {
         "Desktop Mode": get_config('desktop_mode', 'global', True),
-        "Session Backend": get_config('backend', 'session', 'sqlite'),
+        "Session Backend": actual_backend,
         "Check Size": get_config('check_size', 'global', False),
         "Check Language": get_config('check_language', 'global', False),
         "Max Text Size": get_config('max_bytes_text', 'global', 20000000),
-        "Authorization Enabled": is_authorization_enabled()
+        "Authorization Enabled": is_authorization_enabled(),
+        "Quota Limit": (
+            runtime_config.get_config_value('quota', get_config('quota', 'llm', 10), 'llm')
+            if not get_config('desktop_mode', 'global', True)
+            else get_config('quota', 'llm', 10)
+        ),
+        "Firestore Collection": (
+            runtime_config.is_firestore_enabled()
+            if not get_config('desktop_mode', 'global', True)
+            else get_config('cache_mode', 'cache', False)
+        ),
     }
 
     config_df = pd.DataFrame([
@@ -737,10 +893,10 @@ def main():
 
     # Create tabs for different sections
     tab1, tab2, tab3, tab4 = st.tabs([
-        "👥 User Management",
-        "🔧 System Configuration",
-        "📋 Audit Logs",
-        "ℹ️ System Info"
+        ":material/manage_accounts: User Management",
+        ":material/build_circle: System Configuration",
+        ":material/policy: Audit Logs",
+        ":material/settings_applications: Application Info"
     ])
 
     with tab1:
