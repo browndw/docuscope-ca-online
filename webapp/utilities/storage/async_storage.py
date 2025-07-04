@@ -12,13 +12,12 @@ import threading
 import time
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from webapp.utilities.storage import add_message, add_plot
 from webapp.config.static_config import get_static_value
 
 # Import centralized logging configuration and logger
-import webapp.utilities.configuration.logging_config  # noqa: F401
 from webapp.utilities.configuration.logging_config import get_logger
 
 logger = get_logger()
@@ -126,7 +125,7 @@ class AsyncStorageManager:
         task = StorageTask(
             task_type=task_type,
             data=data,
-            timestamp=datetime.now()
+            timestamp=datetime.now(timezone.utc)
         )
 
         try:
