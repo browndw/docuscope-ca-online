@@ -9,7 +9,7 @@ import streamlit as st
 import polars as pl
 import pandas as pd
 from typing import Literal
-from datetime import datetime
+from datetime import datetime, timezone
 
 from webapp.utilities.ui.corpus_display import target_info
 from webapp.utilities.ui.form_controls import tag_filter_multiselect
@@ -220,7 +220,7 @@ def render_excel_download_option(df, base_filename: str, location=None) -> None:
     try:
         # Use optimized conversion function which handles both DataFrame types
         excel_buffer = convert_to_excel(df)
-        filename = f"{base_filename}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        filename = f"{base_filename}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.xlsx"  # noqa: E501
 
         download_component = location if location else st.sidebar
         download_component.download_button(
