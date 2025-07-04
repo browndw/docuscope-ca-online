@@ -16,7 +16,6 @@ import streamlit as st
 from typing import Any, Dict, List, Set
 
 # Import centralized logging configuration
-import webapp.utilities.configuration.logging_config  # noqa: F401
 from webapp.utilities.configuration.logging_config import get_logger, setup_utility_logging
 
 # Set up logging
@@ -293,7 +292,7 @@ def create_persist_function(user_session_id: str = None):
     """
     Create a persist function replacement that handles both key generation and persistence.
     This provides backward compatibility with the legacy persist() function pattern.
-    
+
     This function replicates the full behavior of the legacy persist() function:
     - Registers keys for persistence
     - Stores current widget values in session state
@@ -314,26 +313,26 @@ def create_persist_function(user_session_id: str = None):
     def persist_func(key: str, session_id: str):
         # Register the key for persistence
         widget_key_manager.register_persistent_key(key)
-        
+
         # Get the scoped key for the widget
         scoped_key = widget_key_manager.get_scoped_key(key)
-        
+
         # Auto-detect app/page name for persistence namespace
         import inspect
         import pathlib
         app_name = None
-        
+
         try:
             frame = inspect.currentframe().f_back.f_back  # Go up two levels from the caller
             caller_file = None
-            
+
             # Walk up the call stack to find the first file that looks like a page
             while frame:
                 file_path = frame.f_globals.get('__file__')
                 if file_path:
                     path_obj = pathlib.Path(file_path)
                     filename = path_obj.stem
-                    
+
                     # If it's in pages directory or starts with a number, it's likely a page
                     if (
                         'pages' in path_obj.parts or
@@ -342,9 +341,9 @@ def create_persist_function(user_session_id: str = None):
                     ):
                         caller_file = file_path
                         break
-                
+
                 frame = frame.f_back
-            
+
             # If we found a page file, use it; otherwise use the immediate caller
             if caller_file:
                 app_name = pathlib.Path(caller_file).stem
@@ -357,34 +356,34 @@ def create_persist_function(user_session_id: str = None):
                     app_name = "unknown_app"
         except Exception:
             app_name = "unknown_app"
-        
+
         # Create persistence namespace
         _PERSIST_STATE_KEY = f"{app_name}_PERSIST"
-        
+
         # Ensure session structure exists
         if session_id not in st.session_state:
             st.session_state[session_id] = {}
-        
+
         # Ensure persistence storage exists
         if _PERSIST_STATE_KEY not in st.session_state[session_id]:
             st.session_state[session_id][_PERSIST_STATE_KEY] = {}
-        
+
         # Initialize key if not exists
         if key not in st.session_state[session_id][_PERSIST_STATE_KEY]:
             st.session_state[session_id][_PERSIST_STATE_KEY][key] = None
-        
+
         # Get persisted value
         persisted_value = st.session_state[session_id][_PERSIST_STATE_KEY][key]
-        
+
         # If there's a persisted value and no current widget value, restore it
         if persisted_value is not None and scoped_key not in st.session_state:
             st.session_state[scoped_key] = persisted_value
-        
+
         # If widget has a current value, store it for persistence
         if scoped_key in st.session_state:
             persistence_store = st.session_state[session_id][_PERSIST_STATE_KEY]
             persistence_store[key] = st.session_state[scoped_key]
-        
+
         return scoped_key
 
     return persist_func
