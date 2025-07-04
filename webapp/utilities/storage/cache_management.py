@@ -10,7 +10,7 @@ in the last 24 hours to help manage query limits and quotas.
 
 import hashlib
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 from google.cloud import firestore
 from google.oauth2 import service_account
 
@@ -119,7 +119,7 @@ def add_message(user_id: str,
         logger.debug("Desktop mode - skipping Firestore message storage")
         return
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
     user_id = persistent_hash(user_id)
 
     # Generate a unique document ID based on user_id, timestamp, and role
@@ -195,7 +195,7 @@ def add_plot(user_id: str,
         logger.debug("Desktop mode - skipping Firestore plot storage")
         return
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
     user_id = persistent_hash(user_id)
     type = 1
 
@@ -255,7 +255,7 @@ def add_login(user_id: str,
         logger.debug("Desktop mode - skipping Firestore login storage")
         return
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
     from_cmu = user_id.endswith(".cmu.edu")
     user_id = persistent_hash(user_id)
 
@@ -418,7 +418,7 @@ def get_session_analytics() -> dict:
         stats = backend.get_session_stats()
 
         return {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'database_stats': stats,
             'firestore_enabled': get_config('enabled', 'firestore', False),
             'desktop_mode': DESKTOP
