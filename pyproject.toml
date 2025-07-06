@@ -61,3 +61,23 @@ include-package-data = true
 find = { namespaces = false }
 
 [tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests",
+    "streamlit: marks tests as streamlit UI tests",
+    "slow: marks tests as slow running",
+    "ai: marks tests that require AI/LLM access"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-xdist>=3.0.0",
+    "pytest-cov>=4.0.0"
+]
