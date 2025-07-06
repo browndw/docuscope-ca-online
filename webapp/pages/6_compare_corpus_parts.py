@@ -187,7 +187,26 @@ def render_tags_interface(
 
     tab1, tab2 = st.tabs(["Keyness Table", "Keyness Plot"])
     with tab1:
+        # Sorting and filtering controls
+        sort_by, reverse = keyness_sort_controls(
+            sort_options=["Keyness (LL)", "Effect Size (LR)"],
+            default="Keyness (LL)",
+            reverse_default=True,
+            key_prefix="kt_"
+        )
+
         df = tag_filter_multiselect(df, user_session_id=user_session_id)
+
+        # Map UI label to actual DataFrame column
+        sort_col_map = {
+            "Keyness (LL)": "LL",
+            "Effect Size (LR)": "LR"
+        }
+        sort_col = sort_col_map[sort_by]
+
+        if df is not None and getattr(df, "height", 0) > 0:
+            df = df.sort(sort_col, descending=reverse)
+
         render_dataframe(df)
 
     with tab2:
