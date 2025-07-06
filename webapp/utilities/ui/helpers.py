@@ -180,7 +180,7 @@ def toggle_download(
         convert_kwargs: dict = None,
         file_name: str = "download.bin",
         mime: str = "application/octet-stream",
-        message: str = "Your data is ready!",
+        message: str = None,
         location=None
         ) -> None:
     """
@@ -225,7 +225,7 @@ def toggle_download(
     download = location.toggle(f"Download to {label}?", key=toggle_key)
     if download:
         with location.status(
-            f"Preparing {label} download...",
+            f"Generating {label} file...",
             expanded=True
         ):
             data = convert_func(*convert_args, **convert_kwargs)
@@ -233,7 +233,7 @@ def toggle_download(
                 st.success(message,
                            icon=":material/celebration:")
             location.download_button(
-                label=f"Download to {label}",
+                label=f"Download {label} file",
                 data=data,
                 file_name=file_name,
                 mime=mime,

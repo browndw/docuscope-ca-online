@@ -28,7 +28,7 @@ from webapp.utilities.ui import (
     render_table_generation_interface, sidebar_help_link,
     tagset_selection, color_picker_controls,
     tag_filter_multiselect, target_info,
-    get_page_base_filename, render_data_table_interface
+    render_data_table_interface
     )
 from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
 from webapp.utilities.plotting import (
@@ -80,7 +80,9 @@ st.set_page_config(
     )
 
 
-def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
+def render_tag_frequency_interface(
+        user_session_id: str, session: dict
+) -> None:
     """Render the tag frequency interface with tabs for table and plot."""
     try:
         # Validate corpus data using the new manager
@@ -119,11 +121,10 @@ def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
         # Render the table in the first tab with custom key handling
         with tab1:
             # Use generalized data table interface (filtering applied inside)
-            base_filename = get_page_base_filename(__file__)
             render_data_table_interface(
                 df=df,
                 metadata_target=metadata_target,
-                base_filename=base_filename,
+                base_filename="tag_frequencies",
                 no_data_message="No frequency data available to display.",
                 apply_tag_filter=True,
                 user_session_id=user_session_id
@@ -138,7 +139,9 @@ def render_tag_frequency_interface(user_session_id: str, session: dict) -> None:
         st.info("Try regenerating the tag frequency table if this error persists.")
 
 
-def render_tag_frequency_plot(df, metadata_target: dict) -> None:
+def render_tag_frequency_plot(
+        df, metadata_target: dict
+) -> None:
     """Render the tag frequency plot with color controls."""
     # Display the target information
     st.info(target_info(metadata_target))

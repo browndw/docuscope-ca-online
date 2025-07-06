@@ -22,7 +22,7 @@ def safe_metadata_get(metadata: dict, key: str, default=None, nested_key: str = 
     Metadata can be in different formats:
     - DataFrame converted: {'docids': [{'ids': [...]}], 'doccats': [{'cats': [...]}]}
     - Direct dict: {'docids': {'ids': [...]}, 'doccats': {'cats': [...]}}
-    
+
     Parameters
     ----------
     metadata : dict
@@ -294,7 +294,7 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
                 st.markdown('##### Target corpus metadata:')
                 # Handle both DataFrame and dict formats for DOCCATS
                 doccats_raw = metadata_target.get(MetadataKeys.DOCCATS, [])
-                
+
                 if isinstance(doccats_raw, list) and len(doccats_raw) > 0:
                     # DataFrame format: [{'cats': [...]}]
                     if isinstance(doccats_raw[0], dict):
@@ -306,14 +306,14 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
                     doc_cats = doccats_raw.get('cats', [])
                 else:
                     doc_cats = []
-                    
+
                 if doc_cats:
                     cat_counts = Counter(doc_cats)
                     cat_df = add_category_description(
                         cat_counts,
                         session,
                         corpus_type="target")
-                    st.dataframe(cat_df, hide_index=True)
+                    st.data_editor(cat_df, hide_index=True, disabled=True)
 
         # --- Reference Tab (if loaded) ---
         if has_reference:
@@ -350,7 +350,7 @@ def display_reference_corpus_tab(tab, metadata_reference: dict, session: dict) -
                             cat_counts_ref,
                             session,
                             corpus_type="reference")
-                        st.dataframe(cat_df_ref, hide_index=True)
+                        st.data_editor(cat_df_ref, hide_index=True, disabled=True)
                     else:
                         st.warning(
                             "No categories found in reference corpus file names.",

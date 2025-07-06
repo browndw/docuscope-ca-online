@@ -29,7 +29,7 @@ from webapp.utilities.ai import (
     render_data_selection_interface, render_data_preview_controls,
     render_quota_tracker, should_show_api_key_input,
     render_work_preservation_interface, should_show_work_preservation_interface,
-    export_conversation_history
+    export_conversation_history, clear_plotbot_table
 )
 from webapp.utilities.analysis import (
     generate_tags_table
@@ -286,13 +286,21 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                 ))
             if st.sidebar.button(
                 "Clear Chat History",
-                icon=":material/delete:"
+                icon=":material/refresh:"
             ):
                 clear_plotbot(user_session_id)
                 st.rerun()
 
+            st.sidebar.markdown("---")
+
             # Add workflow export to sidebar
-            st.sidebar.markdown("### Export Workflow")
+            st.sidebar.markdown(
+                body="### Export Workflow",
+                help=(
+                    "You can export the conversation history as a JSON file. "
+                    "This file contains all the steps and plots generated during your session."  # noqa: E501
+                )
+            )
 
             # Get workflow data
             workflow_json = export_conversation_history(user_session_id, "plotbot")
@@ -319,8 +327,7 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                     data=workflow_json,
                     file_name=filename,
                     mime="application/json",
-                    icon=":material/file_download:",
-                    help="Download your complete analysis workflow with embedded plots"
+                    icon=":material/file_download:"
                 )
             else:
                 st.sidebar.info("Start a conversation to create a workflow")
@@ -343,7 +350,7 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                 user_session_id=user_session_id,
                 session=session,
                 bot_prefix="plotbot",
-                clear_function=clear_plotbot,
+                clear_function=clear_plotbot_table,
                 metadata_target=metadata_target
             )
 
@@ -372,6 +379,11 @@ def main():
     # Set login requirements for navigation
     require_login()
     menu()
+
+    corpus_key = SessionKeys.get_bot_corpus_key("plotbot")
+    scoped_corpus_key = app_core.widget_manager.get_scoped_key(corpus_key)
+    st.write(scoped_corpus_key)
+    st.write(app_core.widget_manager.is_persistent(scoped_corpus_key))
 
     st.markdown(
         body=f"## {TITLE}",

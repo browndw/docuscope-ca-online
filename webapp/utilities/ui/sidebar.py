@@ -85,10 +85,10 @@ def sidebar_keyness_options(
             pval_options = [0.05, 0.01, 0.001]
     else:
         if target_tokens > token_limit:
-            pval_options = [0.05, 0.01]
+            pval_options = [0.01, 0.001]
             sidebar.warning(
                 "Corpus is large (>1.5 million tokens). "
-                "p < .001 is disabled to prevent memory issues."
+                "p < .05 is disabled to prevent memory issues."
             )
         elif target_tokens == 0:
             pval_options = []

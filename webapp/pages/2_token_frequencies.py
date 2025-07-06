@@ -24,9 +24,8 @@ from webapp.utilities.analysis import (
     generate_frequency_table
     )
 from webapp.utilities.ui import (
-    get_page_base_filename, render_data_table_interface,
-    render_table_generation_interface, sidebar_help_link,
-    tagset_selection,
+    render_data_table_interface, render_table_generation_interface,
+    sidebar_help_link, tagset_selection,
     )
 from webapp.utilities.state import (
     CorpusKeys, SessionKeys,
@@ -70,7 +69,9 @@ st.set_page_config(
     )
 
 
-def render_frequency_table_interface(user_session_id: str, session: dict) -> None:
+def render_frequency_table_interface(
+        user_session_id: str, session: dict
+) -> None:
     """Render the frequency table interface with error handling."""
     try:
         # Validate corpus data using the new manager
@@ -116,11 +117,10 @@ def render_frequency_table_interface(user_session_id: str, session: dict) -> Non
         )
 
         # Use generalized data table interface (filtering applied inside)
-        base_filename = get_page_base_filename(__file__)
         render_data_table_interface(
             df=df,
             metadata_target=metadata_target,
-            base_filename=base_filename,
+            base_filename="token_frequencies",
             no_data_message="No frequency data available to display.",
             apply_tag_filter=True,
             user_session_id=user_session_id

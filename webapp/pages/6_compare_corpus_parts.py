@@ -9,6 +9,7 @@ Users can:
 - Download the keyness table in Excel format
 """
 
+import pandas as pd
 import polars as pl
 import streamlit as st
 
@@ -157,10 +158,13 @@ def render_tokens_interface(user_session_id: str, target_manager) -> None:
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    render_sidebar_controls(df, "keywords_tokens.xlsx", user_session_id, target_manager)
+    render_sidebar_controls(df, user_session_id)
 
 
-def render_tags_interface(user_session_id: str, target_manager) -> None:
+def render_tags_interface(
+        user_session_id: str,
+        target_manager
+) -> None:
     """Render the tags-only analysis interface."""
     # Use sidebar tagset selection
     st.sidebar.markdown("### Tagset")
@@ -204,26 +208,68 @@ def render_tags_interface(user_session_id: str, target_manager) -> None:
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    render_sidebar_controls(df, "keywords_tags.xlsx", user_session_id, target_manager)
+    render_sidebar_controls(df, user_session_id)
+
+
+def create_enhanced_dataframe_for_export(
+        df: pl.DataFrame,
+        metadata_target
+) -> pd.DataFrame:
+    """Create a DataFrame with context information for Excel export."""
+    if df is None or df.height == 0:
+        return None
+
+    # Get the context information
+    keyness_parts_data = metadata_target.get(SessionKeys.KEYNESS_PARTS)[0]['temp']
+    target_info = target_parts(keyness_parts_data)
+    reference_info = reference_parts(keyness_parts_data)
+
+    # Convert to pandas
+    pandas_df = df.to_pandas()
+
+    # Create a full-width context section
+    context_data = {}
+
+    # Get all column names (original + context columns)
+    all_columns = list(pandas_df.columns) + ['Context_Details']
+
+    # Initialize all columns
+    for col in all_columns:
+        if col in pandas_df.columns:
+            # Original data + empty rows for context
+            context_data[col] = pandas_df[col].tolist() + ['', '', '']
+        elif col == 'Context_Details':
+            # Empty for data rows + context information
+            context_data[col] = [target_info, reference_info, ''] + [''] * len(pandas_df)
+
+    enhanced_df = pd.DataFrame(context_data)
+
+    return enhanced_df
 
 
 def render_sidebar_controls(
-        df, filename: str, user_session_id: str, target_manager
+        df,
+        user_session_id: str
 ) -> None:
     """Render common sidebar controls for downloads and table regeneration."""
+    # Get metadata needed for enhanced export
+    metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+
     toggle_download(
         label="Excel",
         convert_func=convert_to_excel,
         convert_args=(
-            (df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0)
+            (create_enhanced_dataframe_for_export(df, metadata_target),)
+            if (df is not None and getattr(df, "height", 0) > 0)
             else (None,)
         ),
-        file_name=filename,
+        file_name="keyness_corpus_parts",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         location=st.sidebar
     )
 
     st.sidebar.markdown("---")
+
     st.sidebar.markdown(
         body=(
             "### Generate new table\n\n"
@@ -250,9 +296,12 @@ def render_sidebar_controls(
         st.session_state[user_session_id][WarningKeys.KEYNESS_PARTS] = None
         st.rerun()
 
+    st.sidebar.markdown("---")
+
 
 def render_setup_interface(
-        user_session_id: str, session: dict
+        user_session_id: str,
+        session: dict
 ) -> None:
     """Render the interface for setting up corpus part comparison."""
     st.markdown(
@@ -267,7 +316,7 @@ def render_setup_interface(
     )
 
     if safe_session_get(session, SessionKeys.HAS_META, False):
-        render_category_selection_interface(user_session_id, session)
+        render_category_selection_interface(user_session_id)
     else:
         render_no_metadata_message()
 
@@ -284,7 +333,7 @@ def render_setup_interface(
 
 
 def render_category_selection_interface(
-        user_session_id: str, session: dict
+        user_session_id: str
 ) -> None:
     """Render the category selection interface using segmented controls."""
     metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)

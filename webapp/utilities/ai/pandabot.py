@@ -29,6 +29,7 @@ from webapp.utilities.ai.enterprise_integration import enterprise_ai_call
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.state.widget_state import safe_clear_widget_state
 from webapp.utilities.storage.backend_factory import get_session_backend
+from webapp.utilities.core import app_core
 
 # Thread-safe global lock for monkeypatching
 _monkeypatch_lock = threading.RLock()
@@ -178,15 +179,34 @@ def thread_safe_monkeypatch(session_storage: SessionPlotStorage):
             builtins.open = _original_open
 
 
-def clear_pandasai(session_id):
+def clear_pandasai_table():
     """
-    Clear pandasai conversation history.
+    Clear the plotbot table state in the session.
 
     Parameters
     ----------
     session_id : str
         The session identifier.
     """
+    # Clear the query selectbox when corpus changes
+    query_key = SessionKeys.get_bot_query_key("pandasai")
+    scoped_query_key = app_core.widget_manager.get_scoped_key(query_key)
+    if scoped_query_key in st.session_state:
+        st.session_state[scoped_query_key] = None
+
+
+def clear_pandasai(session_id: str, clear_all=True):
+    """
+    Clear pandasai conversation history and reset analysis state.
+
+    Parameters
+    ----------
+    session_id : str
+        The session identifier.
+    clear_all : bool
+        Whether to clear all related state including widget persistence.
+    """
+    # Clear pandabot chat history
     if SessionKeys.AI_PANDABOT_CHAT not in st.session_state[session_id]:
         st.session_state[session_id][SessionKeys.AI_PANDABOT_CHAT] = []
     else:
@@ -194,6 +214,48 @@ def clear_pandasai(session_id):
 
     # Reset the user prompt counter for accurate message indexing
     st.session_state[session_id][SessionKeys.AI_PANDABOT_PROMPT_COUNT] = 0
+
+    # Clear pandabot conversation history (fallback key used by prune_message_thread)
+    if "pandasai" in st.session_state[session_id]:
+        st.session_state[session_id]["pandasai"] = []
+
+    # Clear pandabot plot storage
+    pandabot_img_key = SessionKeys.get_pandabot_img_key(session_id)
+    if pandabot_img_key in st.session_state:
+        del st.session_state[pandabot_img_key]
+
+    if clear_all:
+        # Clear widget manager state for AI-related widgets
+        try:
+            # Clear data preview control widgets (shared between plotbot and pandabot)
+            widget_keys_to_clear = ["pivot_table", "make_percent"]
+            for widget_key in widget_keys_to_clear:
+                scoped_key = app_core.widget_manager.get_scoped_key(widget_key)
+                if scoped_key in st.session_state[session_id]:
+                    # Reset to default values
+                    st.session_state[session_id][scoped_key] = False
+
+            # Clear pandabot-specific corpus and query selection widgets
+            pandabot_widget_keys = [
+                SessionKeys.get_bot_corpus_key("pandasai"),
+                SessionKeys.get_bot_query_key("pandasai")
+            ]
+            # First delete all the keys to clear them completely
+            for widget_key in pandabot_widget_keys:
+                scoped_key = app_core.widget_manager.get_scoped_key(widget_key)
+                if scoped_key in st.session_state[session_id]:
+                    del st.session_state[session_id][scoped_key]
+                elif widget_key in st.session_state[session_id]:
+                    del st.session_state[session_id][widget_key]  # Fallback for direct keys
+
+            # Then set the corpus back to the first option (index 0 = "Target")
+            query_key = SessionKeys.get_bot_corpus_key("pandasai")
+            scoped_query_key = app_core.widget_manager.get_scoped_key(query_key)
+            if scoped_query_key in st.session_state:
+                st.session_state[scoped_query_key] = None
+        except Exception:
+            # Don't fail if widget clearing encounters issues
+            pass
 
 
 @enterprise_ai_call("pandabot_analysis")

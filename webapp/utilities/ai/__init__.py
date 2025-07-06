@@ -67,6 +67,7 @@ from webapp.utilities.ai.llm_core import (
 # Import plotbot-specific functions
 from webapp.utilities.ai.plotbot import (
     clear_plotbot,
+    clear_plotbot_table,
     make_plotbot_cache_key,
     plotbot_code_generate_or_update,
     plotbot_code_execute,
@@ -77,6 +78,7 @@ from webapp.utilities.ai.plotbot import (
 # Import pandabot-specific functions
 from webapp.utilities.ai.pandabot import (
     clear_pandasai,
+    clear_pandasai_table,
     pandabot_user_query
 )
 
@@ -126,7 +128,7 @@ __all__ = [
     'CircuitBreakerState',
     'get_ai_router',
     'route_ai_request',
-    
+
     # Enterprise integration helpers
     'determine_api_key_type',
     'protected_openai_call',
@@ -136,6 +138,7 @@ __all__ = [
 
     # Plotbot functions
     'clear_plotbot',
+    'clear_plotbot_table',
     'plotbot_user_query',
     'make_plotbot_cache_key',
     'plotbot_code_generate_or_update',
@@ -144,6 +147,7 @@ __all__ = [
 
     # Pandabot functions
     'clear_pandasai',
+    'clear_pandasai_table',
     'pandabot_user_query',
 
     # Code execution utilities

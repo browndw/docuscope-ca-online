@@ -14,7 +14,7 @@ from webapp.utilities.state import (
     CorpusKeys, TargetKeys, ReferenceKeys, WarningKeys
 )
 from webapp.utilities.corpus import get_corpus_data, set_corpus_data
-from webapp.utilities.session.session_core import safe_session_get
+from webapp.utilities.session import safe_session_get, get_or_init_user_session
 
 
 def generate_frequency_table(user_session_id: str) -> None:
@@ -180,10 +180,7 @@ def generate_keyness_parts(
         swap_target: bool = False
         ) -> None:
     # --- Check for metadata ---
-    session = pl.DataFrame.to_dict(
-            st.session_state[user_session_id]["session"],
-            as_series=False
-            )
+    _, session = get_or_init_user_session()
     if safe_session_get(session, 'has_meta', False) is False:
         st.session_state[user_session_id]["keyness_parts_warning"] = (
             """

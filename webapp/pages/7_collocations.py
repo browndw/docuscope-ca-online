@@ -8,6 +8,8 @@ The results will be displayed in a table with the collocates, their frequencies,
 association scores.
 """
 
+import pandas as pd
+import polars as pl
 import streamlit as st
 
 # Core application utilities
@@ -19,9 +21,12 @@ from webapp.utilities.session import (
 from webapp.utilities.corpus import (
     get_corpus_data, clear_corpus_data
     )
+from webapp.utilities.exports import (
+    convert_to_excel
+)
 from webapp.utilities.ui import (
     collocation_info, render_dataframe,
-    render_excel_download_option, sidebar_action_button,
+    toggle_download, sidebar_action_button,
     sidebar_help_link, target_info,
     tag_filter_multiselect
 )
@@ -48,6 +53,60 @@ st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def create_enhanced_dataframe_for_export(
+        df: pl.DataFrame,
+        metadata_target
+) -> pd.DataFrame:
+    """Create a DataFrame with context information for Excel export."""
+    if df is None or df.height == 0:
+        return None
+
+    # Get the context information
+    collocation_data = metadata_target.get(SessionKeys.COLLOCATIONS)
+    if collocation_data:
+        # If it's a list with one dict, use the dict
+        if (
+            isinstance(collocation_data, list) and
+            len(collocation_data) == 1 and
+            isinstance(collocation_data[0], dict)
+        ):
+            coll_info = collocation_info(collocation_data[0])
+        elif isinstance(collocation_data, dict):
+            coll_info = collocation_info(collocation_data)
+        # If it's the old 'temp' structure, display the first item in the list
+        elif (
+            isinstance(collocation_data, dict) and
+            'temp' in collocation_data and
+            isinstance(collocation_data['temp'], list) and
+            collocation_data['temp']
+        ):
+            coll_info = collocation_info(collocation_data['temp'][0])
+        else:
+            st.info("No collocation parameters available.")
+
+    # Convert to pandas
+    pandas_df = df.to_pandas()
+
+    # Create a full-width context section
+    context_data = {}
+
+    # Get all column names (original + context columns)
+    all_columns = list(pandas_df.columns) + ['Context_Details']
+
+    # Initialize all columns
+    for col in all_columns:
+        if col in pandas_df.columns:
+            # Original data + empty rows for context
+            context_data[col] = pandas_df[col].tolist() + ['', '', '']
+        elif col == 'Context_Details':
+            # Empty for data rows + context information
+            context_data[col] = [coll_info, '', ''] + [''] * len(pandas_df)
+
+    enhanced_df = pd.DataFrame(context_data)
+
+    return enhanced_df
 
 
 def render_results_interface(user_session_id: str, session: dict) -> None:
@@ -96,7 +155,18 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
         render_dataframe(df)
 
         # Download option
-        render_excel_download_option(df, "collocations")
+        toggle_download(
+            label="Excel",
+            convert_func=convert_to_excel,
+            convert_args=(
+                (create_enhanced_dataframe_for_export(df, metadata_target),)
+                if (df is not None and getattr(df, "height", 0) > 0)
+                else (None,)
+            ),
+            file_name="collocations",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            location=st.sidebar
+        )
     else:
         st.warning("No collocations data available.", icon=":material/info:")
 

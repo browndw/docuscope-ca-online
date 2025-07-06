@@ -84,7 +84,9 @@ st.set_page_config(
     )
 
 
-def render_corpus_info_headers(user_session_id: str) -> None:
+def render_corpus_info_headers(
+        user_session_id: str
+) -> None:
     """Render target and reference corpus information headers."""
     # Load target and reference metadata
     metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
@@ -102,7 +104,9 @@ def render_keyness_settings_info(user_session_id: str) -> None:
     st.info(keyness_settings_info(user_session_id))
 
 
-def render_tokens_keyness_interface(user_session_id: str) -> None:
+def render_tokens_keyness_interface(
+        user_session_id: str
+) -> None:
     """Render the tokens keyness table interface."""
     df, tag_options, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
@@ -148,7 +152,9 @@ def render_tokens_keyness_interface(user_session_id: str) -> None:
     )
 
 
-def render_tags_keyness_interface(user_session_id: str) -> None:
+def render_tags_keyness_interface(
+        user_session_id: str
+) -> None:
     """Render the tags keyness table interface with tabs."""
     df, tag_options, tag_radio, tag_type = tagset_selection(
         user_session_id=user_session_id,
@@ -185,13 +191,15 @@ def render_tags_keyness_interface(user_session_id: str) -> None:
     toggle_download(
         label="Excel",
         convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
-        file_name="keywords_tags.xlsx",
+        file_name="keyness_corpora",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         location=st.sidebar
     )
 
 
-def render_keyness_reset_controls(user_session_id: str) -> None:
+def render_keyness_reset_controls(
+        user_session_id: str
+) -> None:
     """Render controls for resetting keyness table."""
     st.sidebar.markdown("---")
     st.sidebar.markdown(

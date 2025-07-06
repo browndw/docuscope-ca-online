@@ -484,7 +484,7 @@ def render_api_key_input(user_session_id: str) -> None:
     if user_api_key:
         if st.button(
             "Validate API Key",
-            type="primary",
+            type="secondary",
             help="Click to test your API key with OpenAI's servers"
         ):
             with st.spinner("Validating API key..."):
@@ -559,7 +559,6 @@ def render_data_selection_interface(
             ("Target", "Reference", "Keywords", "Grouped"),
             key=app_core.widget_manager.get_scoped_key(corpus_key),
             on_change=clear_function,
-            args=(user_session_id,),
             index=0,
             horizontal=True
         )
@@ -582,8 +581,6 @@ def render_data_selection_interface(
                 categories=groups
             ),
             key=app_core.widget_manager.get_scoped_key(query_key),
-            on_change=clear_function,
-            args=(user_session_id,),
             index=None,
             placeholder="Select data..."
         )
@@ -667,7 +664,12 @@ def render_data_preview_controls(
                             )
 
             # Display preview
-            st.dataframe(df.head(10), use_container_width=True)
+            st.data_editor(
+                df.head(10).with_columns(
+                    pl.selectors.float().round(3)
+                ),
+                use_container_width=True,
+                disabled=True)
 
         return df
 

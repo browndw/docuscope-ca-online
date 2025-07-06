@@ -6,6 +6,7 @@ to avoid circular imports.
 """
 
 import os
+import re
 import pandas as pd
 import streamlit as st
 
@@ -56,20 +57,20 @@ def add_category_description(
             "IOE": "Industrial and Operational Engineering", "LIN": "Linguistics", "MEC": "Mechanical Engineering",  # noqa: E501
             "NRE": "Natural Resources", "NUR": "Nursing", "PHI": "Philosophy", "PHY": "Physics",  # noqa: E501
             "POL": "Political Science", "PSY": "Psychology", "SOC": "Sociology"
-        },
+            },
         "B_MICUSP": {
             "BIO": "Biology", "CEE": "Civil and Environmental Engineering", "CLS": "Classical Studies",  # noqa: E501
             "ECO": "Economics", "EDU": "Education", "ENG": "English", "HIS": "History",
             "IOE": "Industrial and Operational Engineering", "LIN": "Linguistics", "MEC": "Mechanical Engineering",  # noqa: E501
             "NRE": "Natural Resources", "NUR": "Nursing", "PHI": "Philosophy", "PHY": "Physics",  # noqa: E501
             "POL": "Political Science", "PSY": "Psychology", "SOC": "Sociology"
-        },
+            },
         "C_BAWE_mini": {
             "AH": "Arts and Humanities", "LS": "Life Sciences", "PS": "Physical Sciences", "SS": "Social Sciences"  # noqa: E501
-        },
+            },
         "D_BAWE": {
             "AH": "Arts and Humanities", "LS": "Life Sciences", "PS": "Physical Sciences", "SS": "Social Sciences"  # noqa: E501
-        },
+            },
         "E_ELSEVIER": {
             "ARTS": "Arts and Humanities", "BIOC": "Biochemistry, Genetics and Molecular Biology",  # noqa: E501
             "BUSI": "Business, Management and Accounting", "CENG": "Chemical Engineering", "CHEM": "Chemistry",  # noqa: E501
@@ -78,21 +79,38 @@ def add_category_description(
             "IMMU": "Immunology and Microbiology", "MATE": "Material Science", "MATH": "Mathematics",  # noqa: E501
             "MEDI": "Medicine", "NEUR": "Neuroscience", "NURS": "Nursing", "PHYS": "Physics and Astronomy",  # noqa: E501
             "PSYC": "Psychology", "SOCI": "Social Sciences"
-        },
+            },
         "G_MICUSP_by_level": {
             "G0": "Final Year Undergraduate", "G1": "First Year Graduate",
             "G2": "Second Year Graduate", "G3": "Third Year Graduate"
-        },
-        "F_MICUSP_by_paper": {},
-        "H_HAPE_mini": {},
+            },
+        "F_MICUSP_by_paper": {
+            "CreativeWriting": "Narrative writing, poetry, drama scripts",
+            "Critique": "Evaluation of business practices, problem–solution, literary critique, operations report",  # noqa: E501
+            "Essay": "Argumentative essay, persuasive essay, literary analysis essay",
+            "Proposal": "Research proposal, numeric model proposal, effective business/management design",  # noqa: E501
+            "Report": "Lab report, literature review, article review, annotated bibliography, compare/contrast paper ",  # noqa: E501
+            "ResearchPaper": "Research paper, replication study",
+            "ResponsePaper": "Solution to a homework problem, personal response to a text ",
+            },
+        "H_HAPE_mini": {"gpt4": "Texts authored by ChatGPT-4o",
+                        "human": "Texts authored by human writers",
+                        "llama": "Texts authored by Llama 8B Instruct",
+                        },
     }
 
     # Check if we have a mapping for this corpus
     if corpus_name in mappings:
+        pattern = r'_[A-Z]+_'
+        corpus_base = re.search(pattern, corpus_name)
+        if corpus_base:
+            corpus_base = corpus_base.group(0).strip('_')
+        else:
+            corpus_base = corpus_name
         # Display documentation link for internal corpora
         if doc_link:
             st.link_button(
-                label=f"**About**: {corpus_name}",
+                label=f"**About**: {corpus_base}",
                 url=doc_link,
                 icon=":material/info:"
             )

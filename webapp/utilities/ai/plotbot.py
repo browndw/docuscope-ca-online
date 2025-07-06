@@ -33,6 +33,7 @@ from webapp.utilities.ai.enterprise_integration import (
     make_protected_openai_call
 )
 from webapp.utilities.storage.backend_factory import get_session_backend
+from webapp.utilities.core import app_core
 
 # Plotbot-specific constants
 FORBIDDEN_PATTERNS = [
@@ -75,6 +76,22 @@ def previous_code_chunk(session_id: str) -> str:
     return None
 
 
+def clear_plotbot_table():
+    """
+    Clear the plotbot table state in the session.
+
+    Parameters
+    ----------
+    session_id : str
+        The session identifier.
+    """
+    # Clear the query selectbox when corpus changes
+    query_key = SessionKeys.get_bot_query_key("plotbot")
+    scoped_query_key = app_core.widget_manager.get_scoped_key(query_key)
+    if scoped_query_key in st.session_state:
+        st.session_state[scoped_query_key] = None
+
+
 def clear_plotbot(session_id: str, clear_all=True):
     """
     Clear plotbot conversation history and reset plotting state.
@@ -96,7 +113,20 @@ def clear_plotbot(session_id: str, clear_all=True):
     # Reset the user prompt counter for accurate message indexing
     st.session_state[session_id][SessionKeys.AI_PLOTBOT_PROMPT_COUNT] = 0
 
+    # Clear plotbot cache
+    if SessionKeys.AI_PLOTBOT_CACHE in st.session_state[session_id]:
+        st.session_state[session_id][SessionKeys.AI_PLOTBOT_CACHE] = {}
+
+    # Clear plotbot conversation history (fallback key)
+    if "plotbot" in st.session_state[session_id]:
+        st.session_state[session_id]["plotbot"] = []
+
+    # Clear plotbot SVG export data
+    if "plotbot_plot_svg" in st.session_state[session_id]:
+        del st.session_state[session_id]["plotbot_plot_svg"]
+
     if clear_all:
+        # Clear persistent plotbot-specific session keys
         if SessionKeys.AI_PLOTBOT_PERSIST not in st.session_state[session_id]:
             st.session_state[session_id][SessionKeys.AI_PLOTBOT_PERSIST] = {}
         else:
@@ -108,6 +138,43 @@ def clear_plotbot(session_id: str, clear_all=True):
                 persist[SessionKeys.AI_PLOTBOT_MAKE_PERCENT] = False
             except KeyError:
                 pass
+
+        # Clear widget manager state for AI-related widgets
+        try:
+            # Clear data preview control widgets
+            widget_keys_to_clear = ["pivot_table", "make_percent"]
+            for widget_key in widget_keys_to_clear:
+                scoped_key = app_core.widget_manager.get_scoped_key(widget_key)
+                if scoped_key in st.session_state[session_id]:
+                    # Reset to default values
+                    if widget_key == "pivot_table":
+                        st.session_state[session_id][scoped_key] = False
+                    elif widget_key == "make_percent":
+                        st.session_state[session_id][scoped_key] = False
+
+            # Clear plotbot-specific corpus and query selection widgets
+            plotbot_widget_keys = [
+                SessionKeys.get_bot_corpus_key("plotbot"),
+                SessionKeys.get_bot_query_key("plotbot")
+            ]
+
+            # First delete all the keys to clear them completely
+            for widget_key in plotbot_widget_keys:
+                scoped_key = app_core.widget_manager.get_scoped_key(widget_key)
+                if scoped_key in st.session_state[session_id]:
+                    del st.session_state[session_id][scoped_key]
+                elif widget_key in st.session_state[session_id]:
+                    del st.session_state[session_id][widget_key]  # Fallback for direct keys
+
+            # Then set the corpus back to the first option (index 0 = "Target")
+            query_key = SessionKeys.get_bot_corpus_key("plotbot")
+            scoped_query_key = app_core.widget_manager.get_scoped_key(query_key)
+            if scoped_query_key in st.session_state:
+                st.session_state[scoped_query_key] = None
+
+        except Exception:
+            # Don't fail if widget clearing encounters issues
+            pass
 
 
 def make_plotbot_cache_key(user_input, df, plot_lib, code_chunk=None):

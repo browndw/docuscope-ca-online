@@ -24,7 +24,8 @@ from webapp.utilities.ai import (
     render_api_key_input, render_data_selection_interface,
     render_data_preview_controls, render_quota_tracker,
     should_show_api_key_input, render_work_preservation_interface,
-    should_show_work_preservation_interface, export_conversation_history
+    should_show_work_preservation_interface, export_conversation_history,
+    clear_pandasai_table
 )
 from webapp.utilities.analysis import (
     generate_tags_table
@@ -177,10 +178,12 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
                 ))
             if st.sidebar.button(
                 "Clear Chat History",
-                icon=":material/delete:"
+                icon=":material/refresh:"
             ):
                 clear_pandasai(user_session_id)
                 st.rerun()
+
+            st.sidebar.markdown("---")
 
             # Add workflow export to sidebar
             st.sidebar.markdown("### Export Workflow")
@@ -234,7 +237,7 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
                 user_session_id=user_session_id,
                 session=session,
                 bot_prefix="pandasai",
-                clear_function=clear_pandasai,
+                clear_function=clear_pandasai_table,
                 metadata_target=metadata_target
             )
 

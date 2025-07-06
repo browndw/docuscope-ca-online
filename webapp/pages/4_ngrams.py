@@ -98,7 +98,7 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
             toggle_download(
                 label="Excel",
                 convert_args=(df.to_pandas(),) if (df is not None and getattr(df, "height", 0) > 0) else (None,),  # noqa: E501
-                file_name="keywords_tags.xlsx",
+                file_name="ngrams",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 location=st.sidebar
             )
