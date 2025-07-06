@@ -6,8 +6,18 @@ Tests corpus data management, lazy loading, and memory optimization.
 
 import gc
 import polars as pl
-import streamlit as st
+import sys
 from unittest.mock import patch, MagicMock
+
+# Test corpus data management with Streamlit session state
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    # Fallback to mocking if Streamlit not available
+    sys.modules['streamlit'] = MagicMock()
+    st = MagicMock()
+    STREAMLIT_AVAILABLE = False
 
 from webapp.utilities.corpus.data_manager import CorpusDataManager
 

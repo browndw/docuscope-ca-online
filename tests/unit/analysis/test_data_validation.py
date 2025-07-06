@@ -10,6 +10,9 @@ import pytest
 import polars as pl
 from unittest.mock import patch, MagicMock
 
+# Note: This module tests pure data validation functions and session utilities.
+# No Streamlit UI components are tested here, so AppTest is not needed.
+
 from webapp.utilities.analysis.data_validation import (
     check_language,
     check_schema,

@@ -6,9 +6,19 @@ to data analysis, using real spaCy models and realistic data.
 """
 
 import polars as pl
-import streamlit as st
 import pytest
+import sys
 from unittest.mock import patch, MagicMock
+
+# Use Streamlit session state mocking for backend integration testing
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    # Fallback to mocking if Streamlit not available
+    sys.modules['streamlit'] = MagicMock()
+    st = MagicMock()
+    STREAMLIT_AVAILABLE = False
 
 from webapp.utilities.processing.corpus_processing import process_new
 from webapp.utilities.session.session_core import init_session, update_session

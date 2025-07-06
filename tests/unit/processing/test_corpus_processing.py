@@ -5,8 +5,16 @@ Tests corpus processing workflows, memory management, and data handling.
 """
 
 import polars as pl
-import streamlit as st
+import sys
 from unittest.mock import patch, MagicMock
+
+# Mock Streamlit to avoid import issues
+try:
+    import streamlit as st
+except ImportError:
+    # Fallback to mocking if Streamlit not available
+    sys.modules['streamlit'] = MagicMock()
+    st = MagicMock()
 
 from webapp.utilities.processing.corpus_processing import (
     finalize_corpus_load,

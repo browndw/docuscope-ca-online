@@ -5,8 +5,16 @@ Tests session initialization, updates, and management functionality.
 """
 
 import polars as pl
-import streamlit as st
+import sys
 from unittest.mock import patch, MagicMock
+
+# Mock Streamlit to avoid import issues
+try:
+    import streamlit as st
+except ImportError:
+    # Fallback to mocking if Streamlit not available
+    sys.modules['streamlit'] = MagicMock()
+    st = MagicMock()
 
 from webapp.utilities.session.session_core import (
     init_session,
@@ -246,7 +254,7 @@ class TestSessionIntegration:
 
     def setup_method(self):
         """Set up test session before each test."""
-        self.session_id = "integration_test_session"
+        self.session_id = "unit_test_session"
         st.session_state.clear()
         st.session_state[self.session_id] = {}
 
