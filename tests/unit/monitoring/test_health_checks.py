@@ -522,7 +522,8 @@ class TestDesktopVsEnterpriseHealthChecks:
 
     def test_desktop_mode_health_checks(self):
         """Test health checks appropriate for desktop mode."""
-        with patch('webapp.config.unified.get_config') as mock_config:
+        # Patch the module where get_config is imported in this test file
+        with patch('tests.unit.monitoring.test_health_checks.get_config') as mock_config:
             mock_config.side_effect = lambda key, section, default: {
                 ('desktop_mode', 'global'): True,
                 ('enable_user_authorization', 'authorization'): False,
@@ -552,11 +553,9 @@ class TestDesktopVsEnterpriseHealthChecks:
 
     def test_enterprise_mode_health_checks(self):
         """Test health checks appropriate for enterprise mode."""
-        with patch('webapp.config.unified.config.is_desktop_mode') as mock_desktop, \
-             patch('webapp.config.unified.config.get') as mock_config_get:
-
-            mock_desktop.return_value = False
-            mock_config_get.side_effect = lambda key, section, default: {
+        # Patch the module where get_config is imported in this test file
+        with patch('tests.unit.monitoring.test_health_checks.get_config') as mock_config:
+            mock_config.side_effect = lambda key, section, default: {
                 ('desktop_mode', 'global'): False,
                 ('enable_user_authorization', 'authorization'): True,
             }.get((key, section), default)
