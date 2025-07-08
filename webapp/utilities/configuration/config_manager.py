@@ -76,8 +76,8 @@ class ConfigurationManager:
                 'check_size': False,
                 'check_language': False,
                 'desktop_mode': True,  # Safe default
-                'max_bytes_text': 20000000,
-                'max_bytes_polars': 150000000
+                'max_text_size': 20000000,
+                'max_polars_size': 150000000
             },
             'llm': {
                 'llm_parameters': {
@@ -261,29 +261,14 @@ class ConfigurationManager:
         return self.get_config()['global']['check_language']
 
     @property
-    def enable_language_detection(self) -> bool:
-        """Alias for check_language with more descriptive name."""
-        return self.check_language
-
-    @property
-    def max_bytes_text(self) -> int:
-        """Get maximum text bytes setting."""
-        return self.get_config()['global']['max_bytes_text']
-
-    @property
     def max_text_size(self) -> int:
-        """Alias for max_bytes_text with more descriptive name."""
-        return self.max_bytes_text
-
-    @property
-    def max_bytes_polars(self) -> int:
-        """Get maximum polars bytes setting."""
-        return self.get_config()['global']['max_bytes_polars']
+        """Get maximum text bytes setting."""
+        return self.get_config()['global']['max_text_size']
 
     @property
     def max_polars_size(self) -> int:
-        """Alias for max_bytes_polars with more descriptive name."""
-        return self.max_bytes_polars
+        """Get maximum polars bytes setting."""
+        return self.get_config()['global']['max_polars_size']
 
     @property
     def llm_model(self) -> str:
@@ -492,16 +477,6 @@ def get_llm_parameters() -> Dict[str, Any]:
     return config_manager.llm_parameters
 
 
-def get_max_bytes_text() -> int:
-    """Get maximum text bytes setting - convenient module-level function."""
-    return config_manager.max_bytes_text
-
-
-def get_max_bytes_polars() -> int:
-    """Get maximum polars bytes setting - convenient module-level function."""
-    return config_manager.max_bytes_polars
-
-
 def is_online_mode() -> bool:
     """Check if running in online mode - convenient module-level function."""
     return config_manager.is_online_mode()
@@ -515,11 +490,6 @@ def should_check_size() -> bool:
 def should_check_language() -> bool:
     """Check if language validation should be performed - convenient function."""
     return config_manager.should_check_language()
-
-
-def get_enable_language_detection() -> bool:
-    """Get language detection setting - convenient module-level function."""
-    return config_manager.enable_language_detection
 
 
 def get_max_text_size() -> int:
