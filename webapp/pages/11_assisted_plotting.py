@@ -380,11 +380,6 @@ def main():
     require_login()
     menu()
 
-    corpus_key = SessionKeys.get_bot_corpus_key("plotbot")
-    scoped_corpus_key = app_core.widget_manager.get_scoped_key(corpus_key)
-    st.write(scoped_corpus_key)
-    st.write(app_core.widget_manager.is_persistent(scoped_corpus_key))
-
     st.markdown(
         body=f"## {TITLE}",
         help=(
