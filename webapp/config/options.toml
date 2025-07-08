@@ -5,12 +5,17 @@ version = "0.4.0"  # Update this version when making changes
 # Set to true for desktop mode (single user, local storage)
 # Set to false for enterprise mode (multi-user, sharded storage)
 # This affects session management, caching, and AI configuration
-# Desktop mode is for local, single-user applications
-desktop_mode = false
-check_size = false
-check_language = false
-max_bytes_text = 20000000
-max_bytes_polars = 150000000
+desktop_mode = true
+
+# Enable size checks for text and Polars DataFrames
+check_size = true
+
+# Language detection
+check_language = true
+
+# Size limits
+max_text_size = 20000000
+max_polars_size = 150000000
 
 # Model paths
 model_large_path = "webapp/_models/en_docusco_spacy"
@@ -22,13 +27,6 @@ porpoise_badge_path = "webapp/_static/porpoise_badge.svg"
 google_logo_path = "webapp/_static/web_light_rd_na.svg"
 spacy_model_meta_path = "webapp/_models/en_docusco_spacy/meta.json"
 corpus_dir_path = "webapp/_corpora"
-
-# Language detection
-enable_language_detection = false
-
-# Size limits (for backward compatibility)
-max_text_size = 20000000
-max_polars_size = 150000000
 
 [llm]
 # AI configuration for both desktop and enterprise modes
@@ -163,7 +161,7 @@ max_error_rate_percent = 5
 max_concurrent_sessions = 500
 
 # Alerting configuration for operations team
-enable_alerts = true
+enable_alerts = false
 alert_email = "ops-team@your-domain.com"
 slack_webhook_url = ""
 pagerduty_api_key = ""
