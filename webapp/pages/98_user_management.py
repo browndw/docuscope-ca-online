@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from webapp.menu import menu
 from webapp.config.unified import get_config
-from webapp.config.runtime_config import runtime_config
+from webapp.utilities.config_utils import get_runtime_config
 from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.auth import (
     require_authorization,
@@ -353,7 +353,7 @@ def render_system_config_tab():
 
         # Get current quota limit safely for desktop mode
         try:
-            current_quota_limit = runtime_config.get_config_value(
+            current_quota_limit = get_runtime_config().get_config_value(
                 'quota',
                 get_config('quota', 'llm', 10),
                 'llm'
@@ -420,7 +420,7 @@ def render_system_config_tab():
     st.markdown("**Active Configuration Overrides**")
 
     try:
-        overrides = runtime_config.get_all_overrides()
+        overrides = get_runtime_config().get_all_overrides()
     except Exception as e:
         logger.warning(f"Failed to get runtime overrides: {e}")
         overrides = {}
@@ -432,7 +432,7 @@ def render_system_config_tab():
                 st.caption(f"Updated by {data['updated_by']} at {data['updated_at']}")
                 if st.button(f"Clear {key}", key=f"clear_{key}"):
                     admin_user = st.session_state.get('user_email', 'admin')
-                    runtime_config.clear_runtime_override(key, admin_user)
+                    get_runtime_config().clear_runtime_override(key, admin_user)
                     st.success(f"Cleared override for {key}")
                     st.rerun()
     else:
@@ -443,7 +443,7 @@ def render_system_config_tab():
 
     # Get current quota limit
     try:
-        current_quota_limit = runtime_config.get_config_value(
+        current_quota_limit = get_runtime_config().get_config_value(
             'quota',
             get_config('quota', 'llm', 10),
             'llm'
@@ -504,7 +504,7 @@ def render_system_config_tab():
     if new_quota_limit != current_quota_limit:
         if st.button("Update Quota Limit", type="primary", key="update_quota_limit"):
             admin_user = st.session_state.get('user_email', 'admin')
-            runtime_config.set_runtime_override(
+            get_runtime_config().set_runtime_override(
                 'quota', 'llm', new_quota_limit, admin_user
             )
             st.success(f"Updated AI quota limit to {new_quota_limit} queries per 24h")
@@ -514,7 +514,7 @@ def render_system_config_tab():
     if current_quota_limit != toml_quota_default:
         if st.button("Reset Quota to TOML Default", key="reset_quota_limit"):
             admin_user = st.session_state.get('user_email', 'admin')
-            runtime_config.clear_runtime_override(
+            get_runtime_config().clear_runtime_override(
                 'quota', 'llm', admin_user
             )
             st.success(f"Reset quota limit to TOML default ({toml_quota_default})")
@@ -525,7 +525,7 @@ def render_system_config_tab():
 
     # Get current state
     try:
-        current_state = runtime_config.is_firestore_enabled()
+        current_state = get_runtime_config().is_firestore_enabled()
     except Exception as e:
         logger.warning(f"Failed to get firestore state: {e}")
         current_state = get_config('cache_mode', 'cache', False)
@@ -560,14 +560,14 @@ def render_system_config_tab():
 
     if new_state != current_state:
         admin_user = st.session_state.get('user_email', 'admin')
-        runtime_config.toggle_firestore_collection(new_state, admin_user)
+        get_runtime_config().toggle_firestore_collection(new_state, admin_user)
         st.success(f"Firestore collection {'enabled' if new_state else 'disabled'}")
         st.rerun()
 
     # Reset to default button
     if st.button("Reset to TOML Default", key="reset_firestore"):
         admin_user = st.session_state.get('user_email', 'admin')
-        runtime_config.clear_firestore_override(admin_user)
+        get_runtime_config().clear_firestore_override(admin_user)
         st.success("Reset to TOML default")
         st.rerun()
 
@@ -601,7 +601,7 @@ def render_audit_log_tab():
         st.rerun()
 
     try:
-        audit_log = runtime_config.get_audit_log(limit=log_limit)
+        audit_log = get_runtime_config().get_audit_log(limit=log_limit)
     except Exception as e:
         logger.warning(f"Failed to get audit log: {e}")
         audit_log = []
@@ -705,7 +705,7 @@ def render_system_info_tab():
 
             # Get basic system statistics
             try:
-                current_quota_limit = runtime_config.get_config_value(
+                current_quota_limit = get_runtime_config().get_config_value(
                     'quota',
                     get_config('quota', 'llm', 10),
                     'llm'
@@ -850,12 +850,14 @@ def render_system_info_tab():
         "Max Text Size": get_config('max_text_size', 'global', 20000000),
         "Authorization Enabled": is_authorization_enabled(),
         "Quota Limit": (
-            runtime_config.get_config_value('quota', get_config('quota', 'llm', 10), 'llm')
+            get_runtime_config().get_config_value(
+                'quota', get_config('quota', 'llm', 10), 'llm'
+                )
             if not get_config('desktop_mode', 'global', True)
             else get_config('quota', 'llm', 10)
         ),
         "Firestore Collection": (
-            runtime_config.is_firestore_enabled()
+            get_runtime_config().is_firestore_enabled()
             if not get_config('desktop_mode', 'global', True)
             else get_config('cache_mode', 'cache', False)
         ),
