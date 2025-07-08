@@ -48,8 +48,13 @@ def should_store_to_firestore(enable_firestore: bool = None) -> bool:
     if enable_firestore is not None:
         return enable_firestore
 
-    # Use fallback-aware config - automatically disabled in desktop mode
-    return get_config('cache_mode', 'cache', False)
+    # Import here to avoid circular imports
+    try:
+        from webapp.config.config_utils import get_runtime_setting
+        return get_runtime_setting('cache_mode', False, 'cache')
+    except ImportError:
+        # Fallback to static config if runtime config not available
+        return get_config('cache_mode', 'cache', False)
 
 
 if DESKTOP is False:
