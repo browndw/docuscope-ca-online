@@ -20,7 +20,6 @@ This package contains specialized modules for different aspects of the applicati
 from webapp.utilities import ai
 from webapp.utilities import analysis
 from webapp.utilities import configuration
-from webapp.utilities import common
 from webapp.utilities import exports
 from webapp.utilities import plotting
 from webapp.utilities import processing
