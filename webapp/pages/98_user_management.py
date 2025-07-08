@@ -847,7 +847,7 @@ def render_system_info_tab():
         "Session Backend": actual_backend,
         "Check Size": get_config('check_size', 'global', False),
         "Check Language": get_config('check_language', 'global', False),
-        "Max Text Size": get_config('max_bytes_text', 'global', 20000000),
+        "Max Text Size": get_config('max_text_size', 'global', 20000000),
         "Authorization Enabled": is_authorization_enabled(),
         "Quota Limit": (
             runtime_config.get_config_value('quota', get_config('quota', 'llm', 10), 'llm')
