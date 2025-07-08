@@ -34,7 +34,9 @@ from webapp.utilities.configuration.logging_config import (
     get_logger
 )
 
+
 __all__ = [
+    # Configuration manager
     'get_version_from_pyproject',
     'import_options_general',
     'get_ai_configuration',
@@ -59,4 +61,5 @@ __all__ = [
     'setup_debug_logging',
     'get_log_directory',
     'get_logger'
+
 ]
