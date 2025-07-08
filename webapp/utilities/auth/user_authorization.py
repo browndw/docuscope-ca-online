@@ -510,7 +510,7 @@ def require_authorization(
                         "You are not authorized to use this application. "
                         "Contact an administrator to request access."
                     )
-
+                st.switch_page("index.py")  # <-- adjust path if needed
                 st.stop()
 
             return func(*args, **kwargs)
