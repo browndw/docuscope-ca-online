@@ -58,7 +58,7 @@ MODEL_SMALL = get_config('model_small_path', 'global')
 # Global flags and limits from configuration
 DESKTOP = get_config('desktop_mode', 'global')
 CHECK_SIZE = get_config('check_size', 'global')
-ENABLE_DETECT = get_config('enable_language_detection', 'global')
+ENABLE_DETECT = get_config('check_language', 'global')
 MAX_TEXT = get_config('max_text_size', 'global')
 MAX_POLARS = get_config('max_polars_size', 'global')
 
