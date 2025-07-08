@@ -779,7 +779,13 @@ def get_quota_info(user_id: str, force_refresh: bool = False) -> dict:
         - 'percentage_used': Percentage of quota used (0-100)
     """
     try:
-        total_quota = get_config('quota', 'llm')
+        # Import here to avoid circular imports
+        try:
+            from webapp.config.config_utils import get_runtime_setting
+            total_quota = get_runtime_setting('quota', 10, 'llm')
+        except ImportError:
+            # Fallback to static config if runtime config not available
+            total_quota = get_config('quota', 'llm', 10)
 
         # Only check usage in online mode
         if get_config('desktop_mode', 'global'):
@@ -830,7 +836,11 @@ def get_quota_info(user_id: str, force_refresh: bool = False) -> dict:
         }
     except Exception:
         # Return safe defaults
-        quota = get_config('quota', 'llm')
+        try:
+            from webapp.config.config_utils import get_runtime_setting
+            quota = get_runtime_setting('quota', 10, 'llm')
+        except ImportError:
+            quota = get_config('quota', 'llm', 10)
         return {
             'total': quota,
             'used': 0,
