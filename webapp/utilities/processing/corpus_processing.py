@@ -368,7 +368,7 @@ def handle_uploaded_parquet(
             [the desktop version of the tool](https://github.com/browndw/docuscope-cac)
             which available for free.
             """,
-            icon=":material/disc_full:"
+            icon=":material/warning:"
             )
     if target_docs is not None and len(dup_docs) > 0:
         st.error(
@@ -523,7 +523,7 @@ def handle_uploaded_text(
             Please remove files from your corpus before processing.
             To clear this warning click the **UPLOAD TARGET** button.
             """,
-            icon=":material/translate:"
+            icon=":material/warning:"
         )
     if check_size and corpus_size > max_size:
         st.error(
@@ -535,7 +535,7 @@ def handle_uploaded_text(
             [the desktop version of the tool](https://github.com/browndw/docuscope-cac)
             which available for free.
             """,
-            icon=":material/disc_full:"
+            icon=":material/warning:"
         )
 
     # Determine readiness
