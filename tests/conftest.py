@@ -242,7 +242,7 @@ def test_config():
     return {
         "desktop_mode": True,
         "check_size": False,
-        "enable_language_detection": False,
+        "check_language": False,
         "max_text_size": 1000,
         "max_polars_size": 10000
     }
