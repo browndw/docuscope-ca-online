@@ -17,12 +17,9 @@ from webapp.utilities.configuration.config_manager import (
     get_cache_mode,
     get_llm_model,
     get_llm_parameters,
-    get_max_bytes_text,
-    get_max_bytes_polars,
     is_online_mode,
     should_check_size,
     should_check_language,
-    get_enable_language_detection,
     get_max_text_size,
     get_max_polars_size
 )
@@ -48,12 +45,9 @@ __all__ = [
     'get_cache_mode',
     'get_llm_model',
     'get_llm_parameters',
-    'get_max_bytes_text',
-    'get_max_bytes_polars',
     'is_online_mode',
     'should_check_size',
     'should_check_language',
-    'get_enable_language_detection',
     'get_max_text_size',
     'get_max_polars_size',
     # Logging utilities
