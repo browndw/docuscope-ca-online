@@ -20,10 +20,11 @@ from webapp.config.unified import get_config
 from webapp.utilities.core import safe_config_value
 from webapp.utilities.session import get_or_init_user_session
 from webapp.utilities.auth import is_user_authorized
+from webapp.utilities.config_utils import get_runtime_setting
 
 GOOGLE_LOGO = get_config('google_logo_path', 'global', 'webapp/_static/web_light_rd_na.svg')
 DESKTOP = get_config('desktop_mode', 'global')
-CACHE = get_config('cache_mode', 'cache')
+CACHE = get_runtime_setting('cache_mode', False, 'cache')
 
 
 def update_last_activity(session_id) -> None:
