@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from webapp.menu import menu
 from webapp.config.unified import get_config
-from webapp.utilities.config_utils import get_runtime_config
+from webapp.config.config_utils import get_runtime_config
 from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.auth import (
     require_authorization,
