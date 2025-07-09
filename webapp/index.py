@@ -218,12 +218,24 @@ def main() -> None:
             icon=":material/database:"
             )
     else:
-        st.markdown(
-            body=":material/lock: **Please log in to access the tool.**",
-            help=(
-                "Use a Google account to log in and access the tool. "
-                "The login button is in the sidebar on the left."
-            )
+        st.info(
+            body=(
+                "**Please log in to access the tool.** "
+            ),
+            icon=":material/lock:"
+        )
+
+        st.warning(
+            body=(
+                "The application does not preserve any corpus data. "
+                "However, if you use our **community key** for free access to "
+                "AI-assisted plotting or AI-assisted analysis, your prompts and "
+                "the AI responses may be stored to evaluate usage patterns. "
+                "This data is anonymized and is used solely "
+                "for educational research and to improve the tool. "
+                "By logging in, you agree to these terms."
+            ),
+            icon=":material/info:"
             )
 
 
