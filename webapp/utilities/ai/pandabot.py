@@ -274,15 +274,15 @@ def pandabot_user_query(
     Uses thread-safe plot capture for visualization requests while maintaining the
     core analytical capabilities that make PandasAI powerful.
     """
-    if cache_mode:
-        conditional_async_add_message(
-            user_id=st.user.email,
-            session_id=session_id,
-            assistant_id=1,
-            role="user",
-            message_idx=prompt_position,
-            message=prompt
-        )
+    conditional_async_add_message(
+        enable_firestore=cache_mode,
+        user_id=st.user.email,
+        session_id=session_id,
+        assistant_id=1,
+        role="user",
+        message_idx=prompt_position,
+        message=prompt
+    )
 
     model = OpenAI(api_token=api_key)
     pai.config.set({
