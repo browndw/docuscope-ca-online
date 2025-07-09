@@ -5,7 +5,7 @@ version = "0.4.0"  # Update this version when making changes
 # Set to true for desktop mode (single user, local storage)
 # Set to false for enterprise mode (multi-user, sharded storage)
 # This affects session management, caching, and AI configuration
-desktop_mode = true
+desktop_mode = false
 
 # Enable size checks for text and Polars DataFrames
 check_size = true
@@ -32,7 +32,7 @@ corpus_dir_path = "webapp/_corpora"
 # AI configuration for both desktop and enterprise modes
 llm_parameters = { temperature = 0.7, top_p = 0.7, max_tokens = 500, frequency_penalty = 0, presence_penalty = 0 }
 llm_model = "gpt-4o-mini"
-quota = 10
+quota = 200
 
 [llm.enterprise]
 # Community key protection (classroom scenarios - high concurrent pressure)
