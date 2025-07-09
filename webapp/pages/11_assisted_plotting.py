@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
 from webapp.config.unified import get_ai_config
+from webapp.config.config_utils import get_runtime_setting
 
 # Module-specific imports
 from webapp.utilities.session import (
@@ -189,7 +190,7 @@ def render_plotbot_chat_interface(
                     llm_params=LLM_PARAMS,
                     code_chunk=last_code,
                     prompt_position=st.session_state[user_session_id][prompt_count_key],
-                    cache_mode=CACHE
+                    cache_mode=get_runtime_setting('cache_mode', False, 'cache')
                 )
                 st.rerun()
     else:
@@ -215,7 +216,7 @@ def render_plotbot_chat_interface(
                     prompt_position=st.session_state[user_session_id][
                         SessionKeys.AI_PLOTBOT_PROMPT_COUNT
                     ],
-                    cache_mode=CACHE
+                    cache_mode=get_runtime_setting('cache_mode', False, 'cache')
                 )
                 st.rerun()
 
