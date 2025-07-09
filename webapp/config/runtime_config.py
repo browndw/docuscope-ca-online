@@ -41,10 +41,6 @@ class RuntimeConfigManager:
         # lightweight operation
         self._desktop_mode = get_config('desktop_mode', 'global')
         if self._desktop_mode:
-            logger.info(
-                "Desktop mode detected - runtime configuration disabled for "
-                "lightweight operation"
-            )
             self._initialized = True  # Mark as initialized to skip database operations
 
     def _ensure_initialized(self):
