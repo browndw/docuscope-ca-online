@@ -73,7 +73,6 @@ def is_authorization_enabled() -> bool:
 def initialize_authorization_db() -> None:
     """Initialize the authorization database with required tables and default data."""
     if not is_authorization_enabled():
-        logger.debug("Authorization disabled - skipping database initialization")
         return
 
     db_path = get_auth_db_path()
