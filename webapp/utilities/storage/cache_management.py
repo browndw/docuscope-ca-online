@@ -155,7 +155,6 @@ def add_message(user_id: str,
             'message_idx': message_idx,
             'message': message
         })
-        logger.debug(f"Message stored to Firestore: {doc_id}")
     except Exception as e:
         logger.error(f"Failed to add message to Firestore: {e}")
 
@@ -193,11 +192,9 @@ def add_plot(user_id: str,
     """
     # Check if Firestore storage is enabled
     if not should_store_to_firestore(enable_firestore):
-        logger.debug("Firestore storage disabled - skipping plot storage")
         return
 
     if DESKTOP:
-        logger.debug("Desktop mode - skipping Firestore plot storage")
         return
 
     timestamp = datetime.now(timezone.utc)
@@ -229,7 +226,6 @@ def add_plot(user_id: str,
             'plot_library': plot_library,
             'plot_svg': plot_svg
         })
-        logger.debug(f"Plot stored to Firestore: {doc_id}")
     except Exception as e:
         logger.error(f"Failed to add plot to Firestore: {e}")
 
