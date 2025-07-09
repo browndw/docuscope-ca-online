@@ -57,7 +57,16 @@ class SessionBackendFactory:
             backend_type = 'memory'
         elif not desktop_mode and backend_type == 'sqlite':
             backend_type = 'sharded_sqlite'
+        # Log startup mode information (one-time only)
+        if not hasattr(self, '_startup_logged'):
+            from webapp.utilities.configuration.logging_config import get_logger
+            logger = get_logger()
 
+            mode_text = "Desktop Mode" if desktop_mode else "Enterprise Mode"
+            backend_text = backend_type.title().replace('_', ' ')
+
+            logger.info(f"DocuScope CA starting in {mode_text} with {backend_text} backend")
+            self._startup_logged = True
         # Return cached instance if available
         if backend_type in self._backend_cache:
             return self._backend_cache[backend_type]
