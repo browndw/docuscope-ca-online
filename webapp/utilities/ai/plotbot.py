@@ -629,13 +629,13 @@ def plotbot_user_query(session_id: str,
     if SessionKeys.AI_PLOT_INTENT not in st.session_state[session_id]:
         st.session_state[session_id][SessionKeys.AI_PLOT_INTENT] = False
 
-    if cache_mode:
-        conditional_async_add_message(user_id=st.user.email,
-                                      session_id=session_id,
-                                      assistant_id=0,
-                                      role="user",
-                                      message_idx=prompt_position,
-                                      message=user_input)
+    conditional_async_add_message(enable_firestore=cache_mode,
+                                  user_id=st.user.email,
+                                  session_id=session_id,
+                                  assistant_id=0,
+                                  role="user",
+                                  message_idx=prompt_position,
+                                  message=user_input)
 
     intent = detect_intent(user_input)
 
@@ -758,9 +758,10 @@ def plotbot_user_query(session_id: str,
                 return
 
             # Cache plot if needed
-            if cache_mode and plot_fig.get("type") == "plot":
+            if plot_fig.get("type") == "plot":
                 svg_str = fig_to_svg(figure=plot_fig["value"], plot_lib=plot_lib)
-                conditional_async_add_plot(user_id=st.user.email,
+                conditional_async_add_plot(enable_firestore=cache_mode,
+                                           user_id=st.user.email,
                                            session_id=session_id,
                                            assistant_id=0,
                                            message_idx=prompt_position,
