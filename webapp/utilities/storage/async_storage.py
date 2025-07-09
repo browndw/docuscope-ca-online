@@ -88,10 +88,7 @@ class AsyncStorageManager:
             elif task.task_type == 'plot':
                 add_plot(**task.data)
             else:
-                logger.warning(f"Unknown task type: {task.task_type}")
                 return
-
-            logger.debug(f"Successfully processed {task.task_type} storage task")
 
         except Exception as e:
             logger.warning(f"Failed to process {task.task_type} storage task: {e}")
@@ -130,7 +127,6 @@ class AsyncStorageManager:
 
         try:
             self.storage_queue.put_nowait(task)
-            logger.debug(f"Queued {task_type} storage task")
         except queue.Full:
             logger.warning(f"Storage queue full, dropping {task_type} task")
 
@@ -189,20 +185,43 @@ def should_use_async_storage() -> bool:
     1. Not in desktop mode
     2. Firestore collection is enabled (static config only)
     """
-    return not is_desktop_mode() and get_static_value('cache_mode', 'cache', False)
+    if is_desktop_mode():
+        return False
+
+    # Check runtime configuration with fallback
+    try:
+        from webapp.config.config_utils import get_runtime_setting
+        return get_runtime_setting('cache_mode', False, 'cache')
+    except ImportError:
+        # Fallback to static config if runtime config not available
+        return get_static_value('cache_mode', 'cache', False)
 
 
-def conditional_async_add_message(**kwargs):
+def conditional_async_add_message(enable_firestore=None, **kwargs):
     """Add message data, using async storage only when enabled."""
-    if should_use_async_storage():
+    # If enable_firestore is explicitly provided, use it directly
+    if enable_firestore is not None:
+        should_store = enable_firestore
+    else:
+        # Fall back to runtime configuration
+        should_store = should_use_async_storage()
+
+    if should_store:
         async_add_message(**kwargs)
     else:
-        logger.debug("Async storage disabled - skipping message storage")
+        pass
 
 
-def conditional_async_add_plot(**kwargs):
+def conditional_async_add_plot(enable_firestore=None, **kwargs):
     """Add plot data, using async storage only when enabled."""
-    if should_use_async_storage():
+    # If enable_firestore is explicitly provided, use it directly
+    if enable_firestore is not None:
+        should_store = enable_firestore
+    else:
+        # Fall back to runtime configuration
+        should_store = should_use_async_storage()
+
+    if should_store:
         async_add_plot(**kwargs)
     else:
-        logger.debug("Async storage disabled - skipping plot storage")
+        pass
