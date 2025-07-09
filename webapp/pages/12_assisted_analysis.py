@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 # Core application utilities with standardized patterns
 from webapp.config.unified import get_ai_config
+from webapp.config.config_utils import get_runtime_setting
 
 # UI error boundaries (imported directly to avoid None fallback)
 from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
@@ -108,7 +109,7 @@ def render_pandabot_chat_interface(
                 prompt=user_prompt,
                 session_id=user_session_id,
                 prompt_position=st.session_state[user_session_id][prompt_count_key],
-                cache_mode=CACHE
+                cache_mode=get_runtime_setting('cache_mode', False, 'cache')
             )
             st.rerun()
 
