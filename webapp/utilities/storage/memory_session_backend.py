@@ -48,8 +48,6 @@ class InMemorySessionBackend:
             'session_timeout_hours', 'session', 24
             )
 
-        logger.info("Initialized in-memory session backend for desktop mode")
-
     def save_session(
             self,
             session_id: str,
