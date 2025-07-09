@@ -90,13 +90,6 @@ class EnterpriseCircuitBreaker:
             config_type='llm.enterprise'
         )
 
-        logger.info(
-            f"Initialized {key_type} circuit breaker: "
-            f"failure_threshold={self.failure_threshold}, "
-            f"recovery_timeout={self.recovery_timeout}s, "
-            f"success_threshold={self.success_threshold}"
-        )
-
     @contextmanager
     def call(self):
         """
@@ -231,8 +224,6 @@ class CircuitBreakerManager:
         # Initialize breakers for both key types
         self._breakers["community"] = EnterpriseCircuitBreaker("community")
         self._breakers["individual"] = EnterpriseCircuitBreaker("individual")
-
-        logger.info("Circuit breaker manager initialized")
 
     def get_breaker(self, key_type: str) -> EnterpriseCircuitBreaker:
         """
