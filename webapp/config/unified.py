@@ -187,20 +187,6 @@ class ConfigManager:
         secrets_available = self._check_secrets_availability()
 
         if not secrets_available:
-            # Fallback to desktop mode with warning
-            try:
-                # Import here to avoid circular imports
-                import webapp.utilities.configuration.logging_config  # noqa: F401
-                from webapp.utilities.configuration.logging_config import get_logger
-                logger = get_logger()
-                logger.warning(
-                    "Configuration specifies desktop_mode=false, but required secrets "
-                    "(OpenAI API key) are not available. Automatically falling back to "
-                    "desktop_mode=true for safe operation."
-                )
-            except Exception:
-                # If logging fails, continue silently
-                pass
             return True
 
         # Enterprise mode with valid secrets
