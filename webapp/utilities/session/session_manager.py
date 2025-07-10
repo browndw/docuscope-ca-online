@@ -452,6 +452,129 @@ class SessionManager:
             self._session_timestamps.pop(user_session_id, None)
         return success
 
+    def clear_session_with_widgets(self, user_session_id: str) -> bool:
+        """
+        Clear widget states and UI components associated with a session.
+
+        This method performs cleanup of global widget keys that are not
+        automatically cleared when session data is reset. It should be called
+        in addition to normal session clearing to ensure complete cleanup.
+
+        Parameters
+        ----------
+        user_session_id : str
+            Session ID to clear widget states for
+
+        Returns
+        -------
+        bool
+            True if widget clearing completed successfully
+        """
+        try:
+            # Import here to avoid circular imports
+            from webapp.utilities.state.widget_state import safe_clear_widget_states
+
+            # Clear document selection widgets (main issue)
+            document_widget_keys = [
+                f"sd_random_{user_session_id}",
+                f"sd_random_doc_{user_session_id}",
+                f"sd_random_changed_{user_session_id}",
+                f"sd_reroll_{user_session_id}",
+            ]
+
+            # Clear plotting and analysis widgets following clear_plots patterns
+            plotting_widget_keys = [
+                f"grpa_{user_session_id}",
+                f"grpb_{user_session_id}",
+                f"boxplot_vars_{user_session_id}",
+                f"tar_{user_session_id}",
+                f"ref_{user_session_id}",
+                f"highlight_pca_groups_{user_session_id}",
+                f"highlight_scatter_groups_{user_session_id}",
+                f"trend_scatter_groups_{user_session_id}",
+                f"trend_scatter_{user_session_id}",
+                f"by_group_boxplot_{user_session_id}",
+                f"by_group_scatter_{user_session_id}",
+                f"pca_idx_tab1_{user_session_id}",
+                f"pca_idx_tab2_{user_session_id}",
+                f"boxplot_btn_{user_session_id}",
+                f"boxplot_group_btn_{user_session_id}",
+                f"scatterplot_btn_{user_session_id}",
+                f"scatterplot_group_btn_{user_session_id}",
+                f"scatter_x_grouped_{user_session_id}",
+                f"scatter_y_grouped_{user_session_id}",
+                f"scatter_x_nongrouped_{user_session_id}",
+                f"scatter_y_nongrouped_{user_session_id}",
+                f"highlight_boxplot_groups_{user_session_id}",
+                f"highlight_scatter_groups_{user_session_id}",
+                f"swap_target_{user_session_id}",
+                f"pval_threshold_{user_session_id}",
+            ]
+
+            # Clear widget keys using prefix patterns (following clear_plots approach)
+            widget_prefixes = [
+                f"color_picker_form_{user_session_id}",
+                f"seg_{user_session_id}",
+                f"filter_{user_session_id}",
+                f"highlight_{user_session_id}",
+                f"toggle_{user_session_id}",
+                f"download_{user_session_id}",
+                f"boxplot_vars_{user_session_id}",
+                f"color_picker_boxplot_{user_session_id}",
+                f"color_picker_boxplot_general_{user_session_id}",
+                f"color_picker_scatter_{user_session_id}",
+                f"tags_{user_session_id}",
+            ]
+
+            # Find all keys matching the prefixes
+            prefix_matched_keys = [
+                key for key in st.session_state.keys()
+                if any(key.startswith(prefix) for prefix in widget_prefixes)
+            ]
+
+            # Combine all widget keys to clear
+            all_widget_keys = (
+                document_widget_keys +
+                plotting_widget_keys +
+                prefix_matched_keys
+            )
+
+            # Remove duplicates while preserving order
+            unique_widget_keys = list(dict.fromkeys(all_widget_keys))
+
+            # Clear widget keys safely
+            if unique_widget_keys:
+                cleared_results = safe_clear_widget_states(unique_widget_keys)  # noqa: F841
+
+            # Clear widget manager session-specific states
+            try:
+                widget_manager_cleared = widget_key_manager.cleanup_all_session_widgets()  # noqa: F841, E501
+
+            except Exception as e:
+                logger.warning(f"Widget manager cleanup failed: {e}")
+                # Continue even if widget manager cleanup fails
+
+            # Clear any persistence stores that might contain session data
+            persistence_patterns = [
+                "*_PERSIST",  # App-specific persistence stores
+                "preserved_state",  # Widget state preservation
+            ]
+
+            for pattern in persistence_patterns:
+                persistence_keys = [
+                    key for key in st.session_state.keys()
+                    if (pattern.replace('*', '') in key and
+                        user_session_id in str(st.session_state.get(key, {})))
+                ]
+                if persistence_keys:
+                    safe_clear_widget_states(persistence_keys)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to clear widget states for {user_session_id}: {e}")
+            return False
+
     def get_session_stats(self) -> Dict[str, Any]:
         """
         Get session manager statistics.
