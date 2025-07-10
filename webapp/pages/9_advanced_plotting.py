@@ -30,7 +30,7 @@ from webapp.utilities.plotting import (
     plot_download_link, plot_general_boxplot,
     plot_grouped_boxplot, plot_pca_scatter_highlight,
     plot_pca_variable_contrib_bar, plot_scatter,
-    plot_scatter_highlight
+    plot_scatter_highlight, clear_plot_toggle
 )
 from webapp.utilities.analysis import (
     generate_pca, generate_scatterplot,
@@ -122,7 +122,7 @@ def render_boxplot_interface(
             "If you have processed metadata for your corpus, "
             "you can select grouping variables to plot tag frequencies by group."
         ),
-        on_change=clear_plots, args=(user_session_id,)
+        on_change=clear_plot_toggle, args=(user_session_id,)
         )
 
     # Determine categories for plotting
@@ -408,7 +408,7 @@ def render_scatterplot_interface(
             "If you have processed metadata for your corpus, "
             "you can select groups to highlight in scatterplots."
         ),
-        on_change=clear_plots, args=(user_session_id,)
+        on_change=clear_plot_toggle, args=(user_session_id,)
         )
 
     if by_group_highlight:
