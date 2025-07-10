@@ -138,7 +138,7 @@ def html_build_pl(tok_pl: pl.DataFrame,
             ["pos_id", "pos_tag"],
             maintain_order=True
             )
-        .agg(pl.col("token").str.concat(""))
+        .agg(pl.col("token").str.join(""))
         .with_columns(pl.col("pos_tag")
                       .str.replace(r'^NN\S*$', '#NounCommon')
                       .str.replace(r'^VV\S*$', '#VerbLex')
