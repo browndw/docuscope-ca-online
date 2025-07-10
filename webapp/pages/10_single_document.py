@@ -4,7 +4,6 @@ from a target corpus. Users can select tags to highlight in the text,
 visualize their distribution, and download the results in a Word document.
 """
 
-import polars as pl
 import streamlit as st
 
 from webapp.utilities.core import app_core
@@ -89,13 +88,7 @@ def main() -> None:
                     },
                 "DocuScope": TargetKeys.DOC_DS
                 },
-            tag_filters={
-                "Parts-of-Speech": {
-                    "Specific": lambda df: df.filter(pl.col("Tag") != "Y"),
-                    "General": lambda df: df.filter(pl.col("Tag") != "Other")
-                },
-                "DocuScope": lambda df: df.filter(pl.col("Tag") != "Untagged")
-                },
+            tag_filters=None,
             tag_radio_key="sd_radio",
             tag_type_key="sd_tag_type"
         )
