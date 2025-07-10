@@ -25,7 +25,10 @@ from webapp.utilities.ai.shared import prune_message_thread
 # Add async storage import for non-blocking Firestore operations
 from webapp.utilities.storage import conditional_async_add_message
 from webapp.utilities.ai.shared import increment_session_quota
-from webapp.utilities.ai.enterprise_integration import enterprise_ai_call
+from webapp.utilities.ai.enterprise_integration import (
+    enterprise_ai_call,
+    determine_api_key_type
+)
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.state.widget_state import safe_clear_widget_state
 from webapp.utilities.storage.backend_factory import get_session_backend
@@ -300,8 +303,19 @@ def pandabot_user_query(
     except Exception:
         user_email = 'anonymous'
 
+    # Only store to Firestore if using community key
+    try:
+        community_key_available = (
+            "openai" in st.secrets and "api_key" in st.secrets["openai"]
+        )
+    except Exception:
+        community_key_available = False
+
+    key_type = determine_api_key_type(DESKTOP, api_key, community_key_available)
+    should_store_firestore = cache_mode and key_type == "community"
+
     conditional_async_add_message(
-        enable_firestore=cache_mode,
+        enable_firestore=should_store_firestore,
         user_id=user_email,
         session_id=session_id,
         assistant_id=1,
@@ -341,10 +355,6 @@ def pandabot_user_query(
             try:
                 # Only track quota when NOT in desktop mode AND using community API key
                 if not DESKTOP:
-                    from webapp.utilities.ai.enterprise_integration import (
-                        determine_api_key_type
-                    )
-
                     try:
                         user_email = (st.user.email if hasattr(st, 'user') and st.user and
                                       hasattr(st.user, 'email') else 'anonymous')
