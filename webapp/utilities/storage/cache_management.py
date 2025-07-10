@@ -274,7 +274,6 @@ def add_login(user_id: str,
             'session_id': session_id,
             'time_stamp': timestamp
         })
-        logger.debug(f"Login stored to Firestore: {doc_id}")
     except Exception as e:
         logger.error(f"Failed to add login to Firestore: {e}")
 
