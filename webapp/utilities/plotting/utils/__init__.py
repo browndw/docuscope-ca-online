@@ -7,6 +7,7 @@ types of corpus analysis data visualization.
 from webapp.utilities.plotting.utils.state_management import (
     clear_scatterplot_multiselect,
     clear_boxplot_multiselect,
+    clear_plot_toggle,
     clear_plots,
     update_pca_idx_tab1,
     update_pca_idx_tab2,
@@ -27,6 +28,7 @@ __all__ = [
     'plot_download_link',
     'clear_scatterplot_multiselect',
     'clear_boxplot_multiselect',
+    'clear_plot_toggle',
     'clear_plots',
     'update_pca_idx_tab1',
     'update_pca_idx_tab2',
