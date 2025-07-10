@@ -14,6 +14,91 @@ from webapp.utilities.state.widget_state import (
 )
 
 
+def clear_plot_toggle(session_id: str) -> None:
+    """
+    Clear the plots on group toggle change for the given user session.
+    """
+    if session_id not in st.session_state:
+        return
+
+    app_core.session_manager.update_session_state(session_id, 'pca', False)
+    _GRPA = f"grpa_{session_id}"
+    _GRPB = f"grpb_{session_id}"
+    _BOXPLOT_VARS = f"boxplot_vars_{session_id}"
+
+    # Clear group selections
+    for key in [_GRPA, _GRPB, _BOXPLOT_VARS]:
+        if key in st.session_state:
+            st.session_state[key] = []
+
+    # Clear highlight multiselects
+    highlight_keys = [
+        f"highlight_pca_groups_{session_id}",
+        f"highlight_scatter_groups_{session_id}",
+        # add other highlight keys as needed
+    ]
+    for key in highlight_keys:
+        if key in st.session_state:
+            st.session_state[key] = []
+
+    # Clear regression checkbox
+    regression_keys = [
+        f"trend_scatter_groups_{session_id}",
+        f"trend_scatter_{session_id}"
+    ]
+    for key in regression_keys:
+        if key in st.session_state:
+            st.session_state[key] = False
+
+    # Clear plot results and warnings, and remove 'Highlight' column
+    if session_id in st.session_state:
+        for key in [
+            BoxplotKeys.DF, BoxplotKeys.GROUP_DF,
+            ScatterplotKeys.DF, ScatterplotKeys.GROUP_DF
+        ]:
+            df = st.session_state[session_id].get(key)
+            if df is not None and hasattr(df, "columns") and "Highlight" in df.columns:
+                st.session_state[session_id][key] = df.drop(columns=["Highlight"])
+
+        keys_to_clear = [
+            BoxplotKeys.DF, BoxplotKeys.STATS, BoxplotKeys.WARNING,
+            BoxplotKeys.GROUP_DF, BoxplotKeys.GROUP_STATS, BoxplotKeys.GROUP_WARNING,
+            BoxplotKeys.CONFIRMED_VAL2, BoxplotKeys.CONFIRMED_VAL1,
+            BoxplotKeys.CONFIRMED_GRPA, BoxplotKeys.CONFIRMED_GRPB,
+            ScatterplotKeys.DF, ScatterplotKeys.CORRELATION, ScatterplotKeys.WARNING,
+            ScatterplotKeys.GROUP_DF, ScatterplotKeys.GROUP_CORRELATION,
+            ScatterplotKeys.GROUP_WARNING,
+            ScatterplotKeys.GROUP_X, ScatterplotKeys.GROUP_Y,
+            ScatterplotKeys.GROUP_SELECTED_GROUPS,
+        ]
+        for key in keys_to_clear:
+            st.session_state[session_id][key] = None
+
+    # --- Clear color picker and segmented control widget states ---
+    widget_prefixes = [
+        f"color_picker_form_{session_id}", f"seg_{session_id}",
+        f"filter_{session_id}", f"highlight_{session_id}",
+        f"toggle_{session_id}", f"download_{session_id}",
+        f"boxplot_vars_{session_id}", f"color_picker_boxplot_{session_id}",
+        f"color_picker_boxplot_general_{session_id}"
+    ]
+    keys_to_remove = [k for k in st.session_state.keys()
+                      if any(k.startswith(prefix) for prefix in widget_prefixes)]
+
+    # Safe deletion to prevent KeyErrors
+    safe_clear_widget_states(keys_to_remove)
+
+    # --- Clear attempted flags ---
+    for flag in [
+        BoxplotKeys.ATTEMPTED,
+        BoxplotKeys.GROUP_ATTEMPTED,
+        ScatterplotKeys.ATTEMPTED,
+        ScatterplotKeys.GROUP_ATTEMPTED,
+        PCAKeys.ATTEMPTED
+    ]:
+        st.session_state[session_id][flag] = False
+
+
 def clear_plots(session_id: str) -> None:
     """
     Clear all plot-related session state for the given user session.
@@ -90,8 +175,11 @@ def clear_plots(session_id: str) -> None:
 
     # --- Clear color picker and segmented control widget states ---
     widget_prefixes = [
-        "color_picker_form_", "seg_", "filter_", "highlight_",
-        "toggle_", "download_", "boxplot_vars_"
+        f"color_picker_form_{session_id}", f"seg_{session_id}",
+        f"filter_{session_id}", f"highlight_{session_id}",
+        f"toggle_{session_id}", f"download_{session_id}",
+        f"boxplot_vars_{session_id}", f"color_picker_boxplot_{session_id}",
+        f"color_picker_boxplot_general_{session_id}"
     ]
     keys_to_remove = [k for k in st.session_state.keys()
                       if any(k.startswith(prefix) for prefix in widget_prefixes)]
@@ -99,7 +187,7 @@ def clear_plots(session_id: str) -> None:
     safe_clear_widget_states(keys_to_remove)
 
     # --- Clear persistent color map for boxplots if present ---
-    color_map_key = f"boxplot_color_map_{session_id}"
+    color_map_key = f"color_picker_boxplot_{session_id}"
     safe_clear_widget_state(color_map_key)
 
     # --- Clear attempted flags ---
@@ -115,6 +203,15 @@ def clear_plots(session_id: str) -> None:
     # --- Clear boxplot and scatterplot multiselects ---
     clear_boxplot_multiselect(session_id)
     clear_scatterplot_multiselect(session_id)
+
+    # --- Set toggle states to False ---
+    group_boxplot_toggle = f"by_group_boxplot_{session_id}"
+    if group_boxplot_toggle in st.session_state:
+        st.session_state[group_boxplot_toggle] = False
+
+    group_scatter_toggle = f"by_group_scatter_{session_id}"
+    if group_scatter_toggle in st.session_state:
+        st.session_state[group_scatter_toggle] = False
 
 
 def clear_boxplot_multiselect(user_session_id: str) -> None:
