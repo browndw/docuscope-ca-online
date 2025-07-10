@@ -193,3 +193,5 @@ def handle_target_metadata_processing(metadata_target: dict, user_session_id: st
                 except Exception as e:
                     st.sidebar.error(f"Error processing metadata: {str(e)}")
                     st.sidebar.exception(e)
+
+    st.sidebar.markdown("---")
