@@ -13,6 +13,7 @@ from webapp.utilities.session import load_metadata, safe_session_get
 from webapp.utilities.exports import convert_to_word
 from webapp.utilities.ui.text_visualization import generate_tag_html_legend
 from webapp.utilities.ui.corpus_display import safe_metadata_get
+from webapp.utilities.ui.data_tables import get_streamlit_column_config
 from webapp.utilities.plotting import plot_tag_density
 from webapp.utilities.ui.helpers import toggle_download, sidebar_action_button
 from webapp.utilities.plotting import plot_download_link
@@ -124,8 +125,7 @@ def render_document_selection_interface(user_session_id: str, session: dict) -> 
             # Track state changes for re-randomization
             if st.sidebar.button(
                 ":material/shuffle: Pick different random document",
-                key=f"sd_reroll_{user_session_id}",
-                help="Click to select a different random document"
+                key=f"sd_reroll_{user_session_id}"
             ):
                 st.session_state[random_key] = random.choice(doc_ids)
                 st.rerun()
@@ -189,6 +189,8 @@ def render_tag_selection_interface(tag_options: list, user_session_id: str) -> l
             st.session_state[f"sd_tags_{user_session_id}"] = []
 
         # Tag selection with segmented control
+        tags_to_remove = ["Untagged", "Other", "Y", "FU"]
+        tag_options = [item for item in tag_options if item not in tags_to_remove]
         tag_list = st.segmented_control(
             "Select tags:",
             options=tag_options,
@@ -431,8 +433,12 @@ def render_document_interface(
                   ).to_pandas()
         else:
             df = pd.DataFrame()
-
-        st.dataframe(df, hide_index=True)
+        if df is not None and len(df) > 0:
+            column_config = get_streamlit_column_config(df)
+            st.data_editor(df,
+                           hide_index=True,
+                           column_config=column_config,
+                           disabled=True)
         toggle_download(
             label="Excel",
             convert_args=(df,) if (df is not None) else (None,),
