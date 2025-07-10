@@ -235,9 +235,6 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
         except Exception:
             user_email = session.get('user_email', 'anonymous')
 
-        # Render quota tracker in sidebar (for online mode)
-        render_quota_tracker(user_email)
-
         # Get API key first
         api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
 
@@ -246,6 +243,10 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
             api_key is not None and
             st.session_state[user_session_id].get(SessionKeys.AI_USER_KEY) is not None
         )
+
+        # Render quota tracker in sidebar (for online mode)
+        if not has_user_key:
+            render_quota_tracker(user_email)
 
         # Check if we should show work preservation interface first
         show_work_preservation = should_show_work_preservation_interface(
