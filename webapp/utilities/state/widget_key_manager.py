@@ -194,6 +194,7 @@ class WidgetKeyManager:
         for key in session_keys:
             try:
                 del st.session_state[key]
+                deleted_count += 1
             except KeyError:
                 logger.warning(f"Failed to delete session widget: {key}")
         return deleted_count
