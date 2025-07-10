@@ -24,7 +24,6 @@ from webapp.config.config_utils import get_runtime_setting
 
 GOOGLE_LOGO = get_config('google_logo_path', 'global', 'webapp/_static/web_light_rd_na.svg')
 DESKTOP = get_config('desktop_mode', 'global')
-CACHE = get_runtime_setting('cache_mode', False, 'cache')
 
 
 def update_last_activity(session_id) -> None:
@@ -266,6 +265,7 @@ def menu():
             "previous_login_state", False
             )
 
+        CACHE = get_runtime_setting('cache_mode', False, 'cache')
         if CACHE and not previous_login_state:
             # User just logged in - record the login
             try:
