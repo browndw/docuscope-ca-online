@@ -407,7 +407,12 @@ def get_api_key(
         API key to use or None if none available
     """
     try:
-        # Try to get community key if not in desktop mode
+        # Check if user has provided their own API key first
+        user_key = st.session_state[user_session_id].get(SessionKeys.AI_USER_KEY)
+        if user_key is not None:
+            return user_key
+
+        # Only try community key if user hasn't provided their own
         community_key = None
         if not desktop_mode:
             try:
@@ -493,9 +498,25 @@ def render_api_key_input(user_session_id: str) -> None:
                         ":material/check_circle: Valid API key! You can now use the AI assistant.",  # noqa: E501
                         icon=":material/check:"
                     )
-                    st.session_state[user_session_id][
-                        SessionKeys.AI_USER_KEY
-                    ] = user_api_key
+                    st.session_state[user_session_id][SessionKeys.AI_USER_KEY] = user_api_key  # noqa: E501
+
+                    # Clear existing chat histories when switching to personal API key
+                    if SessionKeys.AI_PLOTBOT_CHAT in st.session_state[user_session_id]:
+                        st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT] = []
+                    if SessionKeys.AI_PANDABOT_CHAT in st.session_state[user_session_id]:
+                        st.session_state[user_session_id][SessionKeys.AI_PANDABOT_CHAT] = []
+                    if "plotbot" in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]["plotbot"] = []
+                    if "pandasai" in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]["pandasai"] = []
+
+                    # Clear any cached plots/SVGs
+                    if "plotbot_plot_svg" in st.session_state[user_session_id]:
+                        del st.session_state[user_session_id]["plotbot_plot_svg"]
+
+                    # Reset prompt counters for fresh start
+                    st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_PROMPT_COUNT] = 0  # noqa: E501
+                    st.session_state[user_session_id][SessionKeys.AI_PANDABOT_PROMPT_COUNT] = 0  # noqa: E501
                     st.rerun()
                 else:
                     st.error(
