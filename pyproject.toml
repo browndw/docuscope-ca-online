@@ -20,7 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "Authlib==1.5.2",
-    "docuscospacy==0.3.5",
+    "docuscospacy==0.3.6",
     "google-cloud-firestore==2.20.2",
     "lingua-language-detector==2.0.2",
     "loguru==0.7.3",
