@@ -30,7 +30,7 @@ from webapp.utilities.ai.shared import (
 )
 from webapp.utilities.ai.code_execution import is_code_safe, strip_imports
 from webapp.utilities.ai.enterprise_integration import (
-    make_protected_openai_call
+    make_protected_openai_call, determine_api_key_type
 )
 from webapp.utilities.storage.backend_factory import get_session_backend
 from webapp.config.unified import get_ai_config
@@ -449,10 +449,6 @@ def plotbot_code_generate_or_update(
         try:
             # Only track quota when NOT in desktop mode AND using community API key
             if not DESKTOP:
-                from webapp.utilities.ai.enterprise_integration import (
-                    determine_api_key_type
-                )
-
                 try:
                     user_email = (st.user.email if hasattr(st, 'user') and st.user and
                                   hasattr(st.user, 'email') else 'anonymous')
@@ -668,7 +664,18 @@ def plotbot_user_query(session_id: str,
     except Exception:
         user_email = 'anonymous'
 
-    conditional_async_add_message(enable_firestore=cache_mode,
+    # Only store to Firestore if using community key
+    try:
+        community_key_available = (
+            "openai" in st.secrets and "api_key" in st.secrets["openai"]
+        )
+    except Exception:
+        community_key_available = False
+
+    key_type = determine_api_key_type(DESKTOP, api_key, community_key_available)
+    should_store_firestore = cache_mode and key_type == "community"
+
+    conditional_async_add_message(enable_firestore=should_store_firestore,
                                   user_id=user_email,
                                   session_id=session_id,
                                   assistant_id=0,
@@ -806,7 +813,7 @@ def plotbot_user_query(session_id: str,
                 except Exception:
                     user_email = 'anonymous'
 
-                conditional_async_add_plot(enable_firestore=cache_mode,
+                conditional_async_add_plot(enable_firestore=should_store_firestore,
                                            user_id=user_email,
                                            session_id=session_id,
                                            assistant_id=0,
