@@ -334,6 +334,21 @@ def render_document_reset_interface(user_session_id: str) -> None:
         )
 
         safe_clear_widget_state(_TAGS)
+
+        # Clear document selection widgets (main issue)
+        document_widget_keys = [
+            f"sd_random_{user_session_id}",
+            f"sd_random_doc_{user_session_id}",
+            f"sd_random_changed_{user_session_id}",
+            f"sd_reroll_{user_session_id}",
+        ]
+
+        keys_to_remove = [
+            k for k in st.session_state.keys()
+            if any(k.startswith(prefix) for prefix in document_widget_keys)
+            ]
+
+        safe_clear_widget_state(keys_to_remove)
         st.rerun()
 
 
