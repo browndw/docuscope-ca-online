@@ -33,7 +33,13 @@ from webapp.utilities.ai.enterprise_integration import (
     make_protected_openai_call
 )
 from webapp.utilities.storage.backend_factory import get_session_backend
+from webapp.config.unified import get_ai_config
 from webapp.utilities.core import app_core
+
+
+# Get AI configuration using standardized access
+AI_CONFIG = get_ai_config()
+DESKTOP = AI_CONFIG['desktop_mode']
 
 # Plotbot-specific constants
 FORBIDDEN_PATTERNS = [
@@ -91,6 +97,17 @@ def clear_plotbot_table():
     if scoped_query_key in st.session_state:
         st.session_state[scoped_query_key] = None
 
+    # Clear data preview control widgets
+    widget_keys_to_clear = ["pivot_table", "make_percent"]
+    for widget_key in widget_keys_to_clear:
+        scoped_key = app_core.widget_manager.get_scoped_key(widget_key)
+        if scoped_key in st.session_state:
+            # Reset to default values
+            if widget_key == "pivot_table":
+                st.session_state[scoped_key] = False
+            elif widget_key == "make_percent":
+                st.session_state[scoped_key] = False
+
 
 def clear_plotbot(session_id: str, clear_all=True):
     """
@@ -145,12 +162,12 @@ def clear_plotbot(session_id: str, clear_all=True):
             widget_keys_to_clear = ["pivot_table", "make_percent"]
             for widget_key in widget_keys_to_clear:
                 scoped_key = app_core.widget_manager.get_scoped_key(widget_key)
-                if scoped_key in st.session_state[session_id]:
+                if scoped_key in st.session_state:
                     # Reset to default values
                     if widget_key == "pivot_table":
-                        st.session_state[session_id][scoped_key] = False
+                        st.session_state[scoped_key] = False
                     elif widget_key == "make_percent":
-                        st.session_state[session_id][scoped_key] = False
+                        st.session_state[scoped_key] = False
 
             # Clear plotbot-specific corpus and query selection widgets
             plotbot_widget_keys = [
@@ -430,24 +447,39 @@ def plotbot_code_generate_or_update(
 
         # Increment quota tracker after successful API call
         try:
-            if hasattr(st, 'user') and st.user and st.user.email:
-                user_email = st.user.email
-                # Update session quota (for current session)
-                increment_session_quota(user_email)
+            # Only track quota when NOT in desktop mode AND using community API key
+            if not DESKTOP:
+                from webapp.utilities.ai.enterprise_integration import (
+                    determine_api_key_type
+                )
 
-                # Log to database for persistent quota tracking
                 try:
-                    backend = get_session_backend()
-                    backend.log_user_query(
-                        user_id=user_email,
-                        session_id=None,  # Use NULL to avoid foreign key constraints
-                        assistant_type="plotbot",
-                        message_content=user_request[:500] if user_request else None
-                    )
-                except Exception as log_error:
-                    # Log the error but don't fail the main request
-                    st.error(f"Warning: Failed to log query for quota tracking: "
-                             f"{log_error}")
+                    user_email = (st.user.email if hasattr(st, 'user') and st.user and
+                                  hasattr(st.user, 'email') else 'anonymous')
+                except Exception:
+                    user_email = 'anonymous'
+
+                # Determine if we're using community or individual API key
+                key_type = determine_api_key_type(DESKTOP, api_key)
+
+                # Only track quota if using community key (not user's personal key)
+                if user_email != 'anonymous' and key_type == "community":
+                    # Update session quota (for current session)
+                    increment_session_quota(user_email)
+
+                    # Log to database for persistent quota tracking
+                    try:
+                        backend = get_session_backend()
+                        backend.log_user_query(
+                            user_id=user_email,
+                            session_id=None,  # Use NULL to avoid FK constraints
+                            assistant_type="plotbot",
+                            message_content=user_request[:500] if user_request else None
+                        )
+                    except Exception as log_error:
+                        # Log the error but don't fail the main request
+                        st.error(f"Warning: Failed to log query for quota tracking: "
+                                 f"{log_error}")
         except Exception:
             pass  # Don't fail if quota tracking fails
 
@@ -629,8 +661,15 @@ def plotbot_user_query(session_id: str,
     if SessionKeys.AI_PLOT_INTENT not in st.session_state[session_id]:
         st.session_state[session_id][SessionKeys.AI_PLOT_INTENT] = False
 
+    # Get user email with proper fallback for desktop mode
+    try:
+        user_email = (st.user.email if hasattr(st, 'user') and st.user and
+                      hasattr(st.user, 'email') else 'anonymous')
+    except Exception:
+        user_email = 'anonymous'
+
     conditional_async_add_message(enable_firestore=cache_mode,
-                                  user_id=st.user.email,
+                                  user_id=user_email,
                                   session_id=session_id,
                                   assistant_id=0,
                                   role="user",
@@ -760,8 +799,15 @@ def plotbot_user_query(session_id: str,
             # Cache plot if needed
             if plot_fig.get("type") == "plot":
                 svg_str = fig_to_svg(figure=plot_fig["value"], plot_lib=plot_lib)
+                # Get user email with proper fallback for desktop mode
+                try:
+                    user_email = (st.user.email if hasattr(st, 'user') and st.user and
+                                  hasattr(st.user, 'email') else 'anonymous')
+                except Exception:
+                    user_email = 'anonymous'
+
                 conditional_async_add_plot(enable_firestore=cache_mode,
-                                           user_id=st.user.email,
+                                           user_id=user_email,
                                            session_id=session_id,
                                            assistant_id=0,
                                            message_idx=prompt_position,
