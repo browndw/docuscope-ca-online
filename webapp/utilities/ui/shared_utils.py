@@ -101,10 +101,10 @@ def add_category_description(
 
     # Check if we have a mapping for this corpus
     if corpus_name in mappings:
-        pattern = r'_[A-Z]+_'
+        pattern = r'_([A-Z]+)(?:_|$)'
         corpus_base = re.search(pattern, corpus_name)
         if corpus_base:
-            corpus_base = corpus_base.group(0).strip('_')
+            corpus_base = corpus_base.group(1)
         else:
             corpus_base = corpus_name
         # Display documentation link for internal corpora
