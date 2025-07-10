@@ -379,7 +379,10 @@ def main() -> None:
             ))
         if st.sidebar.button(label=LABEL_RESET_CORPUS,
                              icon=":material/refresh:"):
+            # Clear session data (original functionality)
             st.session_state[user_session_id] = {}
+            # Clear associated widget states
+            app_core.session_manager.clear_session_with_widgets(user_session_id)
             generate_temp(
                 STATES.items(),
                 user_session_id
