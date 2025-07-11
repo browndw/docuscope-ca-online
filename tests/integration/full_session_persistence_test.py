@@ -147,13 +147,35 @@ class TestFullSessionPersistence:
         # Initialize backend with explicit path
         self.backend = SQLiteSessionBackend(self.test_dir)
 
-        # Patch the backend factory to always return our SQLite backend for this test
-        backend_factory_path = (
+        # Patch multiple paths to ensure we catch all the ways the backend can be accessed
+        # This covers both the factory function and any potential direct imports
+        # The comprehensive patching approach prevents CI environment issues where
+        # import order or timing might cause different code paths to be taken
+        self.backend_patches = []
+
+        # Patch the factory function
+        factory_patch = patch(
             'webapp.utilities.storage.backend_factory.get_session_backend'
         )
-        self.backend_factory_patcher = patch(backend_factory_path)
-        self.mock_backend_factory = self.backend_factory_patcher.start()
-        self.mock_backend_factory.return_value = self.backend
+        self.backend_patches.append(factory_patch)
+        mock_factory = factory_patch.start()
+        mock_factory.return_value = self.backend
+
+        # Patch the session persistence backend getter
+        persistence_patch = patch(
+            'webapp.utilities.session.session_persistence._get_session_backend'
+        )
+        self.backend_patches.append(persistence_patch)
+        mock_persistence = persistence_patch.start()
+        mock_persistence.return_value = self.backend
+
+        # Patch the SQLite module's get_session_backend function too
+        sqlite_patch = patch(
+            'webapp.utilities.storage.sqlite_session_backend.get_session_backend'
+        )
+        self.backend_patches.append(sqlite_patch)
+        mock_sqlite = sqlite_patch.start()
+        mock_sqlite.return_value = self.backend
 
         # Test session ID
         self.session_id = "test_session_123"
@@ -173,7 +195,10 @@ class TestFullSessionPersistence:
         try:
             # Stop patches
             self.config_patcher.stop()
-            self.backend_factory_patcher.stop()
+
+            # Stop all backend patches
+            for backend_patch in self.backend_patches:
+                backend_patch.stop()
 
             # Close backend connections if method exists
             if hasattr(self, 'backend') and hasattr(self.backend, 'close'):
