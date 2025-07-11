@@ -43,10 +43,9 @@ jobs:
         source_repo_path: ${{ github.repository }}
         upstream_branch: main
         target_repo_path: ${{ github.event.inputs.target_repo || 'browndw/docuscope-ca-desktop' }}
-        target_branch: template-sync
-        create_pull_request: true
-        pull_request_title: "chore: sync with template repository"
-        pull_request_body: |
+        pr_branch_name_prefix: template-sync
+        pr_title: "chore: sync with template repository"
+        pr_body: |
           🤖 **Automated Template Sync**
           
           This PR updates the repository with the latest changes from the template repository.
@@ -68,29 +67,7 @@ jobs:
           
           ---
           *This PR was automatically created by the template sync workflow.*
-        pull_request_draft: false
-        pull_request_reviewers: browndw
+        pr_reviewers: browndw
         is_dry_run: ${{ github.event.inputs.dry_run == 'true' }}
-        # Skip certain desktop-specific files to avoid conflicts
-        files_to_ignore: |
-          src-tauri/**
-          package.json
-          package-lock.json
-          tauri.conf.json
-          .github/workflows/tauri-*.yml
-          .github/workflows/desktop-*.yml
-          DESKTOP_*.md
-          desktop-specific-config.toml
-        # Only sync core webapp and shared files
-        files_to_sync: |
-          webapp/**
-          requirements.txt
-          pyproject.toml
-          README.md
-          LICENSE
-          CHANGELOG.md
-          CONTRIBUTING.md
-          .streamlit/secrets.toml.template
-          tests/**
-          .github/workflows/test.yml
-          .github/workflows/update-dependencies.yml
+        # Use template sync ignore file instead of inline parameters
+        template_sync_ignore_file_path: .templatesyncignore
