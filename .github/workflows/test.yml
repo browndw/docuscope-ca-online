@@ -1,5 +1,10 @@
 name: Test Suite
 
+# This comprehensive test suite runs only on:
+# 1. Version tags (v*.*.* - for release testing)
+# 2. Manual dispatch (workflow_dispatch - for on-demand testing)
+# This prevents excessive CI usage while ensuring thorough testing before releases.
+
 on:
   push:
     tags:
@@ -97,7 +102,6 @@ jobs:
   performance-tests:
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - uses: actions/checkout@v4
@@ -139,7 +143,7 @@ jobs:
         pytest tests/performance/ -v --tb=short --benchmark-only --benchmark-json=performance-results.json
     
     - name: Store performance results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: performance-results
         path: performance-results.json
@@ -171,7 +175,7 @@ jobs:
         bandit -r webapp/ -f json -o bandit-results.json || true
     
     - name: Upload security results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-results
         path: |
