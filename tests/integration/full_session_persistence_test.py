@@ -144,7 +144,7 @@ class TestFullSessionPersistence:
 
         self.mock_get_config.side_effect = mock_config_side_effect
 
-        # Initialize backend with explicit path
+        # Initialize backend with explicit path BEFORE setting up patches
         self.backend = SQLiteSessionBackend(self.test_dir)
 
         # Patch multiple paths to ensure we catch all the ways the backend can be accessed
@@ -153,15 +153,7 @@ class TestFullSessionPersistence:
         # import order or timing might cause different code paths to be taken
         self.backend_patches = []
 
-        # Patch the factory function
-        factory_patch = patch(
-            'webapp.utilities.storage.backend_factory.get_session_backend'
-        )
-        self.backend_patches.append(factory_patch)
-        mock_factory = factory_patch.start()
-        mock_factory.return_value = self.backend
-
-        # Patch the session persistence backend getter
+        # Patch the session persistence backend getter (most important)
         persistence_patch = patch(
             'webapp.utilities.session.session_persistence._get_session_backend'
         )
