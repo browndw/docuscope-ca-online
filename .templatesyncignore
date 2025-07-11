@@ -1,0 +1,24 @@
+# Desktop-specific files to ignore during template sync
+src-tauri/**
+package.json
+package-lock.json
+tauri.conf.json
+.github/workflows/tauri-*.yml
+.github/workflows/desktop-*.yml
+DESKTOP_*.md
+desktop-specific-config.toml
+
+# Only sync these specific files and directories
+# Note: This action works with ignore patterns, so we list what to ignore
+# The files we want to sync are:
+# - webapp/**
+# - requirements.txt
+# - pyproject.toml
+# - README.md
+# - LICENSE
+# - CHANGELOG.md
+# - CONTRIBUTING.md
+# - .streamlit/secrets.toml.template
+# - tests/**
+# - .github/workflows/test.yml
+# - .github/workflows/update-dependencies.yml
