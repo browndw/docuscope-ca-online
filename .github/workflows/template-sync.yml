@@ -1,0 +1,96 @@
+name: Template Sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'webapp/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'README.md'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
+      - 'CONTRIBUTING.md'
+      - '.streamlit/**'
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'Target repository to sync (format: owner/repo)'
+        required: true
+        default: 'browndw/docuscope-ca-desktop'
+      dry_run:
+        description: 'Dry run (no actual changes)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  template-sync:
+    runs-on: ubuntu-latest
+    if: github.repository == 'browndw/docuscope-ca-online'
+    
+    steps:
+    - name: Checkout template repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+    
+    - name: Template Sync to Desktop Repository
+      uses: AndreasAugustin/actions-template-sync@v2
+      with:
+        github_token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+        source_repo_path: ${{ github.repository }}
+        upstream_branch: main
+        target_repo_path: ${{ github.event.inputs.target_repo || 'browndw/docuscope-ca-desktop' }}
+        target_branch: template-sync
+        create_pull_request: true
+        pull_request_title: "chore: sync with template repository"
+        pull_request_body: |
+          🤖 **Automated Template Sync**
+          
+          This PR updates the repository with the latest changes from the template repository.
+          
+          ## What's Changed
+          - Synchronized core webapp files
+          - Updated dependencies and documentation
+          - Maintained desktop-specific configurations
+          
+          ## Review Guidelines
+          - ✅ Check that desktop-specific files are not overwritten
+          - ✅ Verify Tauri configurations remain intact
+          - ✅ Test that the desktop app still builds correctly
+          - ✅ Review any conflicts in configuration files
+          
+          ## Template Repository
+          Source: [${{ github.repository }}](https://github.com/${{ github.repository }})
+          Commit: ${{ github.sha }}
+          
+          ---
+          *This PR was automatically created by the template sync workflow.*
+        pull_request_draft: false
+        pull_request_reviewers: browndw
+        is_dry_run: ${{ github.event.inputs.dry_run == 'true' }}
+        # Skip certain desktop-specific files to avoid conflicts
+        files_to_ignore: |
+          src-tauri/**
+          package.json
+          package-lock.json
+          tauri.conf.json
+          .github/workflows/tauri-*.yml
+          .github/workflows/desktop-*.yml
+          DESKTOP_*.md
+          desktop-specific-config.toml
+        # Only sync core webapp and shared files
+        files_to_sync: |
+          webapp/**
+          requirements.txt
+          pyproject.toml
+          README.md
+          LICENSE
+          CHANGELOG.md
+          CONTRIBUTING.md
+          .streamlit/secrets.toml.template
+          tests/**
+          .github/workflows/test.yml
+          .github/workflows/update-dependencies.yml
