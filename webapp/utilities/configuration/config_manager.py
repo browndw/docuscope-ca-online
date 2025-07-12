@@ -7,7 +7,7 @@ online (Streamlit Cloud) deployments.
 """
 
 import os
-import tomli
+import tomllib
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
@@ -41,13 +41,21 @@ class ConfigurationManager:
         """
         Get the project root directory with caching.
 
+        Handles both regular execution and PyInstaller/Tauri bundles.
+
         Returns
         -------
         Path
             The project root directory path.
         """
         if cls._project_root is None:
-            cls._project_root = Path(__file__).resolve().parents[3]
+            # Check if running in PyInstaller bundle
+            if hasattr(os.sys, '_MEIPASS'):
+                # In PyInstaller bundle - use the extracted directory
+                cls._project_root = Path(os.sys._MEIPASS)
+            else:
+                # Normal execution - use relative path resolution
+                cls._project_root = Path(__file__).resolve().parents[3]
         return cls._project_root
 
     @classmethod
@@ -182,8 +190,8 @@ class ConfigurationManager:
 
         try:
             with open(config_path, "rb") as f:
-                config = tomli.load(f)
-        except (FileNotFoundError, tomli.TOMLDecodeError) as e:
+                config = tomllib.load(f)
+        except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
             logger.warning(
                 f"Could not load configuration from {config_path}: {e}. "
                 "Using default configuration."
@@ -414,7 +422,7 @@ def get_version_from_pyproject() -> str:
     pyproject_path = ConfigurationManager.get_project_root() / "pyproject.toml"
     try:
         with open(pyproject_path, "rb") as f:
-            data = tomli.load(f)
+            data = tomllib.load(f)
         return data["project"]["version"]
     except Exception:
         return "0.0.0"
