@@ -7,9 +7,9 @@ files and reference corpora.
 
 import os
 import pathlib
-from webapp.config.unified import get_config
+from webapp.utilities.configuration.config_manager import config_manager
 
-CORPUS_DIR = get_config('corpus_dir_path', 'global')
+CORPUS_DIR = config_manager.corpus_dir_path
 
 
 def find_saved(model_type: str) -> dict:
