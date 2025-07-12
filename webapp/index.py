@@ -33,7 +33,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from webapp.menu import menu   # noqa: E402
-from webapp.config.unified import get_config   # noqa: E402
+from webapp.utilities.configuration.config_manager import config_manager   # noqa: E402
 
 # Initialize session backend early to ensure database is created
 try:
@@ -43,13 +43,13 @@ try:
 except Exception:
     pass
 
-TITLE_LOGO = get_config('docuscope_logo_path', 'global', '')
-PL_LOGO = get_config('porpoise_badge_path', 'global', '')
-UG_LOGO = get_config('user_guide_badge_path', 'global', '')
-SPACY_META = get_config('spacy_model_meta_path', 'global', '')
-DESKTOP = get_config('desktop_mode', 'global', False)
+TITLE_LOGO = config_manager.docuscope_logo_path
+PL_LOGO = config_manager.porpoise_badge_path
+UG_LOGO = config_manager.user_guide_badge_path
+SPACY_META = config_manager.spacy_model_meta_path
+DESKTOP = config_manager.desktop_mode
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
-VERSION = get_config('version', 'version', '1.0.0')
+VERSION = config_manager.version
 
 
 st.set_page_config(
@@ -148,8 +148,7 @@ def main() -> None:
         pl_logo_text = get_file_contents(PL_LOGO)
         b64 = get_base64_encoded(pl_logo_text)
         pl_html = r"""
-            <a href="https://github.com/browndw/"><img src="data:image/svg +
-            xml;base64,%s"/></a>  © 2025 David Brown, Suguru Ishizaki, David Kaufer
+            <a href="https://github.com/browndw/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2025 David Brown, Suguru Ishizaki, David Kaufer
                 """ % b64  # noqa: E501
         st.markdown(pl_html, unsafe_allow_html=True)
     except Exception as e:
