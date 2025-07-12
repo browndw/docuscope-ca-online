@@ -240,6 +240,16 @@ def require_login():
 
 
 def menu():
+    # Hide default Streamlit navigation to prevent duplication with custom menu
+    hide_nav_css = """
+        <style>
+        [data-testid="stSidebarNav"] {
+            display: none;
+        }
+        </style>
+    """
+    st.markdown(hide_nav_css, unsafe_allow_html=True)
+
     if DESKTOP:
         authenticated_menu()
         st.sidebar.markdown("---")
