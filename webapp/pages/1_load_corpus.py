@@ -14,7 +14,7 @@ import streamlit as st
 
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
-from webapp.config.unified import get_config
+from webapp.utilities.configuration.config_manager import config_manager
 
 # Module-specific imports
 from webapp.utilities.session import (
@@ -50,17 +50,16 @@ LOAD_CORPUS_PERSISTENT_WIDGETS = [
 ]
 app_core.register_page_widgets(LOAD_CORPUS_PERSISTENT_WIDGETS)
 
-# Configuration values are read from webapp/config/options.toml
-# Only critical fallbacks are provided for system stability
-MODEL_LARGE = get_config('model_large_path', 'global')
-MODEL_SMALL = get_config('model_small_path', 'global')
+# Configuration values from centralized config manager
+MODEL_LARGE = config_manager.model_large_path
+MODEL_SMALL = config_manager.model_small_path
 
 # Global flags and limits from configuration
-DESKTOP = get_config('desktop_mode', 'global')
-CHECK_SIZE = get_config('check_size', 'global')
-ENABLE_DETECT = get_config('check_language', 'global')
-MAX_TEXT = get_config('max_text_size', 'global')
-MAX_POLARS = get_config('max_polars_size', 'global')
+DESKTOP = config_manager.desktop_mode
+CHECK_SIZE = config_manager.check_size
+ENABLE_DETECT = config_manager.check_language
+MAX_TEXT = config_manager.max_text_size
+MAX_POLARS = config_manager.max_polars_size
 
 
 TITLE = "Manage Corpus Data"
