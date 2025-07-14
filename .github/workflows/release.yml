@@ -13,8 +13,7 @@ on:
 
 jobs:
   test:
-    name: Call Test Suit
-    uses: ./.github/workflows/test.yaml@{SHA/TAG/BRANCH}
+    uses: ./.github/workflows/test.yml
 
   create-release:
     runs-on: ubuntu-latest
