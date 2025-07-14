@@ -3,7 +3,7 @@ name = "docuscope-ca-online"
 version = "0.4.0"
 description = "An online version of the Docuscope CA tool for analyzing text."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["nlp", "language"]
 authors = [
     { name = "David Brown", email = "dwb2@andrew.cmu.edu" }
@@ -13,7 +13,6 @@ maintainers = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -41,7 +40,6 @@ dependencies = [
     "seaborn==0.12.2",
     "spacy==3.8.7",
     "streamlit==1.45.1",
-    "tomli==2.2.1",
     "Unidecode==1.3.8",
     "XlsxWriter==3.2.2",
 ]
