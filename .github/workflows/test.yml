@@ -16,10 +16,11 @@ jobs:
   test:
     # Main test job - runs all 300+ tests across unit, integration, performance, and UI categories
     # All tests have been modernized and are now passing without exclusions
+    # NOTE: Only Python 3.11+ due to tomllib dependency
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11"]
     
     steps:
     - uses: actions/checkout@v4
@@ -207,7 +208,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11"]
     
     steps:
     - uses: actions/checkout@v4
