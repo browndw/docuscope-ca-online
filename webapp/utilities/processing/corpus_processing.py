@@ -365,9 +365,9 @@ def handle_uploaded_parquet(
             The online version of DocuScope Corpus Analysis & Concordancer
             accepts data up to roughly 3 million words.
             If you'd like to process more data, try
-            [the desktop version of the tool](https://github.com/browndw/docuscope-cac)
+            [the desktop version of the tool](https://github.com/browndw/docuscope-ca-desktop)
             which available for free.
-            """,
+            """,  # noqa: E501
             icon=":material/warning:"
             )
     if target_docs is not None and len(dup_docs) > 0:
@@ -532,9 +532,9 @@ def handle_uploaded_text(
             The online version of DocuScope Corpus Analysis & Concordancer
             accepts data up to roughly 3 million words.
             If you'd like to process more data, try
-            [the desktop version of the tool](https://github.com/browndw/docuscope-cac)
+            [the desktop version of the tool](https://github.com/browndw/docuscope-ca-desktop)
             which available for free.
-            """,
+            """,  # noqa: E501
             icon=":material/warning:"
         )
 
