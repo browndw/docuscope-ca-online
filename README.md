@@ -38,7 +38,7 @@ See `TEMPLATE_USAGE.md` for detailed instructions on using this repository as a 
 
 ### Requirements
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - Virtual environment (recommended)
 
 ### Quick Setup
@@ -142,7 +142,7 @@ For questions, bug reports, or feature requests:
 ---
 
 [license]: https://img.shields.io/github/license/browndw/docuscope-ca-online
-[python]: https://img.shields.io/badge/python-3.10%2B-blue
+[python]: https://img.shields.io/badge/python-3.11%2B-blue
 [streamlit]: https://static.streamlit.io/badges/streamlit_badge_black_white.svg
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
