@@ -24,11 +24,6 @@ flowchart LR
     C --> D["Web Application<br>This Repository"] & E["Desktop Application<br>Cross-platform"]
     A@{ shape: cyl}
     B@{ shape: stored-data}
-    style A fill:#e1f5fe
-    style B fill:#e8f5e8  
-    style C fill:#fff3e0
-    style D fill:#ffebee
-    style E fill:#f3e5f5
     click A "https://huggingface.co/datasets/browndw/docusco-spacy-training"
     click B "https://huggingface.co/browndw/en_docusco_spacy"
     click C "https://pypi.org/project/docuscospacy/"
