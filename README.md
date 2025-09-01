@@ -22,6 +22,7 @@ flowchart LR
     A["Training Data<br>HuggingFace Datasets"] --> B["spaCy Models<br>HuggingFace Hub"]
     B --> C["docuscospacy<br>Python Package"]
     C --> D["Web Application<br>This Repository"] & E["Desktop Application<br>Cross-platform"]
+    D -.-> E
     A@{ shape: cyl}
     B@{ shape: stored-data}
     click A "https://huggingface.co/datasets/browndw/docusco-spacy-training"
