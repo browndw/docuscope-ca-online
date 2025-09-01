@@ -9,13 +9,40 @@
 
 [![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml)
 
+## DocuScope Ecosystem
+
+The DocuScope ecosystem comprises several interconnected components designed to facilitate corpus analysis and rhetorical tagging.
+
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+    A["Training Data<br>HuggingFace Datasets"] --> B["spaCy Models<br>HuggingFace Hub"]
+    B --> C["docuscospacy<br>Python Package"]
+    C --> D["Web Application<br>This Repository"] & E["Desktop Application<br>Cross-platform"]
+    A@{ shape: cyl}
+    B@{ shape: stored-data}
+    style A fill:#e1f5fe
+    style B fill:#e8f5e8  
+    style C fill:#fff3e0
+    style D fill:#ffebee
+    style E fill:#f3e5f5
+    click A "https://huggingface.co/datasets/browndw/docusco-spacy-training"
+    click B "https://huggingface.co/browndw/en_docusco_spacy"
+    click C "https://pypi.org/project/docuscospacy/"
+    click D "https://github.com/browndw/docuscope-ca-online"
+    click E "https://github.com/browndw/docuscope-ca-desktop"
+```
+
 ## DocuScope and Part-of-Speech tagging with spaCy
 
-This application is designed for the analysis of small corpora assisted by part-of-speech and rhetorical tagging.
+This application is designed for the analysis of corpora assisted by integrated part-of-speech and DocuScope rhetorical tagging.
 
 With the application users can:
 
-1. process small corpora
+1. process corpora
 2. create frequency tables of words, phrases, and tags
 3. calculate associations around node words
 4. generate key word in context (KWIC) tables
@@ -23,6 +50,17 @@ With the application users can:
 6. explore single texts
 7. practice advanced plotting
 
+## Why DocuScope CA?
+
+Existing corpus analysis tools force researchers to choose between accessibility and analytical depth. Popular tools like AntConc excel at concordancing and frequency analysis but lack linguistic annotation. Web platforms like Voyant Tools offer accessible visualization but no rhetorical analysis. Code-centric frameworks provide sophisticated processing but require substantial programming expertise.
+
+DocuScope CA uniquely combines:
+
+- **Educational Accessibility**: Intuitive web interface requiring no programming knowledge
+- **Analytical Depth**: Integrated linguistic (spaCy) and rhetorical (DocuScope) annotation
+- **Reproducible Workflows**: Headless API/CLI with provenance tracking
+- **Flexible Deployment**: Desktop, web, container, and hosted options
+- **Research-Ready**: Built for both exploratory discovery and hypothesis-driven studies
 
 ## Installation and Usage
 
@@ -82,7 +120,7 @@ Pre-built installers are available for all major platforms:
 
 ### Requirements
 
-- Python 3.11 or higher (for local installation)
+- Python 3.11 (for local installation)
 - Docker and Docker Compose (for Docker deployment)
 - Modern web browser for accessing the application
 
@@ -98,14 +136,13 @@ This repository can be used as a template for creating custom deployments:
 - **Custom Deployments**: Adapt for institutional or research-specific needs  
 - **Educational Versions**: Create modified versions for classroom use
 
-See `TEMPLATE_USAGE.md` for detailed instructions on using this repository as a template.
-
 ## Features
 
-This application provides a comprehensive suite of tools for corpus analysis:
+This application provides a comprehensive suite of tools for corpus analysis, built on the broader DocuScope ecosystem:
 
 - **Corpus Processing**: Upload and process small to medium-sized text corpora
-- **Dual Tagging**: Combines part-of-speech tagging with DocuScope rhetorical analysis
+- **Dual Tagging**: Combines part-of-speech tagging with DocuScope rhetorical analysis via the `docuscospacy` package
+- **Ecosystem Integration**: Pre-trained models distributed via HuggingFace Hub with transparent provenance
 - **Frequency Analysis**: Generate detailed frequency tables for words, phrases, and rhetorical tags
 - **Collocation Analysis**: Calculate statistical associations around target words
 - **KWIC Tables**: Create keyword-in-context concordances for detailed text examination
@@ -115,6 +152,7 @@ This application provides a comprehensive suite of tools for corpus analysis:
 - **Dual Mode Operation**:
   - **Enterprise Mode**: Full-featured deployment for institutional use
   - **Desktop Mode**: Streamlined interface for individual researchers
+- **Reproducible Workflows**: Provenance manifests with version tracking and content hashes
 
 ## Configuration
 
@@ -130,6 +168,16 @@ Refer to the configuration files in `webapp/config/` for detailed customization 
 
 ## Usage Examples
 
+### Educational Workflow (No Programming Required)
+
+Perfect for students and novice researchers:
+
+1. **Select or Upload Corpus**: Choose from built-in sample corpora or upload custom text collections
+2. **Automatic Processing**: The integrated spaCy+DocuScope pipeline generates token-level linguistic and rhetorical annotations
+3. **Explore Results**: Use the intuitive interface to explore frequency distributions, rhetorical patterns, and linguistic features
+4. **Create Visualizations**: Generate charts and export results for further analysis
+5. **Maintain Provenance**: All processing steps are tracked with version and model information
+
 ### Basic Corpus Analysis
 
 1. Load your corpus using the "Manage Corpora" page
@@ -143,6 +191,46 @@ Refer to the configuration files in `webapp/config/` for detailed customization 
 2. Use "Compare Corpora" tools to identify statistical differences
 3. Generate comparative visualizations
 4. Export results for further analysis
+
+## Headless API & CLI
+
+A thin, stable headless interface is provided for reproducible, non-interactive workflows.
+
+Python API example:
+
+```python
+from docuscope_ca import process_corpus
+
+result = process_corpus(
+    sources="paper/data/test_corpus",   # dir, file, list, or list of raw texts
+    model="en_docusco_spacy",
+    metrics=("freq", "tags", "dtm"),   # choose subset
+    export_dir="out"                    # optional parquet + manifest.json
+)
+print(result.manifest["corpus"]["total_tokens"], "tokens")
+```
+
+CLI (installed as console script):
+
+```bash
+docuscope-ca process \
+  --input paper/data/test_corpus \
+  --metrics freq,tags,dtm \
+  --out out_dir \
+  --manifest
+```
+
+Exit codes: 0 success; 2 corpus load error; 3 model load error; 4 processing error; 5 export error.
+
+Generated artifacts (when export enabled)
+
+- tokens.parquet
+- frequency_pos.parquet, frequency_ds.parquet
+- tags_pos.parquet, tags_ds.parquet
+- dtm_pos.parquet, dtm_ds.parquet (if requested)
+- manifest.json (version, model, metrics, per-document hashes)
+
+The manifest enables deterministic regeneration and peer review verification.
 
 ## License
 
