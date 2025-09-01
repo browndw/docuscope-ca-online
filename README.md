@@ -7,7 +7,7 @@
 
 ---
 
-[![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml) [![Coverage][coverage]](https://codecov.io/gh/browndw/docuscope-ca-online)
+[![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml)
 
 ## DocuScope and Part-of-Speech tagging with spaCy
 
@@ -203,4 +203,3 @@ For questions, bug reports, or feature requests:
 [streamlit]: https://static.streamlit.io/badges/streamlit_badge_black_white.svg
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
-[coverage]: https://codecov.io/gh/browndw/docuscope-ca-online/branch/main/graph/badge.svg
