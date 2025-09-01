@@ -7,7 +7,7 @@
 
 ---
 
-[![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml)
+[![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml) [![Coverage][coverage]](https://codecov.io/gh/browndw/docuscope-ca-online)
 
 ## DocuScope and Part-of-Speech tagging with spaCy
 
@@ -24,38 +24,81 @@ With the application users can:
 7. practice advanced plotting
 
 
+## Installation and Usage
+
+DocuScope CA offers multiple deployment options to accommodate different user preferences and technical requirements.
+
+### Live Web Application (Immediate Access)
+
+For immediate access without any installation, DocuScope CA is freely available as a hosted web application:
+
+- **Access**: [DocuScope CA Enterprise](https://docuscope-ca.eberly.cmu.edu/)
+- **Features**: Full enterprise functionality including user management and session persistence
+- **Requirements**: Modern web browser only
+
+### Docker Deployment (Recommended)
+
+The simplest way to run DocuScope CA locally is using Docker:
+
+```bash
+# Clone the repository
+git clone https://github.com/browndw/docuscope-ca-online.git
+cd docuscope-ca-online
+
+# Launch the application
+docker-compose up
+```
+
+The application will be available at `http://localhost:8501`. Docker automatically handles all dependencies, Python environment setup, and package installations.
+
+### Local Installation
+
+For users preferring local installation:
+
+```bash
+# Clone the repository
+git clone https://github.com/browndw/docuscope-ca-online.git
+cd docuscope-ca-online
+
+# Create and activate a Python virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Launch the application
+streamlit run webapp/index.py
+```
+
+**Note**: Ensure that the `streamlit` command uses the same Python environment where dependencies were installed.
+
+### Desktop Application
+
+Pre-built installers are available for all major platforms:
+
+- **Download**: [DocuScope CA Desktop](https://github.com/browndw/docuscope-ca-desktop)
+- **Platforms**: macOS (Apple Silicon & Intel), Windows, and Linux
+
+### Requirements
+
+- Python 3.11 or higher (for local installation)
+- Docker and Docker Compose (for Docker deployment)
+- Modern web browser for accessing the application
+
+## Documentation
+
+Comprehensive documentation including installation guides, feature tutorials, and API references is available at [DocuScope CA Documentation](https://browndw.github.io/docuscope-docs/).
+
 ## Using as Template
 
 This repository can be used as a template for creating custom deployments:
 
-- **Desktop Version**: Use the "Use this template" button to create a desktop application with Tauri
-- **Custom Deployments**: Adapt for institutional or research-specific needs
+- **Desktop Version**: Use the "Use this template" button to create a desktop application
+- **Custom Deployments**: Adapt for institutional or research-specific needs  
 - **Educational Versions**: Create modified versions for classroom use
 
 See `TEMPLATE_USAGE.md` for detailed instructions on using this repository as a template.
-
-## Installation
-
-### Requirements
-
-- Python 3.11 or higher
-- Virtual environment (recommended)
-
-### Quick Setup
-
-When running locally:
-
-- [ ] Clone this repository.
-- [ ] Create a virtual environment.
-- [ ] Navigate to the directory.
-- [ ] Install the requirements.
-- [ ] Set `desktop_mode` to `True`.
-
-Then run:
-
-```bash
-streamlit run webapp/index.py
-```
 
 ## Features
 
@@ -69,7 +112,7 @@ This application provides a comprehensive suite of tools for corpus analysis:
 - **Comparative Analysis**: Compare different corpora or sub-sections of the same corpus
 - **Single Document Explorer**: In-depth analysis of individual texts
 - **Advanced Visualization**: Interactive plotting tools for data exploration
-- **Dual Mode Operation**: 
+- **Dual Mode Operation**:
   - **Enterprise Mode**: Full-featured deployment for institutional use
   - **Desktop Mode**: Streamlined interface for individual researchers
 
@@ -117,11 +160,22 @@ We welcome contributions! Please see our contributing guidelines for:
 
 ## Citation
 
-If you use this software in your research, please cite:
+If you use this software, please cite the software itself (and the JOSS article once published). Citation metadata is maintained in `CITATION.cff` (Github renders a "Cite this repository" button).
+
+**Software citation (provisional):**
 
 ```bibtex
-[Citation details to be added upon JOSS publication]
+@software{docuscope_ca_2025,
+  title        = {DocuScope Corpus Analysis & Concordancer},
+  author       = {Brown, David West},
+  year         = {2025},
+  version      = {0.4.0},
+  url          = {https://github.com/browndw/docuscope-ca-online},
+  note         = {Apache-2.0 license. Add JOSS and Zenodo DOIs when available.}
+}
 ```
+
+After JOSS acceptance, update this section to include the article DOI (dual citation of article + software where venue policies permit).
 
 ## Acknowledgments
 
@@ -129,12 +183,15 @@ If you use this software in your research, please cite:
 - **spaCy**: Natural language processing capabilities provided by the spaCy library
 - **Streamlit**: Web application framework enabling accessible deployment
 
-## Support
+## Support and Documentation
+
+For comprehensive guides and tutorials:
+
+- **Documentation**: [DocuScope CA Documentation](https://browndw.github.io/docuscope-docs/)
 
 For questions, bug reports, or feature requests:
 
 - Open an issue on [GitHub Issues](https://github.com/browndw/docuscope-ca-online/issues)
-- Check our [documentation](https://browndw.github.io/docuscope-docs/) for detailed guides
 
 > [!IMPORTANT]
 > Features like `desktop_mode` can be activated/deactivated from the `options.toml` file. Their defaults are set at their most restrictive.
@@ -146,3 +203,4 @@ For questions, bug reports, or feature requests:
 [streamlit]: https://static.streamlit.io/badges/streamlit_badge_black_white.svg
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
+[coverage]: https://codecov.io/gh/browndw/docuscope-ca-online/branch/main/graph/badge.svg
