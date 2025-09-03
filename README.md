@@ -280,7 +280,7 @@ For questions, bug reports, or feature requests:
 ---
 
 [license]: https://img.shields.io/github/license/browndw/docuscope-ca-online
-[python]: https://img.shields.io/badge/python-3.11%2B-blue
+[python]: https://img.shields.io/badge/python-3.11-blue
 [streamlit]: https://static.streamlit.io/badges/streamlit_badge_black_white.svg
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
