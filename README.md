@@ -14,17 +14,14 @@
 The DocuScope ecosystem comprises several interconnected components designed to facilitate corpus analysis and rhetorical tagging.
 
 ```mermaid
----
-config:
-  layout: elk
----
-flowchart LR
+ flowchart LR
     A["Training Data<br>HuggingFace Datasets"] --> B["spaCy Models<br>HuggingFace Hub"]
     B --> C["docuscospacy<br>Python Package"]
-    C --> D["Web Application<br>This Repository"] & E["Desktop Application<br>Cross-platform"]
-    D -.-> E
+    subgraph ide1 [DocuScope CA]
+    D["Web Application<br>This Repository"] -.Template.-> E["Desktop Application<br>Cross-platform"]
+    end
+    C --> ide1
     A@{ shape: cyl}
-    B@{ shape: stored-data}
     click A "https://huggingface.co/datasets/browndw/docusco-spacy-training"
     click B "https://huggingface.co/browndw/en_docusco_spacy"
     click C "https://pypi.org/project/docuscospacy/"
