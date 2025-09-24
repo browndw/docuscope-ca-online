@@ -5,7 +5,18 @@ All notable changes to DocuScope Corpus Analysis & Concordancer will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2025-07-XX (Current)
+## [0.4.1] - 2025-09-17
+
+### Changed
+
+- Advanced plotting normalization: Boxplots and scatterplots now include "Untagged" (DocuScope) and "Other" (Parts-of-Speech → General) in normalization so their frequencies align with the compare-corpus parts barplot. These categories remain hidden in the UI selectors to reduce clutter. PCA behavior is unchanged.
+- Docker Compose: Removed obsolete top-level `version` key and added header comments clarifying Compose v2 implicit versioning and how to enable dev hot-reload.
+
+### Fixed
+
+- Docker/Kaleido: Resolved `libexpat.so.1` startup failure by installing required OS libraries in the image; verified Plotly/Kaleido image export works inside the container.
+
+## [0.4.0] - 2025-07-14
 
 ### Added
 
