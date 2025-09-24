@@ -101,10 +101,12 @@ def render_boxplot_interface(
         },
         tag_filters={
             "Parts-of-Speech": {
-                "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),  # noqa: E501
-                "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])  # noqa: E501
-            },
-            "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])  # noqa: E501
+                "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns])  # noqa: E501
+                # Do not drop 'Other' for General; include it in normalization
+            }
+            # Intentionally do NOT filter DocuScope here so that 'Untagged' is
+            # included in normalization by ds.dtm_weight. We'll hide it from
+            # user selection below.
         },
         tag_radio_key="tag_radio",
         tag_type_key="tag_type_radio",
@@ -130,6 +132,14 @@ def render_boxplot_interface(
         cats = []
     else:
         cats = sorted([col for col in df.columns if col != "doc_id"])
+        # Exclude 'Untagged' from selectable variables while keeping it in
+        # normalization (since we didn't filter it out above)
+        if tag_radio == "DocuScope":
+            cats = [c for c in cats if c != "Untagged"]
+        # Exclude 'Other' from POS General selections while keeping it in
+        # normalization (since we didn't filter it out above)
+        if tag_radio == "Parts-of-Speech" and tag_type == "General":
+            cats = [c for c in cats if c != "Other"]
 
     # Handle plotting with grouping variables
     if by_group:
@@ -383,10 +393,10 @@ def render_scatterplot_interface(
         },
         tag_filters={
             "Parts-of-Speech": {
-                "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns]),  # noqa: E501
-                "General": lambda df: df.drop([col for col in ["Other"] if col in df.columns])  # noqa: E501
-            },
-            "DocuScope": lambda df: df.drop([col for col in ["Untagged"] if col in df.columns])  # noqa: E501
+                "Specific": lambda df: df.drop([col for col in ["FU"] if col in df.columns])  # noqa: E501
+                # Do not drop 'Other' for General; include it in normalization
+            }
+            # Do not drop DocuScope 'Untagged'; include it in normalization
         },
         tag_radio_key="tag_radio",
         tag_type_key="tag_type_radio",
@@ -400,6 +410,11 @@ def render_scatterplot_interface(
         cats = []
     else:
         cats = sorted([col for col in df.columns if col != "doc_id"])
+        # Hide Untagged/Other from UI selectors while keeping them in normalization
+        if tag_radio == "DocuScope":
+            cats = [c for c in cats if c != "Untagged"]
+        if tag_radio == "Parts-of-Speech" and tag_type == "General":
+            cats = [c for c in cats if c != "Other"]
 
     by_group_highlight = st.toggle(
         label="Highlight groups in scatterplots.",
