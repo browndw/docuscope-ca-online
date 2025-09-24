@@ -1,0 +1,47 @@
+cff-version: 1.2.0
+message: >-
+  If you use DocuScope Corpus Analysis & Concordancer in your research, please cite
+  this software. After the JOSS article is accepted, update the doi field below
+  with the JOSS DOI (and optionally add the Zenodo archive DOI under identifiers).
+title: "DocuScope Corpus Analysis & Concordancer"
+abstract: >-
+  DocuScope CA is an open-source Streamlit application integrating DocuScope rhetorical
+  tagging with part-of-speech and statistical corpus analysis for research and teaching.
+version: 0.4.0
+release-date: 2025-09-01
+authors:
+  - family-names: Brown
+    given-names: David West
+    orcid: https://orcid.org/0000-0001-7745-6354
+repository-code: https://github.com/browndw/docuscope-ca-online
+license: Apache-2.0
+url: https://github.com/browndw/docuscope-ca-online
+keywords:
+  - corpus linguistics
+  - natural language processing
+  - rhetorical analysis
+  - DocuScope
+  - streamlit
+  - text analysis
+  - digital humanities
+type: software
+preferred-citation:
+  type: software
+  title: "DocuScope Corpus Analysis & Concordancer"
+  authors:
+    - family-names: Brown
+      given-names: David West
+      orcid: https://orcid.org/0000-0001-7745-6354
+  version: 0.4.0
+  date-released: 2025-09-01
+  repository-code: https://github.com/browndw/docuscope-ca-online
+  license: Apache-2.0
+# identifiers:
+#   - type: doi
+#     value: 10.5281/zenodo.xxxxxxx  # (Add Zenodo DOI after archival)
+#   - type: doi
+#     value: 10.21105/joss.xxxxx     # (Replace with JOSS DOI post-acceptance)
+notes: >-
+  Replace placeholder DOIs in identifiers once Zenodo archive and JOSS paper DOI
+  are available. If citing the forthcoming JOSS article, cite both the article
+  and this software (dual citation) where venue policies allow.

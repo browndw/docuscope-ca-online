@@ -1,4 +1,5 @@
-version: '3.8'
+# Docker Compose v2 format (implicit version). The top-level `version` key is deprecated in v2 and intentionally omitted.
+# Tip: For local development with hot-reloading, mount the project and override the command (see commented lines below).
 services:
   streamlit_app:
     build:

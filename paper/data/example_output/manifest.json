@@ -1,0 +1,354 @@
+{
+  "generated_at_utc": "2025-09-01T12:44:35Z",
+  "project_version": "unknown",
+  "git_commit": "1ac2d5c06f5a5c0ebce47c199866ad230a3d9bb7",
+  "model_name": "docusco_spacy",
+  "artifacts": {
+    "frequency_pos": {
+      "rows": 14568,
+      "columns": [
+        "Token",
+        "Tag",
+        "AF",
+        "RF",
+        "Range"
+      ]
+    },
+    "frequency_ds": {
+      "rows": 23158,
+      "columns": [
+        "Token",
+        "Tag",
+        "AF",
+        "RF",
+        "Range"
+      ]
+    },
+    "tags_pos": {
+      "rows": 167,
+      "columns": [
+        "Tag",
+        "AF",
+        "RF",
+        "Range"
+      ]
+    },
+    "tags_ds": {
+      "rows": 37,
+      "columns": [
+        "Tag",
+        "AF",
+        "RF",
+        "Range"
+      ]
+    }
+  },
+  "corpus": {
+    "n_documents": 50,
+    "total_tokens": 153211,
+    "documents": [
+      {
+        "doc_id": "1",
+        "doc_name": "acad_01",
+        "n_chars": 6728,
+        "sha256": "73aa9a14aed6480f08ced0ef7b5062203f72ef6950c733594e7d262be101b9ac"
+      },
+      {
+        "doc_id": "2",
+        "doc_name": "acad_02",
+        "n_chars": 17704,
+        "sha256": "57b6999973f8bf1f06bdcf7503fb624e03afe3f223e536a045bf145858d68716"
+      },
+      {
+        "doc_id": "3",
+        "doc_name": "acad_03",
+        "n_chars": 57294,
+        "sha256": "9eee5729f50c0c83b58a96c8439609337acdb2e92ea57a9253c81fa118877953"
+      },
+      {
+        "doc_id": "4",
+        "doc_name": "acad_04",
+        "n_chars": 8568,
+        "sha256": "d9821a2b2fb17fb69ad8a95c7260e43a278c65121384421aaf09f7423baa875d"
+      },
+      {
+        "doc_id": "5",
+        "doc_name": "acad_05",
+        "n_chars": 13695,
+        "sha256": "5eb4f1b5cca66d61e83c942642b1c3ab192600038c53d57ebc8b7d5dad7aae5d"
+      },
+      {
+        "doc_id": "6",
+        "doc_name": "acad_06",
+        "n_chars": 21396,
+        "sha256": "ef0b9aea6d89863013f24b594747229395eb11e104bbdf8684a5eade6382b439"
+      },
+      {
+        "doc_id": "7",
+        "doc_name": "acad_07",
+        "n_chars": 39343,
+        "sha256": "919be3c9a215b63b79affd600874be1092c0836370a00193505f5d0d9a906cff"
+      },
+      {
+        "doc_id": "8",
+        "doc_name": "acad_08",
+        "n_chars": 6507,
+        "sha256": "78a95db8229119338f1d63de37dee4547f4dac380ce54556e9263967f94bb3dd"
+      },
+      {
+        "doc_id": "9",
+        "doc_name": "acad_09",
+        "n_chars": 15148,
+        "sha256": "6063c4177552a92c7092bb0db4a8b15473761a48fe8ab479f2baf9fbc7b61812"
+      },
+      {
+        "doc_id": "10",
+        "doc_name": "acad_10",
+        "n_chars": 36461,
+        "sha256": "04e09a762bf87cfd9fb778b382faf815737799e82043df315f235db50d6ae7fb"
+      },
+      {
+        "doc_id": "11",
+        "doc_name": "acad_11",
+        "n_chars": 34062,
+        "sha256": "e23b07285532cb1322b1f76c1443feb1b42342683e47f00217487eefcc93c59e"
+      },
+      {
+        "doc_id": "12",
+        "doc_name": "acad_12",
+        "n_chars": 4773,
+        "sha256": "425aa2c654686e0d8bd1037cb0b2bd15fdeee053f3871415669c6ea8cd542d3f"
+      },
+      {
+        "doc_id": "13",
+        "doc_name": "acad_13",
+        "n_chars": 9107,
+        "sha256": "9b123c17e803f2792c551106ba266067a1f33e58286093f31468d176ad864a9d"
+      },
+      {
+        "doc_id": "14",
+        "doc_name": "acad_14",
+        "n_chars": 35992,
+        "sha256": "7e890a6e1869cbe0a13160fd361a76aee8f8b316f16790a27163ecc632cd73d1"
+      },
+      {
+        "doc_id": "15",
+        "doc_name": "acad_15",
+        "n_chars": 47146,
+        "sha256": "98462c5ef16269154c3d6766ce5d1e82f3c39410f8ce4dc925ba30f96ecf8bad"
+      },
+      {
+        "doc_id": "16",
+        "doc_name": "acad_16",
+        "n_chars": 18111,
+        "sha256": "0fc22229647a593b79d1bdf6e7784fbcfb7ba83c4c5aac238458c044d444515f"
+      },
+      {
+        "doc_id": "17",
+        "doc_name": "acad_17",
+        "n_chars": 9471,
+        "sha256": "05cc1ac4c6112f340422d08e107ad0feb144bb71757e6625b238ea81f2faad74"
+      },
+      {
+        "doc_id": "18",
+        "doc_name": "acad_18",
+        "n_chars": 17884,
+        "sha256": "6a0a5dc5ffe8241f683d60cb710e6ccf58c35909d4c2b5e0771d64c4163fa3ba"
+      },
+      {
+        "doc_id": "19",
+        "doc_name": "acad_19",
+        "n_chars": 17487,
+        "sha256": "64d743ac924c7b7489b485c2af9166d8397ce4e84d8b964731f0f2e4e555f15f"
+      },
+      {
+        "doc_id": "20",
+        "doc_name": "acad_20",
+        "n_chars": 7178,
+        "sha256": "0faaffb27b29a41788d128131108bbe7b81556e49fd49272d0f635ca5864f068"
+      },
+      {
+        "doc_id": "21",
+        "doc_name": "acad_21",
+        "n_chars": 7145,
+        "sha256": "ae3a4610c869be799e666556cd49bd638920fe3b14a49d6dd3f893f3404c399e"
+      },
+      {
+        "doc_id": "22",
+        "doc_name": "acad_22",
+        "n_chars": 17007,
+        "sha256": "1015e07dd05713ba8a3fe8b854e1457e5ed54d6a01e7ad6c056be1a6ac4d30c0"
+      },
+      {
+        "doc_id": "23",
+        "doc_name": "acad_23",
+        "n_chars": 8823,
+        "sha256": "c752094fef4009c7a95ac5f4c2675b72af91f5e142b68c821439a88d25b6eea5"
+      },
+      {
+        "doc_id": "24",
+        "doc_name": "acad_24",
+        "n_chars": 9510,
+        "sha256": "4d62f9fd996c47a7159413dc64e8255514a5270da1d4bfad7e7b2201da2428a4"
+      },
+      {
+        "doc_id": "25",
+        "doc_name": "acad_25",
+        "n_chars": 12161,
+        "sha256": "fd31053fa78b8540cc7422a797675550b4e26fcbbd7e1972867e4c6bbc7de429"
+      },
+      {
+        "doc_id": "26",
+        "doc_name": "acad_26",
+        "n_chars": 10469,
+        "sha256": "8ebd0836838444720e3342c6f4857edb55127b77f104602d7f5e97a6bc518f11"
+      },
+      {
+        "doc_id": "27",
+        "doc_name": "acad_27",
+        "n_chars": 26915,
+        "sha256": "f7d58266f2017eba41d4a2866b20e482cf47f54a3d0e376339419db39d8eeded"
+      },
+      {
+        "doc_id": "28",
+        "doc_name": "acad_28",
+        "n_chars": 12397,
+        "sha256": "11e24cca29bc921dc31bad20313f9a96c7a87315b2d95b103a987822fac5d0bb"
+      },
+      {
+        "doc_id": "29",
+        "doc_name": "acad_29",
+        "n_chars": 11320,
+        "sha256": "919d42efb1814cc3beab9dbeb69cf7956708de4f574ecc3a34dd54a0e76bca73"
+      },
+      {
+        "doc_id": "30",
+        "doc_name": "acad_30",
+        "n_chars": 3629,
+        "sha256": "746ac0f4d4f19becd5c00d9e04e8e8550f22015d7d3d75b92c1494b33dd96df2"
+      },
+      {
+        "doc_id": "31",
+        "doc_name": "acad_31",
+        "n_chars": 17115,
+        "sha256": "6ea9cdb95b2e64d58afba1a9787cf90de6e7f408673480c0c389ef8f2f8ee2e9"
+      },
+      {
+        "doc_id": "32",
+        "doc_name": "acad_32",
+        "n_chars": 13307,
+        "sha256": "1935dc36d70093923bfd6e8aba723c040361074658ff27f4b1c7bce4c0158dff"
+      },
+      {
+        "doc_id": "33",
+        "doc_name": "acad_33",
+        "n_chars": 30107,
+        "sha256": "298881836eec46791196796e4f32ba08f68da604a2e2f074e4f439abfacc94df"
+      },
+      {
+        "doc_id": "34",
+        "doc_name": "acad_34",
+        "n_chars": 7615,
+        "sha256": "a43ddf90802b2f502d8b88ecbea605d7a53bada1df8098e040a7705fbb30dadd"
+      },
+      {
+        "doc_id": "35",
+        "doc_name": "acad_35",
+        "n_chars": 26341,
+        "sha256": "951c989beb63da414a946aee586f5b69605f3130e83913463e755de60ec0b18f"
+      },
+      {
+        "doc_id": "36",
+        "doc_name": "acad_36",
+        "n_chars": 13024,
+        "sha256": "0d6bb24b685268b68e03f8ed5633f60d91276a9261730b5fbfe3d316371a7334"
+      },
+      {
+        "doc_id": "37",
+        "doc_name": "acad_37",
+        "n_chars": 5068,
+        "sha256": "ea1a2bb22a6456d018e9d3b43cf9c54ac1c0cae0b0c94042c1a48323c294509b"
+      },
+      {
+        "doc_id": "38",
+        "doc_name": "acad_38",
+        "n_chars": 17444,
+        "sha256": "82dd6747339183a9ccdc1edfc50a10ca8650fbc62d4d99753fdd093c731470ff"
+      },
+      {
+        "doc_id": "39",
+        "doc_name": "acad_39",
+        "n_chars": 7164,
+        "sha256": "83cb40a9e07e3da25694f3b3ff2bc529c163774f1c9289f36d1e8156702f7f1c"
+      },
+      {
+        "doc_id": "40",
+        "doc_name": "acad_40",
+        "n_chars": 7176,
+        "sha256": "c8ad1bc5f63f2b6991a16b69b2909334103fde6379246c3ec941f02ab59dfc84"
+      },
+      {
+        "doc_id": "41",
+        "doc_name": "acad_41",
+        "n_chars": 10609,
+        "sha256": "4f598a740b814c43b2539d77dda46f6211821f064f97e54e94e17e21c21e61f6"
+      },
+      {
+        "doc_id": "42",
+        "doc_name": "acad_42",
+        "n_chars": 26548,
+        "sha256": "d909cd0b6904716aa68396915e9bdbe8440bc458fd2561ca42a91b5e7bd19dcc"
+      },
+      {
+        "doc_id": "43",
+        "doc_name": "acad_43",
+        "n_chars": 10776,
+        "sha256": "ba92eb6a3613cefa37df116658bedc06ededc8074ba2f5d0790539bd84b2e9a3"
+      },
+      {
+        "doc_id": "44",
+        "doc_name": "acad_44",
+        "n_chars": 3481,
+        "sha256": "73b9d47592287f6ae3c6e4e504d467b638d42b60ee578ab91541b25d0cbafcae"
+      },
+      {
+        "doc_id": "45",
+        "doc_name": "acad_45",
+        "n_chars": 9609,
+        "sha256": "666e03b099e119c907cddc883e6b38d092858e518fc81d593a8b18379f6dacb3"
+      },
+      {
+        "doc_id": "46",
+        "doc_name": "acad_46",
+        "n_chars": 21859,
+        "sha256": "06879f93096b42c62d00871ff7f8542777db2cc8a72b5591db4c1094cb8f9a0b"
+      },
+      {
+        "doc_id": "47",
+        "doc_name": "acad_47",
+        "n_chars": 19468,
+        "sha256": "13cb751adf5707074ab8ff34d4daf750ca2d5c7b417c05bb56bf92113e6f8986"
+      },
+      {
+        "doc_id": "48",
+        "doc_name": "acad_48",
+        "n_chars": 17027,
+        "sha256": "dc4514c96346b0bc04ec60c7a32f3204eded6e1a43b44bd81f79a5d0ba6b079d"
+      },
+      {
+        "doc_id": "49",
+        "doc_name": "acad_49",
+        "n_chars": 13892,
+        "sha256": "75fa213e754c03eb881bfb001f81d2b9f0567c0f1acb37c74471032ad9e0c824"
+      },
+      {
+        "doc_id": "50",
+        "doc_name": "acad_50",
+        "n_chars": 15684,
+        "sha256": "5437e636ba3e231c7cb41b91f0d8ca730c1648eee9ddb46f04d4368ea5225eca"
+      }
+    ]
+  },
+  "script": "run_example.py",
+  "repro_instructions": "python paper/scripts/run_example.py"
+}

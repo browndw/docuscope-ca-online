@@ -1,9 +1,36 @@
 FROM python:3.11-slim
 
 # Install system dependencies needed for building Python packages
+# and runtime libraries required by Plotly Kaleido (headless image export)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    # Kaleido/Chromium and font rendering deps
+    libexpat1 \
+    libglib2.0-0 \
+    libnss3 \
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libxi6 \
+    libxss1 \
+    libxtst6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxshmfence1 \
+    libxfixes3 \
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libfontconfig1 \
+    libfreetype6 \
+    fonts-liberation \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
