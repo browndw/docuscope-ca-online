@@ -9,6 +9,7 @@ abstract: >-
   tagging with part-of-speech and statistical corpus analysis for research and teaching.
 version: 0.4.1
 release-date: 2025-10-19
+doi: 10.5281/zenodo.17392153
 authors:
   - family-names: Brown
     given-names: David West
@@ -36,9 +37,10 @@ preferred-citation:
   date-released: 2025-10-19
   repository-code: https://github.com/browndw/docuscope-ca-online
   license: Apache-2.0
-# identifiers:
-#   - type: doi
-#     value: 10.5281/zenodo.xxxxxxx  # (Add Zenodo DOI after archival)
+  doi: 10.5281/zenodo.17392153
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.17392153
 #   - type: doi
 #     value: 10.21105/joss.xxxxx     # (Replace with JOSS DOI post-acceptance)
 notes: >-
