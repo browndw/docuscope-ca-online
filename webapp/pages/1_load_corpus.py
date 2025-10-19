@@ -21,7 +21,7 @@ from webapp.utilities.session import (
     get_or_init_user_session, generate_temp, safe_session_get
     )
 from webapp.utilities.session.metadata_handlers import (
-    handle_target_metadata_processing
+    handle_target_metadata_processing, load_metadata
     )
 from webapp.utilities.analysis import (
     find_saved, find_saved_reference
@@ -147,7 +147,6 @@ def main() -> None:
         load_and_display_target_corpus(session, user_session_id)
 
         # Get metadata for sidebar operations using the unified metadata handler
-        from webapp.utilities.session.metadata_handlers import load_metadata
         metadata_target = load_metadata("target", user_session_id)
 
         # Sidebar: Target corpus management
