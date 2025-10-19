@@ -91,18 +91,21 @@ For users preferring local installation:
 git clone https://github.com/browndw/docuscope-ca-online.git
 cd docuscope-ca-online
 
-# Create and activate a Python virtual environment
-python -m venv venv
+# Create and activate a Python virtual environment (Python 3.11)
+python3.11 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install dependencies (models are bundled in `webapp/_models/`)
 pip install -r requirements.txt
 
 # Launch the application
 streamlit run webapp/index.py
 ```
 
-**Note**: Ensure that the `streamlit` command uses the same Python environment where dependencies were installed.
+#### Notes
+
+- The project targets Python 3.11 exclusively; other versions are not supported.
+- The DocuScope-enhanced spaCy models ship with the repository under `webapp/_models/`, so no additional downloads are required for local use.
 
 ### Desktop Application
 
