@@ -103,8 +103,22 @@ LOCAL_MODEL_DIRS: List[Path] = [
 
 
 def read_project_version() -> str:
+    """Return the project version without requiring an installed package."""
+    # Prefer importlib.metadata when the package is installed (e.g., in CI)
     try:
-        import tomllib  # Python 3.11+
+        from importlib.metadata import version  # type: ignore import
+
+        return version("docuscope-ca-online")
+    except Exception:
+        pass
+
+    # Fall back to parsing pyproject.toml (works for editable checkouts)
+    try:
+        try:
+            import tomllib  # Python 3.11+
+        except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
+            import tomli as tomllib  # type: ignore
+
         with PYPROJECT_TOML.open("rb") as f:
             data = tomllib.load(f)
         return data.get("project", {}).get("version", "unknown")
