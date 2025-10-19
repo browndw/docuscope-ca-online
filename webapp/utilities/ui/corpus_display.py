@@ -11,56 +11,7 @@ from webapp.utilities.session import validate_session_state, safe_session_get
 from webapp.utilities.session.metadata_handlers import load_metadata
 from webapp.utilities.ui.shared_utils import add_category_description
 from webapp.utilities.state import SessionKeys, MetadataKeys, CorpusKeys
-from webapp.utilities.common import get_doc_cats
-
-
-# Utility function to safely access metadata values in both formats
-def safe_metadata_get(metadata: dict, key: str, default=None, nested_key: str = None):
-    """
-    Safely get a value from metadata dict, handling both list and scalar formats.
-
-    Metadata can be in different formats:
-    - DataFrame converted: {'docids': [{'ids': [...]}], 'doccats': [{'cats': [...]}]}
-    - Direct dict: {'docids': {'ids': [...]}, 'doccats': {'cats': [...]}}
-
-    Parameters
-    ----------
-    metadata : dict
-        The metadata dictionary
-    key : str
-        The primary key to access
-    default : any
-        Default value if key not found
-    nested_key : str, optional
-        Optional nested key (e.g., 'ids' for docids, 'cats' for doccats)
-
-    Returns
-    -------
-    any
-        The value from the metadata
-    """
-    value = metadata.get(key, default)
-
-    if value is None:
-        return default
-
-    # If it's a list (from DataFrame conversion) and we want nested access
-    if isinstance(value, list) and len(value) > 0 and nested_key:
-        if isinstance(value[0], dict):
-            return value[0].get(nested_key, default)
-        else:
-            return value[0] if not nested_key else default
-
-    # If it's a dict and we want nested access
-    if isinstance(value, dict) and nested_key:
-        return value.get(nested_key, default)
-
-    # If it's a list but no nested key needed, return first element
-    if isinstance(value, list) and len(value) > 0 and not nested_key:
-        return value[0]
-
-    # Return as-is
-    return value
+from webapp.utilities.common import get_doc_cats, safe_metadata_get
 
 
 # Corpus information display functions
