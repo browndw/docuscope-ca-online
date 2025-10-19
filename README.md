@@ -7,7 +7,7 @@
 
 ---
 
-[![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml)
+[![License][license]](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) [![Python][python]](https://www.python.org/downloads/) [![Streamlit][streamlit]](https://streamlit.io) [![spaCy][spacy]](https://spacy.io) [![Tests][tests]](https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml) [![DOI][doi]](https://doi.org/10.5281/zenodo.17392153)
 
 ## DocuScope Ecosystem
 
@@ -132,6 +132,8 @@ When working inside a conda environment, ensure that the `pytest` command resolv
 ```
 
 This avoids pulling in a different interpreter that was built with incompatible `polars` binaries.
+
+> *Continuous integration note*: the GitHub Actions workflow (`.github/workflows/test.yml`) runs the full battery of linting, unit, integration, performance, UI, and Docker checks on release tags (`v*.*.*`) or when manually dispatched. Between releases the same commands can be executed locally using the snippets above.
 
 ### Reproducible Example Workflow
 
@@ -306,3 +308,4 @@ For questions, bug reports, or feature requests:
 [streamlit]: https://static.streamlit.io/badges/streamlit_badge_black_white.svg
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
+[doi]: https://zenodo.org/badge/DOI/10.5281/zenodo.17392153.svg
