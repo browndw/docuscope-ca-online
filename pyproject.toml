@@ -1,9 +1,9 @@
 [project]
 name = "docuscope-ca-online"
-version = "0.4.0"
+version = "0.4.1"
 description = "An online version of the Docuscope CA tool for analyzing text."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.11.*"
 keywords = ["nlp", "language"]
 authors = [
     { name = "David Brown", email = "dwb2@andrew.cmu.edu" }
@@ -11,11 +11,11 @@ authors = [
 maintainers = [
     { name = "David Brown", email = "dwb2@andrew.cmu.edu" }
 ]
+license = { text = "Apache-2.0" }
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
     "Authlib==1.5.2",
@@ -45,8 +45,11 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://browndw.github.io/docuscope-ca-online/"
 Homepage = "https://github.com/browndw/docuscope-ca-online"
+Source = "https://github.com/browndw/docuscope-ca-online"
+Documentation = "https://browndw.github.io/docuscope-docs/"
+Issues = "https://github.com/browndw/docuscope-ca-online/issues"
+Changelog = "https://github.com/browndw/docuscope-ca-online/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["setuptools>=45", "setuptools-scm>=6.2", "wheel"]
@@ -57,6 +60,9 @@ include-package-data = true
 
 [tool.setuptools.packages]
 find = { namespaces = false }
+
+[project.scripts]
+docuscope-ca = "docuscope_ca.cli:main"
 
 [tool.setuptools_scm]
 
@@ -69,6 +75,12 @@ markers = [
     "streamlit: marks tests as streamlit UI tests",
     "slow: marks tests as slow running",
     "ai: marks tests that require AI/LLM access"
+]
+filterwarnings = [
+    "ignore:Importing 'parser.split_arg_string' is deprecated:DeprecationWarning:click.parser",
+    "ignore:Importing 'parser.split_arg_string' is deprecated:DeprecationWarning:weasel.util.config",
+    # Broad fallback to suppress the same deprecation from any other import path (e.g., spaCy internals)
+    "ignore:Importing 'parser.split_arg_string' is deprecated:DeprecationWarning",
 ]
 
 [project.optional-dependencies]
