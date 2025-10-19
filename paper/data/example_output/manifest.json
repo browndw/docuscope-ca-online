@@ -1,7 +1,7 @@
 {
-  "generated_at_utc": "2025-09-01T12:44:35Z",
-  "project_version": "unknown",
-  "git_commit": "1ac2d5c06f5a5c0ebce47c199866ad230a3d9bb7",
+  "generated_at_utc": "2025-10-18T15:40:17Z",
+  "project_version": "0.4.1",
+  "git_commit": "54460b9d78e2e8447f7327fbd87ab5234680ff49",
   "model_name": "docusco_spacy",
   "artifacts": {
     "frequency_pos": {
