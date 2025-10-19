@@ -28,43 +28,48 @@ This project adheres to a code of conduct that promotes a welcoming and inclusiv
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.11
 - Virtual environment (recommended)
 - Git
 
 ### Installation
 
 1. Clone your fork:
-```bash
-git clone https://github.com/YOUR_USERNAME/docuscope-ca-online.git
-cd docuscope-ca-online
-```
+
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/docuscope-ca-online.git
+    cd docuscope-ca-online
+    ```
 
 2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+
+    ```bash
+    python3.11 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
 
 3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 4. Set up development configuration:
    - Copy `webapp/config/options.toml` to create your local configuration
    - Set `desktop_mode = true` for local development
 
 5. Run the application:
-```bash
-streamlit run webapp/index.py
-```
+
+    ```bash
+    streamlit run webapp/index.py
+    ```
 
 ## Making Changes
 
 ### Branch Naming
 
 Use descriptive branch names:
+
 - `feature/add-new-analysis-tool`
 - `fix/memory-leak-in-processing`
 - `docs/update-installation-guide`
@@ -72,13 +77,15 @@ Use descriptive branch names:
 ### Commit Messages
 
 Write clear, descriptive commit messages:
+
 - Use the present tense ("Add feature" not "Added feature")
 - Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
 - Limit the first line to 72 characters or less
 - Reference issues and pull requests liberally after the first line
 
 Example:
-```
+
+```text
 Add support for custom DocuScope dictionaries
 
 - Implement dictionary loading from user files
@@ -117,7 +124,7 @@ pytest --cov=webapp tests/
 
 ### Test Structure
 
-```
+```text
 tests/
 ├── unit/           # Fast, isolated tests
 ├── integration/    # Tests with external dependencies
@@ -175,6 +182,7 @@ For feature requests, please include:
 ### Issue Labels
 
 We use labels to categorize issues:
+
 - `bug`: Something isn't working
 - `enhancement`: New feature or request
 - `documentation`: Improvements to documentation
@@ -216,6 +224,7 @@ mypy webapp/
 - Use Google-style docstrings
 
 Example:
+
 ```python
 def process_corpus(texts: List[str], model_name: str) -> Dict[str, Any]:
     """Process a corpus with the specified model.
@@ -271,6 +280,7 @@ Releases follow semantic versioning (MAJOR.MINOR.PATCH):
 ## Recognition
 
 Contributors will be acknowledged in:
+
 - CHANGELOG.md for significant contributions
 - README.md for major features
 - Academic citations where appropriate
