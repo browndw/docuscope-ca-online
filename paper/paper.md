@@ -17,7 +17,7 @@ authors:
 affiliations:
  - name: Carnegie Mellon University, Department of English
    index: 1
-date: 6 July 2025
+date: 19 October 2025
 bibliography: paper.bib
 ---
 
@@ -26,6 +26,8 @@ bibliography: paper.bib
 # Summary
 
 DocuScope Corpus Analysis & Concordancer is a Streamlit application for corpus and rhetorical text analysis. It combines spaCy linguistic annotation with DocuScope rhetorical tagging and runs in either desktop or multi-user modes. A headless API and CLI allow scripted workflows without the web interface.
+
+Version 0.4.1 of the software is archived on Zenodo (doi:10.5281/zenodo.17392153) [@brown2025docuscopeca].
 
 # Statement of need
 
