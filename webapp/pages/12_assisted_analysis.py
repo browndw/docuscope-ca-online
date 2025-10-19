@@ -17,7 +17,7 @@ from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
 
 # Module-specific imports
 from webapp.utilities.session import (
-    get_or_init_user_session, safe_session_get
+    get_or_init_user_session, safe_session_get, load_metadata
 )
 from webapp.utilities.ai import (
     clear_pandasai, pandabot_user_query,
@@ -36,7 +36,7 @@ from webapp.utilities.ui import (
     sidebar_help_link, render_table_generation_interface
 )
 from webapp.utilities.state import (
-    SessionKeys, WarningKeys
+    SessionKeys, WarningKeys, CorpusKeys
 )
 from webapp.menu import (
     menu, require_login
@@ -224,9 +224,11 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
             # Get metadata if available
             metadata_target = None
             if safe_session_get(session, SessionKeys.HAS_TARGET, False):
-                from webapp.utilities.session import load_metadata
-                from webapp.utilities.state import CorpusKeys
                 metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+
+            metadata_reference = None
+            if safe_session_get(session, SessionKeys.HAS_REFERENCE, False):
+                metadata_reference = load_metadata(CorpusKeys.REFERENCE, user_session_id)
 
             # Initialize widget state management
             app_core.widget_manager.register_persistent_keys([
@@ -235,12 +237,13 @@ def render_pandabot_interface(user_session_id: str, session: dict) -> None:
             ])
 
             # Data selection interface
-            selected_corpus, selected_query, df = render_data_selection_interface(
+            selected_query, df = render_data_selection_interface(
                 user_session_id=user_session_id,
                 session=session,
                 bot_prefix="pandasai",
                 clear_function=clear_pandasai_table,
-                metadata_target=metadata_target
+                metadata_target=metadata_target,
+                metadata_reference=metadata_reference
             )
 
             # Data preview with controls
