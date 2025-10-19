@@ -47,7 +47,7 @@ Key contributions: (1) integrated linguistic + rhetorical tag pipeline; (2) dual
 
 # Implementation
 
-Python 3.11 stack: spaCy plus a DocuScope extension for joint linguistic/rhetorical tagging; Polars for columnar data processing [@polars2023]; Streamlit for the interface [@streamlit2023]; Plotly for visualization; `docuscospacy` for tag generation. Parsing and metric computation are isolated from presentation so the same core serves both UI and scripted contexts. The API/CLI expose only the minimal surface required for ingestion, parsing, metrics, and export. Tests exercise parsing, session persistence, and analysis routines.
+Python 3.11 stack: spaCy plus a DocuScope extension for joint linguistic/rhetorical tagging; Polars for columnar data processing [@polars2023]; Streamlit for the interface [@streamlit2023]; Plotly for visualization; `docuscospacy` for tag generation. Parsing and metric computation are isolated from presentation so the same core serves both UI and scripted contexts. The API/CLI expose only the minimal surface required for ingestion, parsing, metrics, and export. Tests exercise parsing, session persistence, and analysis routines. To keep reviewers offline, the repository bundles the production DocuScope spaCy models under `webapp/_models/`.
 
 ## Ecosystem
 
@@ -83,11 +83,11 @@ The typical interactive workflow demonstrates how students and researchers can c
 
 ## Performance
 
-Benchmark (50 docs; 132k words; Python 3.10.14; 8‑core, 24 GB RAM) achieved ~5.6 documents/s (~890k words/min steady state, ≈1.1 min per million words) excluding initial model load. Contributing factors: batched spaCy calls, vectorized Polars group‑bys, minimal intermediate serialization, and hash‑based avoidance of duplicate work.
+Benchmark (50 docs; 132k words; Python 3.11.8; 8‑core, 24 GB RAM) achieved ~5.6 documents/s (~890k words/min steady state, ≈1.1 min per million words) excluding initial model load. Contributing factors: batched spaCy calls, vectorized Polars group‑bys, minimal intermediate serialization, and hash‑based avoidance of duplicate work.
 
 # Impact
 
-DocuScope CA supports corpus‑based rhetorical analysis for linguistics, writing studies, and digital humanities. Unlike AntConc [@Anthony:2022] or exploratory web tools, it combines part-of-speech and rhetorical tagging, modern NLP, and explicit provenance in one deployable system. Optional headless execution and hashing facilitate transparent validation, teaching, and reproducible workflows. The integration of accessible interface, reproducible headless pipeline, and rhetorical annotation addresses a gap between exploratory tools and code‑only stacks.
+DocuScope CA supports corpus‑based rhetorical analysis for linguistics, writing studies, and digital humanities. Unlike AntConc [@anthony2005antconc] or exploratory web tools, it combines part-of-speech and rhetorical tagging, modern NLP, and explicit provenance in one deployable system. Optional headless execution and hashing facilitate transparent validation, teaching, and reproducible workflows. The integration of accessible interface, reproducible headless pipeline, and rhetorical annotation addresses a gap between exploratory tools and code‑only stacks.
 
 ## Outlook
 
