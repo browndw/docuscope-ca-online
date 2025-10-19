@@ -31,7 +31,7 @@ DocuScope Corpus Analysis & Concordancer is a Streamlit application for corpus a
 
 Corpus linguistics and computational text analysis are established methods in linguistics, writing studies, and digital humanities [@biber2011corpus; @mcenery2012corpus]. However, existing tools present researchers with a fragmented landscape that forces compromises between accessibility and analytical depth.
 
-Established tools like AntConc [@anthony2005antconc] excel at concordancing, frequency analysis, and keyword identification but provide no part-of-speech or rhetorical annotation capabilities. Web-based platforms like Voyant Tools offer accessible text visualization and basic analysis with local installation options, but similarly lack linguistic tagging and rhetorical analysis features. While both tools are excellent for their intended purposes, neither provides the deeper linguistic annotation that modern corpus analysis requires.
+Established tools like AntConc [@anthony2005antconc] excel at concordancing, frequency analysis, and keyword identification but provide no part-of-speech or rhetorical annotation capabilities. Web-based platforms like Voyant Tools [@voyant2016] offer accessible text visualization and basic analysis with local installation options, but similarly lack linguistic tagging and rhetorical analysis features. While both tools are excellent for their intended purposes, neither provides the deeper linguistic annotation that modern corpus analysis requires.
 
 Code-centric frameworks (spaCy, NLTK) provide sophisticated linguistic processing but require substantial programming expertise and offer no built-in rhetorical analysis. Proprietary tools often combine features but lack transparency, reproducibility controls, and flexible deployment options.
 
@@ -47,7 +47,7 @@ Key contributions: (1) integrated linguistic + rhetorical tag pipeline; (2) dual
 
 # Implementation
 
-Python 3.11 stack: spaCy plus a DocuScope extension for joint linguistic/rhetorical tagging; Polars for columnar data processing [@polars2023]; Streamlit for the interface [@streamlit2023]; Plotly for visualization; `docuscospacy` for tag generation. Parsing and metric computation are isolated from presentation so the same core serves both UI and scripted contexts. The API/CLI expose only the minimal surface required for ingestion, parsing, metrics, and export. Tests exercise parsing, session persistence, and analysis routines. To keep reviewers offline, the repository bundles the production DocuScope spaCy models under `webapp/_models/`.
+Python 3.11 stack: spaCy [@spacy2020] plus a DocuScope extension for joint linguistic/rhetorical tagging; Polars for columnar data processing [@polars2023]; Streamlit for the interface [@streamlit2023]; Plotly for visualization; `docuscospacy` for tag generation. Parsing and metric computation are isolated from presentation so the same core serves both UI and scripted contexts. The API/CLI expose only the minimal surface required for ingestion, parsing, metrics, and export. Tests exercise parsing, session persistence, and analysis routines. To keep reviewers offline, the repository bundles the production DocuScope spaCy models under `webapp/_models/`.
 
 ## Ecosystem
 

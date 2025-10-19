@@ -102,6 +102,8 @@ pip install -r requirements.txt
 streamlit run webapp/index.py
 ```
 
+> *Review note*: The tested pipelines, CLI/API workflows, and the JOSS reproduction script run entirely offline; no OpenAI credentials or external network access are required unless you opt into the AI-assisted features documented later in the README.
+
 #### Notes
 
 - The project targets Python 3.11 exclusively; other versions are not supported.
@@ -114,22 +116,39 @@ Pre-built installers are available for all major platforms:
 - **Download**: [DocuScope CA Desktop](https://github.com/browndw/docuscope-ca-desktop)
 - **Platforms**: macOS (Apple Silicon & Intel), Windows, and Linux
 
-### Requirements
+### Automated Testing
 
-- Python 3.11 (for local installation)
-- Docker and Docker Compose (for Docker deployment)
-- Modern web browser for accessing the application
+To install the extra test dependencies and run the automated test suite from the project root:
 
-## Documentation
+```bash
+python -m pip install -e ".[test]"
+pytest -q
+```
 
-Comprehensive documentation including installation guides, feature tutorials, and API references is available at [DocuScope CA Documentation](https://browndw.github.io/docuscope-docs/).
+When working inside a conda environment, ensure that the `pytest` command resolves to the interpreter that has the project dependencies installed. In particular, some conda builds of `polars` require CPU extensions (AVX/AVX2, FMA, BMI1, BMI2, LZCNT, MOVBE); if you encounter runtime messages about missing CPU features, invoke pytest via the environment-specific interpreter, for example:
+
+```bash
+/path/to/miniconda3/envs/myenv/bin/python -m pytest -q
+```
+
+This avoids pulling in a different interpreter that was built with incompatible `polars` binaries.
+
+### Reproducible Example Workflow
+
+Reviewers can regenerate the artifacts referenced in the JOSS paper using the bundled headless script:
+
+```bash
+python paper/scripts/run_example.py
+```
+
+The script uses the sample corpus under `paper/data/test_corpus/`, runs the DocuScope + spaCy pipeline, and writes deterministic Parquet tables plus a provenance `manifest.json` to `paper/data/example_output/`. It makes no network calls and can be executed inside the Docker container or a local environment prepared with `pip install -e .`.
 
 ## Using as Template
 
 This repository can be used as a template for creating custom deployments:
 
 - **Desktop Version**: Use the "Use this template" button to create a desktop application
-- **Custom Deployments**: Adapt for institutional or research-specific needs  
+- **Custom Deployments**: Adapt for institutional or research-specific needs
 - **Educational Versions**: Create modified versions for classroom use
 
 ## Features
@@ -230,8 +249,8 @@ The manifest enables deterministic regeneration and peer review verification.
 
 ## License
 
-Code licensed under `Apache License 2.0 <https://www.apache.org/licenses/LICENSE-2.0>`_.
-See `LICENSE <https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE>`_ file.
+Code licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+See [LICENSE](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) file.
 
 ## Contributing
 
