@@ -21,7 +21,7 @@ from webapp.config.config_utils import get_runtime_setting
 
 # Module-specific imports
 from webapp.utilities.session import (
-    get_or_init_user_session, safe_session_get
+    get_or_init_user_session, safe_session_get, load_metadata
 )
 from webapp.utilities.ai import (
     clear_plotbot, previous_code_chunk,
@@ -40,7 +40,7 @@ from webapp.utilities.ui import (
     graceful_component
 )
 from webapp.utilities.state import (
-    SessionKeys, WarningKeys
+    SessionKeys, WarningKeys, CorpusKeys
 )
 from webapp.menu import (
     menu, require_login
@@ -337,37 +337,87 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
             # Get metadata if available
             metadata_target = None
             if safe_session_get(session, SessionKeys.HAS_TARGET, False):
-                from webapp.utilities.session import load_metadata
-                from webapp.utilities.state import CorpusKeys
                 metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+
+            metadata_reference = None
+            if safe_session_get(session, SessionKeys.HAS_REFERENCE, False):
+                metadata_reference = load_metadata(CorpusKeys.REFERENCE, user_session_id)
 
             # Initialize widget state management
             app_core.widget_manager.register_persistent_keys([
                 'plot_corpus_select', 'plot_query_select', 'plot_type_select',
                 'plot_x_axis', 'plot_y_axis', 'plot_color_by'
             ])
+            # Get last code chunk
+            last_code = previous_code_chunk(st.session_state[user_session_id]["plotbot"])
 
-            # Data selection interface
-            selected_corpus, selected_query, df = render_data_selection_interface(
-                user_session_id=user_session_id,
-                session=session,
-                bot_prefix="plotbot",
-                clear_function=clear_plotbot_table,
-                metadata_target=metadata_target
-            )
+            # Chat input
+            if last_code is None or len(last_code) == 0:
 
-            # Data preview with controls
-            if df is not None:
+                # Data selection interface
+                selected_query, df = render_data_selection_interface(
+                    user_session_id=user_session_id,
+                    session=session,
+                    bot_prefix="plotbot",
+                    clear_function=clear_plotbot_table,
+                    metadata_target=metadata_target,
+                    metadata_reference=metadata_reference
+                )
+
+                # Data preview with controls
+                if df is not None:
+                    df = render_data_preview_controls(
+                        df=df,
+                        query=selected_query,
+                        user_session_id=user_session_id
+                    )
+
+                    if 'plotbot_df' not in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]['plotbot_df'] = df
+                    else:
+                        st.session_state[user_session_id]['plotbot_df'] = df
+
+                    if 'plotbot_query' not in st.session_state[user_session_id]:
+                        st.session_state[user_session_id]['plotbot_query'] = selected_query
+                    else:
+                        st.session_state[user_session_id]['plotbot_query'] = selected_query
+
+                # Plotting library selection
+                plot_lib = render_plotting_library_selection(user_session_id)
+
+                if 'plotbot_library' not in st.session_state[user_session_id]:
+                    st.session_state[user_session_id]['plotbot_library'] = plot_lib
+                else:
+                    st.session_state[user_session_id]['plotbot_library'] = plot_lib
+
+            # Chat interface
+            df = st.session_state[user_session_id].get('plotbot_df', None)
+            selected_query = st.session_state[user_session_id].get('plotbot_query', None)
+            plot_lib = st.session_state[user_session_id].get(
+                'plotbot_library', 'plotly.express'
+                )
+
+            if last_code is not None and len(last_code) > 0:
+                st.markdown(
+                    body="### Data Preview",
+                    help=(
+                        "Here is a preview of the data used for the current plot. "
+                        "To modidify the data, please Clear Chat History "
+                        "and start a new conversation."
+                    )
+                )
                 df = render_data_preview_controls(
                     df=df,
                     query=selected_query,
                     user_session_id=user_session_id
                 )
+                st.info(
+                    "Use the chat input below to refine the previous plot "
+                    "in the message thread. For example, you can instuct the Plotbot to "
+                    "change colors, add titles, or modify axes.",
+                    icon=":material/info:"
+                )
 
-            # Plotting library selection
-            plot_lib = render_plotting_library_selection(user_session_id)
-
-            # Chat interface
             render_plotbot_chat_interface(
                 user_session_id, api_key, df, selected_query, plot_lib
             )
