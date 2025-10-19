@@ -18,11 +18,12 @@ from webapp.utilities.core import app_core
 from webapp.config.unified import get_ai_config
 
 # Specific utilities for this module
-from webapp.utilities.state import SessionKeys
+from webapp.utilities.common import get_doc_cats, safe_metadata_get
 from webapp.utilities.storage import get_query_count
 from webapp.utilities.analysis import tags_table_grouped, dtm_simplify_grouped
 from webapp.utilities.corpus import get_corpus_data_manager
 from webapp.utilities.session.session_core import safe_session_get
+from webapp.utilities.state import SessionKeys, MetadataKeys
 
 # Import centralized logging configuration and logger
 from webapp.utilities.configuration.logging_config import get_logger
@@ -144,8 +145,18 @@ def tables_to_list(session_id: str,
             key for key, value in all_tables.items()
             if value in available_keys
             ]
-    elif corpus == "Grouped":
+    elif corpus == "Grouped Target":
         manager = get_corpus_data_manager(session_id, "target")
+        available_keys = manager.get_available_keys()
+        if categories is not None and len(categories) > 0:
+            matching_keys = [
+                key for key, value in all_tables.items()
+                if value in available_keys
+                ]
+        else:
+            matching_keys = []
+    elif corpus == "Grouped Reference":
+        manager = get_corpus_data_manager(session_id, "reference")
         available_keys = manager.get_available_keys()
         if categories is not None and len(categories) > 0:
             matching_keys = [
@@ -219,8 +230,11 @@ def table_from_list(session_id: str,
     elif corpus == "Reference":
         manager = get_corpus_data_manager(session_id, "reference")
         matching_value = corpus_tables.get(table_name)
-    elif corpus == "Grouped":
+    elif corpus == "Grouped Target":
         manager = get_corpus_data_manager(session_id, "target")
+        matching_value = grouped_tables.get(table_name)
+    elif corpus == "Grouped Reference":
+        manager = get_corpus_data_manager(session_id, "reference")
         matching_value = grouped_tables.get(table_name)
     elif corpus == "Keywords":
         manager = get_corpus_data_manager(session_id, "target")
@@ -256,7 +270,7 @@ def table_from_list(session_id: str,
                     index="doc_id"
                     ).rename({"value": "RF", "variable": "Tag"})
 
-        elif corpus == "Grouped":
+        elif corpus == "Grouped Target" or corpus == "Grouped Reference":
             if (
                 table_name == "Tags Table: Parts-of-Speech" or
                 table_name == "Tags Table: DocuScope"
@@ -535,7 +549,8 @@ def render_data_selection_interface(
     session: dict,
     bot_prefix: str,
     clear_function: callable,
-    metadata_target: dict = None
+    metadata_target: dict = None,
+    metadata_reference: dict = None
 ) -> tuple[str, str, pl.DataFrame | None]:
     """
     Render data selection interface for AI assistants.
@@ -577,7 +592,7 @@ def render_data_selection_interface(
         app_core.widget_manager.register_persistent_key(corpus_key)  # Register dynamic key
         selected_corpus = st.radio(
             "Select corpus:",
-            ("Target", "Reference", "Keywords", "Grouped"),
+            ("Target", "Reference", "Grouped Target", "Grouped Reference", "Keywords"),
             key=app_core.widget_manager.get_scoped_key(corpus_key),
             on_change=clear_function,
             index=0,
@@ -586,9 +601,18 @@ def render_data_selection_interface(
 
         # Get groups if metadata is available
         groups = []
+        groups_target = []
+        groups_reference = []
         if safe_session_get(session, SessionKeys.HAS_META, False) and metadata_target:
-            groups = metadata_target.get('doccats', [{}])[0].get('cats', [])
-
+            groups_target = metadata_target.get('doccats', [{}])[0].get('cats', [])
+        if safe_session_get(session, SessionKeys.HAS_META, False) and metadata_reference:
+            ref_doc_ids = safe_metadata_get(
+                    metadata_reference, MetadataKeys.DOCIDS, [], 'ids')
+            groups_reference = get_doc_cats(ref_doc_ids)
+        if selected_corpus == "Grouped Target":
+            groups = groups_target
+        elif selected_corpus == "Grouped Reference":
+            groups = groups_reference
         # Query selection
         query_key = SessionKeys.get_bot_query_key(bot_prefix)
         app_core.widget_manager.register_persistent_key(query_key)  # Register dynamic key
@@ -605,6 +629,7 @@ def render_data_selection_interface(
             index=None,
             placeholder="Select data..."
         )
+        df = None
         if selected_query:
             # Data preview
             st.markdown("### Data Preview")
@@ -615,13 +640,13 @@ def render_data_selection_interface(
                 categories=groups
             )
 
-        return selected_corpus, selected_query, df
+        return selected_query, df
 
     except Exception:
         st.warning(
             body="Nothing to preview yet. Select a table from the list.",
             icon=":material/table_eye:")
-        return None, None, None
+        return None, None
 
 
 def render_data_preview_controls(
