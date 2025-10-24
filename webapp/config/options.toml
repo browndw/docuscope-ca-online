@@ -1,5 +1,5 @@
 [version]
-version = "0.4.0"  # Update this version when making changes
+version = "0.4.1"  # Update this version when making changes
 
 [global]
 # Set to true for desktop mode (single user, local storage)
