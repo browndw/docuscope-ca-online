@@ -156,6 +156,10 @@ def clear_plotbot(session_id: str, clear_all=True):
             except KeyError:
                 pass
 
+        st.session_state[session_id].pop("plotbot_df", None)
+        st.session_state[session_id].pop("plotbot_query", None)
+        st.session_state[session_id].pop("plotbot_library", None)
+
         # Clear widget manager state for AI-related widgets
         try:
             # Clear data preview control widgets
