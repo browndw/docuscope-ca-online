@@ -372,23 +372,16 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                         user_session_id=user_session_id
                     )
 
-                    if 'plotbot_df' not in st.session_state[user_session_id]:
-                        st.session_state[user_session_id]['plotbot_df'] = df
-                    else:
-                        st.session_state[user_session_id]['plotbot_df'] = df
-
-                    if 'plotbot_query' not in st.session_state[user_session_id]:
-                        st.session_state[user_session_id]['plotbot_query'] = selected_query
-                    else:
-                        st.session_state[user_session_id]['plotbot_query'] = selected_query
+                    st.session_state[user_session_id]['plotbot_df'] = df
+                    st.session_state[user_session_id]['plotbot_query'] = selected_query
+                else:
+                    st.session_state[user_session_id].pop('plotbot_df', None)
+                    st.session_state[user_session_id].pop('plotbot_query', None)
 
                 # Plotting library selection
                 plot_lib = render_plotting_library_selection(user_session_id)
 
-                if 'plotbot_library' not in st.session_state[user_session_id]:
-                    st.session_state[user_session_id]['plotbot_library'] = plot_lib
-                else:
-                    st.session_state[user_session_id]['plotbot_library'] = plot_lib
+                st.session_state[user_session_id]['plotbot_library'] = plot_lib
 
             # Chat interface
             df = st.session_state[user_session_id].get('plotbot_df', None)
