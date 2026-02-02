@@ -25,7 +25,7 @@ bibliography: paper.bib
 
 # Summary
 
-DocuScope Corpus Analysis & Concordancer is a Streamlit application for corpus and rhetorical text analysis. It combines spaCy linguistic annotation with DocuScope rhetorical tagging and runs in either desktop or multi-user modes. A headless API and CLI allow scripted workflows without the web interface.
+DocuScope Corpus Analysis & Concordancer is a Streamlit application for corpus and rhetorical text analysis. It combines spaCy linguistic annotation with DocuScope rhetorical tagging—a taxonomy that identifies functional language patterns such as narrative, reasoning, and description—and runs in either desktop or multi-user modes. A headless API and CLI allow scripted workflows without the web interface.
 
 Version 0.4.1 of the software is archived on Zenodo (doi:10.5281/zenodo.17392153) [@brown2025docuscopeca].
 
@@ -33,31 +33,27 @@ Version 0.4.1 of the software is archived on Zenodo (doi:10.5281/zenodo.17392153
 
 Corpus linguistics and computational text analysis are established methods in linguistics, writing studies, and digital humanities [@biber2011corpus; @mcenery2012corpus]. However, existing tools present researchers with a fragmented landscape that forces compromises between accessibility and analytical depth.
 
-Established tools like AntConc [@anthony2005antconc] excel at concordancing, frequency analysis, and keyword identification but provide no part-of-speech or rhetorical annotation capabilities. Web-based platforms like Voyant Tools [@voyant2016] offer accessible text visualization and basic analysis but similarly lack linguistic tagging and rhetorical analysis features.
-
-Code-centric frameworks (spaCy, NLTK) provide sophisticated linguistic processing but require substantial programming expertise and offer no built-in rhetorical analysis. Proprietary tools often combine features but lack transparency, reproducibility controls, and flexible deployment options.
-
 The DocuScope rhetorical taxonomy [@kaufer2004power] addresses systematic rhetorical analysis, identifying functional language patterns beyond surface-level linguistic features. However, DocuScope's established implementations relied on rule-based string matching, limiting integration with modern NLP pipelines and restricting adoption outside specialized research groups with access to proprietary tools. This barrier is particularly problematic in educational contexts, where students and novice researchers need access to authentic corpus analysis without first mastering programming or command-line interfaces.
 
-No existing tool combines: (1) DocuScope's hierarchical rhetorical tagging, (2) contemporary linguistic annotation (POS, lemmatization), (3) transparent provenance tracking, (4) flexible deployment (desktop, web, headless), (5) reproducible workflows, and (6) educational accessibility in a single package.
+DocuScope CA addresses this gap by unifying DocuScope's hierarchical rhetorical tagging with contemporary linguistic annotation, transparent provenance tracking, flexible deployment options, and educational accessibility in a single open-source package. The intuitive web interface enables students and novices to conduct sophisticated corpus analysis without programming prerequisites, while the API/CLI supports reproducible research workflows for advanced users.
 
-DocuScope CA addresses this gap by unifying rhetorical and linguistic analysis in a deployable system that serves both exploratory users (via Streamlit interface) and reproducible workflows (via API/CLI). The intuitive web interface enables students and novices to engage directly with real corpus data, conducting sophisticated analyses without programming prerequisites. Meanwhile, the provenance manifest ensures transparency, and multiple deployment options accommodate diverse institutional and individual needs.
+# State of the field
+
+Established tools like AntConc [@anthony2005antconc] excel at concordancing, frequency analysis, and keyword identification but provide no part-of-speech or rhetorical annotation capabilities. Web-based platforms like Voyant Tools [@voyant2016] offer accessible text visualization and basic analysis but similarly lack linguistic tagging and rhetorical analysis features. Code-centric frameworks (spaCy, NLTK) provide sophisticated linguistic processing but require substantial programming expertise and offer no built-in rhetorical analysis. Proprietary tools often combine features but lack transparency, reproducibility controls, and flexible deployment options.
+
+Creating new software was necessary because existing corpus tools lacked the architectural capacity for integrating rhetorical tagging with modern NLP pipelines while maintaining educational accessibility. AntConc lacks extensibility for custom trained models; Voyant Tools runs exclusively in browser contexts incompatible with multi-stage NLP pipelines; spaCy and NLTK require programming expertise that would exclude our educational audience. Contributing DocuScope functionality to any single existing tool would either sacrifice the dual mandate of research-grade performance and educational accessibility, or require fundamental architectural changes incompatible with those projects' design goals. The solution required separating processing logic from presentation to enable the same analytical core to serve interactive learners (Streamlit UI), reproducible research scripts (API/CLI), and diverse deployment contexts (desktop, web, container, hosted)—a design philosophy not aligned with existing tools' architectures.
 
 # Software Design
 
-DocuScope CA builds upon two decades of DocuScope rhetorical taxonomy development [@kaufer2004power; @kaufer2023docuscope] by modernizing the framework from rule-based string matching to trained spaCy models, dramatically expanding reach and accessibility. This work extends rather than replaces the existing DocuScope ecosystem: the rhetorical dictionaries and linguistic theory remain foundational, while the technical implementation enables integration with contemporary NLP infrastructure and open-source distribution.
+DocuScope CA builds upon two decades of DocuScope rhetorical taxonomy development [@kaufer2004power; @kaufer2023docuscope] by modernizing the framework from rule-based string matching to trained spaCy models, dramatically expanding reach and accessibility. This represents the first open-source implementation integrating DocuScope rhetorical tagging with spaCy's linguistic pipeline through custom trained models. The work extends rather than replaces the existing DocuScope ecosystem: the rhetorical dictionaries and linguistic theory remain foundational, while the technical implementation enables integration with contemporary NLP infrastructure and open-source distribution.
 
-Creating new software was necessary because existing corpus tools lacked the architectural capacity for this integration. AntConc lacks extensibility for custom trained models; Voyant Tools runs exclusively in browser contexts incompatible with multi-stage NLP pipelines; spaCy and NLTK require programming expertise that would exclude our educational audience. The design separates processing logic from presentation, enabling the same analytical core to serve interactive learners (Streamlit UI), reproducible research scripts (API/CLI), and diverse deployment contexts (desktop, web, container, hosted).
+The architecture separates processing logic from presentation, enabling the same analytical core to serve interactive learners (Streamlit UI), reproducible research scripts (API/CLI), and diverse deployment contexts (desktop, web, container, hosted). This separation matters because it allows researchers to move fluidly between exploratory interface-driven discovery and reproducible programmatic workflows without switching tools or losing analytical continuity. An explicit provenance manifest captures software version, model identifiers, content hashes, and processing parameters, ensuring reproducible analysis across different deployment modes.
 
-Key trade-offs included choosing Polars over Pandas (performance over ecosystem maturity), Streamlit over Flask/Django (rapid development over fine-grained control), and bundling pre-trained models (reviewer accessibility over package size), reflecting the dual mandate of research-grade performance and educational accessibility that existing tools sacrifice.
-
-# Contribution and novelty
-
-DocuScope CA makes several key technical contributions: (1) first open-source implementation integrating DocuScope rhetorical tagging with spaCy's linguistic pipeline through custom trained models; (2) dual desktop/multi-user deployment architecture separating processing logic from interface; (3) explicit provenance manifest capturing version, model, content hashes, and processing parameters for reproducible analysis; (4) compact API and CLI enabling scripted workflows alongside interactive exploration. Together, these enable accessible, reproducible corpus analysis combining rhetorical depth with modern NLP capabilities in ways not previously available through open-source tools.
+Key trade-offs included choosing Polars over Pandas (prioritizing performance for large corpora over ecosystem maturity), Streamlit over Flask/Django (rapid development and lower maintenance burden over fine-grained UI control), and bundling pre-trained models (immediate accessibility for reviewers and students over minimal package size). These decisions reflect the dual mandate of research-grade performance and educational accessibility, where ease of adoption matters as much as analytical capability.
 
 # Implementation
 
-Python 3.11 stack: spaCy [@spacy2020] plus a DocuScope extension for joint linguistic/rhetorical tagging; Polars for columnar data processing [@polars2023]; Streamlit for the interface [@streamlit2023]; Plotly for visualization; `docuscospacy` for tag generation. Parsing and metric computation are isolated from presentation so the same core serves both UI and scripted contexts. The API/CLI expose only the minimal surface required for ingestion, parsing, metrics, and export. Tests exercise parsing, session persistence, and analysis routines. All core functionality operates offline with bundled models under `webapp/_models/`; external API keys are required only for optional AI-assisted analysis features.
+The software is built on Python 3.11 with spaCy [@spacy2020] for linguistic processing, Polars [@polars2023] for high-performance columnar data operations, Streamlit [@streamlit2023] for the web interface, and Plotly for interactive visualizations. The `docuscospacy` package integrates DocuScope rhetorical tagging into the spaCy pipeline. All core functionality operates offline with bundled models; external API keys are required only for optional AI-assisted analysis features. Comprehensive tests exercise parsing accuracy, session persistence, and analysis workflows.
 
 ## Ecosystem
 
@@ -69,15 +65,7 @@ The layered design separates processing logic from interface concerns. Core func
 
 # Usage and reproducibility
 
-Users may run a hosted instance, local container, desktop build, or the headless API. A sample corpus and script (`paper/scripts/run_example.py`) generate deterministic token annotations, frequency and tag tables, and a manifest (version, model, hashes, counts). Programmatic example:
-
-```python
-from docuscope_ca import process_corpus
-res = process_corpus('paper/data/test_corpus', metrics=('freq','tags'))
-print(res.manifest['corpus']['total_tokens'])
-```
-
-Artifacts can be regenerated to validate results.
+Users may deploy via hosted instance, local container, desktop application, or headless API/CLI. A sample corpus and reproducible script (`paper/scripts/run_example.py`) generate deterministic outputs including token annotations, frequency tables, tag distributions, and a provenance manifest capturing software version, model identifiers, content hashes, and corpus statistics. These artifacts can be regenerated to validate analytical results.
 
 ## Interactive workflow
 
@@ -109,7 +97,7 @@ DocuScope CA was developed over a three-year period beginning in 2022, prior to 
 
 # Acknowledgements
 
-I acknowledge the DocuScope team at Carnegie Mellon University for the rhetorical framework, the spaCy development team for NLP infrastructure, and the Streamlit team for the web framework.
+I acknowledge the DocuScope team at Carnegie Mellon University for the rhetorical framework, the spaCy development team for NLP infrastructure, and the Streamlit team for the web framework. This work received no external funding.
 
 # References
 
