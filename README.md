@@ -183,6 +183,21 @@ The application behavior is controlled through the `webapp/config/options.toml` 
 
 Refer to the configuration files in `webapp/config/` for detailed customization options.
 
+## Enterprise Load Baseline
+
+Recent browser-level load tests against the local enterprise-mode deployment provide a practical baseline for the current build:
+
+- These measurements are from a single local VM running one Streamlit application instance. They should be treated as single-node capacity observations, not as hard limits for a horizontally scaled deployment.
+- Startup-only traffic was not the bottleneck: the startup scenario completed 270 out of 270 created sessions with zero failures.
+- The heaviest classroom-relevant workflow tested was Compare Corpora keyness generation using internal target and reference corpora.
+- Under the older per-second profile of 1 user/second for 30 seconds followed by 2 users/second for 120 seconds, `maxVusers = 14` remained stable with zero failures but heavy skipping. `maxVusers = 15` is the transition zone: repeated runs have shown both clean completions and occasional keyness-generation failures, while `maxVusers = 16` fails reliably.
+- A narrower compare-ready scenario under the same `maxVusers = 15` load shape completed 52 of 53 created sessions, which suggests the main instability is concentrated in the final keyness-generation/render step rather than in corpus loading or navigation.
+- Token-frequency generation on preprocessed corpora is lighter than keyness, but it is still not in the same class as pure navigation. The token-frequency scenarios at `maxVusers = 15`, `20`, and `30` all produced rendering timeouts under sustained load, so the stable generation ceiling for that workflow is below the `max15` profile tested so far.
+- The sustainable no-skip benchmarking profile is the arrival-count-based scenario in `load_tests/scenarios/keyness-internal.yml`, which completed 15 out of 15 created sessions with zero failures in the last run.
+- Because this testing was done on a single VM, horizontal scaling would change the picture. Running multiple application instances behind a load balancer should raise total system throughput, provided session routing, shared state, and storage contention are handled correctly.
+
+For the full enterprise-capacity draft and measured threshold discussion, see `../backend_capacity_draft.md` from the workspace root.
+
 ## Usage Examples
 
 ### Educational Workflow (No Programming Required)
