@@ -1,0 +1,33 @@
+{
+  "name": "docuscope-ca-online-load-tests",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Browser-based load tests for the DocuScope CA Streamlit application",
+  "scripts": {
+    "test:smoke": "artillery run scenarios/smoke-home.yml",
+    "test:report": "artillery run --output reports/smoke-home-report.json scenarios/smoke-home.yml",
+    "test:keyness": "artillery run scenarios/keyness-internal.yml",
+    "test:keyness:report": "artillery run --output reports/keyness-internal-report.json scenarios/keyness-internal.yml",
+    "test:keyness:single": "artillery run scenarios/keyness-internal-single.yml",
+    "test:keyness:plain": "node scripts/plain-keyness.mjs",
+    "test:keyness:max14": "artillery run scenarios/keyness-internal-max14.yml",
+    "test:keyness:max14:report": "artillery run --output reports/keyness-internal-max14-report.json scenarios/keyness-internal-max14.yml",
+    "test:keyness:max15": "artillery run scenarios/keyness-internal-max15.yml",
+    "test:keyness:max15:report": "artillery run --output reports/keyness-internal-max15-report.json scenarios/keyness-internal-max15.yml",
+    "test:keyness:max16": "artillery run scenarios/keyness-internal-max16.yml",
+    "test:keyness:max16:report": "artillery run --output reports/keyness-internal-max16-report.json scenarios/keyness-internal-max16.yml",
+    "test:compare-ready": "artillery run scenarios/compare-corpora-ready.yml",
+    "test:compare-ready:report": "artillery run --output reports/compare-corpora-ready-report.json scenarios/compare-corpora-ready.yml",
+    "test:token-frequencies": "artillery run scenarios/token-frequencies.yml",
+    "test:token-frequencies:max15": "artillery run scenarios/token-frequencies-max15.yml",
+    "test:token-frequencies:max15:report": "artillery run --output reports/token-frequencies-max15-report.json scenarios/token-frequencies-max15.yml",
+    "test:token-frequencies:max20": "artillery run scenarios/token-frequencies-max20.yml",
+    "test:token-frequencies:max20:report": "artillery run --output reports/token-frequencies-max20-report.json scenarios/token-frequencies-max20.yml",
+    "test:token-frequencies:report": "artillery run --output reports/token-frequencies-report.json scenarios/token-frequencies.yml",
+    "test:startup": "artillery run scenarios/startup-only.yml",
+    "test:startup:report": "artillery run --output reports/startup-only-report.json scenarios/startup-only.yml"
+  },
+  "devDependencies": {
+    "artillery": "^2.0.22"
+  }
+}

@@ -1,0 +1,26 @@
+config:
+  target: "http://127.0.0.1:8501"
+  phases:
+    - duration: 30
+      arrivalRate: 1
+      maxVusers: 6
+      name: warmup
+    - duration: 120
+      arrivalRate: 2
+      maxVusers: 15
+      name: keyness_steady_state
+  engines:
+    playwright: {}
+  processor: "../processors/streamlit-metrics.mjs"
+  defaults:
+    headers:
+      Cache-Control: no-cache
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: internal-keyness-max15
+    engine: playwright
+    beforeScenario: beforeScenario
+    afterScenario: afterScenario
+    testFunction: internalKeynessScenario

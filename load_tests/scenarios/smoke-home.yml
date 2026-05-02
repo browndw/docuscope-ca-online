@@ -1,0 +1,24 @@
+config:
+  target: "http://127.0.0.1:8501"
+  phases:
+    - duration: 60
+      arrivalRate: 2
+      name: warmup
+    - duration: 120
+      arrivalRate: 5
+      name: steady_state
+  engines:
+    playwright: {}
+  processor: "../processors/streamlit-metrics.mjs"
+  defaults:
+    headers:
+      Cache-Control: no-cache
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: home-page-smoke
+    engine: playwright
+    beforeScenario: beforeScenario
+    afterScenario: afterScenario
+    testFunction: homePageSmoke
