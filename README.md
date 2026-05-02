@@ -183,21 +183,6 @@ The application behavior is controlled through the `webapp/config/options.toml` 
 
 Refer to the configuration files in `webapp/config/` for detailed customization options.
 
-## Enterprise Load Baseline
-
-Recent browser-level load tests against the local enterprise-mode deployment provide a practical baseline for the current build:
-
-- These measurements are from a single local VM running one Streamlit application instance. They should be treated as single-node capacity observations, not as hard limits for a horizontally scaled deployment.
-- Startup-only traffic was not the bottleneck: the startup scenario completed 270 out of 270 created sessions with zero failures.
-- The heaviest classroom-relevant workflow tested was Compare Corpora keyness generation using internal target and reference corpora.
-- Under the older per-second profile of 1 user/second for 30 seconds followed by 2 users/second for 120 seconds, `maxVusers = 14` remained stable with zero failures but heavy skipping. `maxVusers = 15` is the transition zone: repeated runs have shown both clean completions and occasional keyness-generation failures, while `maxVusers = 16` fails reliably.
-- A narrower compare-ready scenario under the same `maxVusers = 15` load shape completed 52 of 53 created sessions, which suggests the main instability is concentrated in the final keyness-generation/render step rather than in corpus loading or navigation.
-- Token-frequency generation on preprocessed corpora is lighter than keyness, but it is still not in the same class as pure navigation. The token-frequency scenarios at `maxVusers = 15`, `20`, and `30` all produced rendering timeouts under sustained load, so the stable generation ceiling for that workflow is below the `max15` profile tested so far.
-- The sustainable no-skip benchmarking profile is the arrival-count-based scenario in `load_tests/scenarios/keyness-internal.yml`, which completed 15 out of 15 created sessions with zero failures in the last run.
-- Because this testing was done on a single VM, horizontal scaling would change the picture. Running multiple application instances behind a load balancer should raise total system throughput, provided session routing, shared state, and storage contention are handled correctly.
-
-For the full enterprise-capacity draft and measured threshold discussion, see `../backend_capacity_draft.md` from the workspace root.
-
 ## Usage Examples
 
 ### Educational Workflow (No Programming Required)
@@ -264,20 +249,6 @@ Generated artifacts (when export enabled)
 
 The manifest enables deterministic regeneration and peer review verification.
 
-## License
-
-Code licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
-See [LICENSE](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) file.
-
-## Contributing
-
-We welcome contributions! Please see our contributing guidelines for:
-
-- Code style requirements
-- Testing procedures
-- Pull request process
-- Issue reporting
-
 ## Citation
 
 If you use this software, please cite the software itself (and the JOSS article once published). Citation metadata is maintained in `CITATION.cff` (Github renders a "Cite this repository" button).
@@ -296,6 +267,103 @@ If you use this software, please cite the software itself (and the JOSS article 
 ```
 
 After JOSS acceptance, update this section to include the article DOI (dual citation of article + software where venue policies permit).
+
+## Enterprise Deployment Capacity
+
+> This section applies to **enterprise mode** (`desktop_mode = false` in `webapp/config/options.toml`), which is the configuration used for the hosted web application and any institutional multi-user deployment. Desktop mode is a single-user variant with a simpler storage backend and different defaults; it is not addressed here.
+
+### Concurrent Users
+
+**Key takeaways:**
+
+- *For instructors using the CMU-hosted deployment:* the hosted instance is horizontally scaled, but on any single node approximately 15 users running the same compute-heavy workflow simultaneously can produce lag and dropped sessions. In practice this means instructors should avoid scheduling scenarios where an entire class executes the same analysis step at the same moment.
+- *Desktop alternative:* for scenarios where concurrent workflows with many users is a priority, [the desktop version of the application](https://github.com/browndw/docuscope-ca-desktop) provides an alternative.
+- *For institutions or engineers considering self-hosting:* a single-node deployment is sufficient for small or asynchronous use, but horizontal scaling (multiple instances behind a load balancer) is strongly recommended for any classroom or multi-user context.
+- *For future development:* improving load management for simultaneous identical processes — particularly keyness generation — is a priority.
+
+Providing a precise ceiling for concurrent users depends on the specific workflows in use. Browser-level load tests using Arsenal and Playwright against the local enterprise-mode deployment provide a measured baseline for the current build; these should be treated as single-node capacity observations rather than hard limits for a horizontally scaled deployment.
+
+Streamlit uses a thread-per-session model (one thread per user session, one Python process per instance). DocuScope CA adds a CPU-intensive NLP pipeline (spaCy + DocuScope tagging, approximately 1.1 minutes per million words), so the practical ceiling is constrained by available CPU threads and RAM rather than by the framework itself. The startup-only result in the table below (270 sessions, zero failures) is consistent with [published single-page Streamlit benchmarks](https://karnwong.me/posts/2024/09/streamlit-load-test-performance/).
+
+The following table summarizes results from these load tests. All measurements are from a single VM running one application instance.
+
+| Scenario | Max VUs | Sessions (created / completed) | Outcome |
+|---|---|---|---|
+| Application startup only | 270 | 270 / 270 | Stable — zero failures |
+| Keyness, internal corpora (ramp-up profile) | 14 | — | Stable — zero failures (heavy skipping) |
+| Keyness, internal corpora (ramp-up profile) | 15 | — | Transition zone — intermittent failures |
+| Keyness, internal corpora (ramp-up profile) | 16 | — | Fails reliably |
+| Compare-ready workflow (ramp-up profile) | 15 | 53 / 52 | Near-stable — 1 failure at final keyness/render step |
+| Token-frequency, preprocessed corpora | 15–30 | — | Rendering timeouts under sustained load |
+| Keyness, arrival-count profile | 15 | 15 / 15 | Stable — zero failures (recommended profile) |
+
+For those running their own load tests, the arrival-count-based scenario in `load_tests/scenarios/keyness-internal.yml` provides a reproducible single-node baseline.
+
+### Per-User Data Limits
+
+The following limits apply to each user session in enterprise mode:
+
+| Resource | Limit | Configuration key |
+|---|---|---|
+| Maximum corpus text size (raw input) | 20 MB | `max_text_size` |
+| Maximum tokenized DataFrame size | 150 MB | `max_polars_size` |
+| File upload size (Streamlit widget) | 200 MB per file | Streamlit server default |
+| Session inactivity timeout | 90 minutes | `inactivity_timeout_minutes` |
+| Absolute session duration | 24 hours | `absolute_timeout_hours` |
+| AI-assisted analysis quota (optional) | 200 requests per user | `quota` |
+
+The 20 MB raw-text limit is sufficient for a corpus of 3 million words (several hundred typical academic documents); most teaching or specialized corpora will fall well within it. Note that Streamlit's file picker will accept uploads up to 200 MB, but the application enforces its own 20 MB ceiling during ingestion. A user who uploads a large file will receive an error after upload but before processing begins — instructors should be aware of this sequence when setting expectations for students.
+
+Session data persists for up to 24 hours. Users receive a warning at 85 minutes of inactivity and at 23.5 hours of total session age before automatic logout.
+
+The limits above are **application-level controls** that apply in any enterprise deployment regardless of host infrastructure. For the hosted instance at Carnegie Mellon University, storage and bandwidth are governed by Campus Cloud VM configuration. No hard quotas are imposed at the infrastructure level under normal research and teaching usage; if a deployment were to generate unusually high resource consumption, Campus Cloud administrators would make contact before taking any action.
+
+### Overload and Traffic Management
+
+Protection against overload operates at three distinct layers, which are important to distinguish:
+
+**Core corpus processing (all users)**
+
+- Per-corpus data limits (described above) prevent any single session from consuming disproportionate memory or processing time.
+- Session persistence, sharded SQLite storage, and lazy generation of derived tables reduce repeated I/O and help keep multi-user access responsive.
+
+In educational settings, instructors commonly work with the pre-processed corpora bundled with the application. Because these corpora are already tokenized and annotated, they can be loaded without running the full NLP pipeline, which substantially reduces per-user compute load and makes simultaneous classroom use more practical.
+
+The analysis workflow where concurrent load is most visible is **keyness calculation** (the Compare Corpora tool, Page 5). Keyness tables are cached in user-scoped session memory but are not shared across users; cross-session caching has been considered but is architecturally non-trivial given the user-scoped storage model. For corpora larger than 1.5 million tokens, the interface also disables the most stringent p-value option (`p < .001`) to reduce per-query memory risk. Optimizing repeated keyness generation across sessions is a target for future improvement.
+
+**AI-assisted analysis features (optional, Pages 11 and 12 only)**
+
+The AI-assisted analysis pages use an OpenAI API key and are **optional** — they are not required for any of the core corpus analysis workflows. The key point for instructors is that **the optional AI features have rate limits; the core analysis tools do not**.
+
+Because classroom deployments may share a single community API key across many simultaneous users, these pages have their own protection layer: a daily per-user quota on community-key usage, a cap on simultaneous requests (5 on a community key), a circuit breaker that pauses traffic after repeated API failures, and request deduplication to avoid redundant API calls for similar prompts. The enterprise configuration also defines additional request-per-minute and queue-size settings that can be tuned for a deployment, though the concurrency cap and circuit-breaker behavior are the clearest protections enforced in the current implementation.
+
+All of these settings are configurable in the `[llm.enterprise]` section of `webapp/config/options.toml` and can be tuned to match the API tier and expected user load of a given deployment. Administrators who need to adjust individual thresholds — for example, for a large lecture course sharing a community key — will find the full parameter reference there.
+
+**Infrastructure-level protection (hosted deployment only)**
+
+The outermost safety net for the CMU-hosted instance is the Campus Cloud infrastructure itself. The underlying VMs are configured with OS-level controls that provide a fair share of memory, disk, and CPU to each process. Under sustained extreme load, Campus Cloud infrastructure can intervene to protect shared resources. This layer operates independently of the application and requires no configuration within DocuScope CA.
+
+---
+
+For further context on Streamlit's scaling characteristics and approaches to increasing concurrency, the following resources are useful:
+- [Streamlit load test performance](https://karnwong.me/posts/2024/09/streamlit-load-test-performance/) — load test benchmarking Streamlit at scale
+- [Streamlit at Scale: Why My App Froze with 100 Users](https://medium.com/@hadiyolworld007/streamlit-at-scale-why-my-app-froze-with-100-users-666e736fcff0) — practical discussion of Streamlit's concurrency model and its limitations
+- [Streamlit single concurrency control](https://www.whitphx.info/posts/20240227-streamlit-single-concurrency-control/) — approach for controlling per-session concurrency
+- [Scaling Streamlit](https://ploomber.io/blog/scaling-streamlit/) — strategies for scaling Streamlit applications to higher traffic
+
+## License
+
+Code licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+See [LICENSE](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) file.
+
+## Contributing
+
+We welcome contributions! Please see our contributing guidelines for:
+
+- Code style requirements
+- Testing procedures
+- Pull request process
+- Issue reporting
 
 ## Acknowledgments
 
