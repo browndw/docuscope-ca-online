@@ -22,6 +22,7 @@ from webapp.utilities.processing.corpus_processing import (
     process_internal,
     process_new,
     handle_uploaded_parquet,
+    handle_uploaded_tabular,
     handle_uploaded_text,
     sidebar_process_section,
     finalize_corpus_load
@@ -45,6 +46,7 @@ __all__ = [
     'process_internal',
     'process_new',
     'handle_uploaded_parquet',
+    'handle_uploaded_tabular',
     'handle_uploaded_text',
     'sidebar_process_section',
     'finalize_corpus_load'
