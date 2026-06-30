@@ -3,7 +3,7 @@ App for loading and managing corpora in the Corpus Tagger web application.
 
 This module provides functionality for:
 - Loading existing corpora from internal databases or user uploads.
-- Processing new corpora from text files.
+- Processing new corpora from text files or tabular uploads.
 - Uploading external corpora in Parquet format.
 - Managing corpus metadata and categories.
 - Resetting corpus data and clearing session state.
@@ -28,7 +28,7 @@ from webapp.utilities.analysis import (
     )
 from webapp.utilities.processing import (
     process_external, process_internal,
-    process_new, handle_uploaded_parquet,
+    process_new, handle_uploaded_parquet, handle_uploaded_tabular,
     handle_uploaded_text, sidebar_process_section
     )
 from webapp.utilities.ui import (
@@ -66,7 +66,7 @@ TITLE = "Manage Corpus Data"
 ICON = ":material/database:"
 
 # Define labels and options for the app
-CORPUS_SOURCES = ["Internal", "External", "New"]
+CORPUS_SOURCES = ["Internal", "External", "New", "Tabular"]
 
 # Button and form labels
 LABEL_PROCESS_TARGET = "Process Target"
@@ -191,6 +191,9 @@ def main() -> None:
                         """,
                         """:material/library_books:
                         Process a new corpus from plain text files.
+                        """,
+                        """:material/table:
+                        Process a new corpus from a doc_id/text table.
                         """
                         ],
                     horizontal=False,
@@ -309,7 +312,7 @@ def main() -> None:
                     with st.form("ref-form", clear_on_submit=True):
                         ref_files = st.file_uploader(
                             "Upload your reference corpus",
-                            type=["txt"],
+                            type=["txt", "parquet"],
                             accept_multiple_files=True,
                             key='reffiles'
                         )
@@ -343,6 +346,86 @@ def main() -> None:
                     # Sidebar UI for processing reference corpus
                     if st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS]:  # noqa: E501
                         # Retrieve stored reference corpus data from session state
+                        stored_ref_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.REF_CORPUS_DF)  # noqa: E501
+                        stored_ref_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.REF_EXCEPTIONS)  # noqa: E501
+
+                        models = load_models()
+                        selected_dict = metadata_target.get('model')[0]
+                        nlp = models[selected_dict]
+
+                        sidebar_process_section(
+                            section_title=LABEL_PROCESS_REFERENCE,
+                            button_label=LABEL_PROCESS_REFERENCE,
+                            process_fn=lambda: process_new(
+                                stored_ref_corp_df,
+                                nlp,
+                                user_session_id,
+                                CorpusKeys.REFERENCE,
+                                stored_ref_exceptions
+                            ))
+
+                # Option 4: Process new reference corpus from a tabular file
+                if ref_corpus_source == 'Tabular':
+                    st.markdown(
+                        """
+                        :material/priority:
+                        Upload a single **Parquet**, **CSV**, or **TSV** file
+                        with columns named **doc_id** and **text**.
+
+                        :material/priority:
+                        Extra columns are allowed, but only **doc_id** and
+                        **text** will be used for corpus processing.
+
+                        :material/priority:
+                        Once you've selected your file, click the **UPLOAD REFERENCE**
+                        button and a processing button will appear in the sidebar.
+
+                        :material/priority: Your reference will be tagged with
+                        **the same model** as your target corpus.
+
+                        :material/priority: Be sure that document IDs are unique
+                        and that they don't share IDs with your target corpus.
+                        """
+                        )
+
+                    corp_df, ready, exceptions = None, False, []
+
+                    with st.form("ref-tabular-form", clear_on_submit=True):
+                        ref_file = st.file_uploader(
+                            "Upload your reference corpus",
+                            type=["parquet", "csv", "tsv"],
+                            accept_multiple_files=False
+                        )
+                        submitted = st.form_submit_button(
+                            LABEL_UPLOAD_REFERENCE
+                            )
+
+                        if submitted:
+                            st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
+
+                        if submitted and ref_file is None:
+                            st.warning(
+                                "Please select a file to upload.",
+                                icon=":material/warning:")
+
+                        if submitted:
+                            corp_df, ready, exceptions = handle_uploaded_tabular(
+                                ref_file,
+                                CHECK_SIZE,
+                                MAX_TEXT,
+                                check_language_flag=ENABLE_DETECT,
+                                check_ref=True,
+                                target_docs=metadata_target.get(MetadataKeys.DOCIDS)[0]['ids']  # noqa: E501
+                            )
+
+                            if ready and corp_df is not None:
+                                st.session_state[user_session_id][LoadCorpusKeys.REF_CORPUS_DF] = corp_df  # noqa: E501
+                                st.session_state[user_session_id][LoadCorpusKeys.REF_EXCEPTIONS] = exceptions  # noqa: E501
+
+                    if ready:
+                        st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS] = True  # noqa: E501
+
+                    if st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS]:  # noqa: E501
                         stored_ref_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.REF_CORPUS_DF)  # noqa: E501
                         stored_ref_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.REF_EXCEPTIONS)  # noqa: E501
 
@@ -423,6 +506,9 @@ def main() -> None:
                 """,
                 """:material/library_books:
                 Process a new corpus from plain text files.
+                """,
+                """:material/table:
+                Process a new corpus from a doc_id/text table.
                 """
                 ],
             horizontal=False,
@@ -556,7 +642,7 @@ def main() -> None:
             with st.form("corpus-form", clear_on_submit=True):
                 corp_files = st.file_uploader(
                     "Upload your target corpus",
-                    type=["txt"],
+                    type=["txt", "parquet"],
                     accept_multiple_files=True
                 )
                 submitted = st.form_submit_button(LABEL_UPLOAD_TARGET)
@@ -601,6 +687,94 @@ def main() -> None:
 
             if st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS]:
                 # Retrieve stored corpus data from session state
+                stored_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.CORPUS_DF)  # noqa: E501
+                stored_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.EXCEPTIONS)  # noqa: E501
+
+                sidebar_process_section(
+                    section_title=LABEL_PROCESS_TARGET,
+                    button_label=LABEL_PROCESS_TARGET,
+                    process_fn=lambda: process_new(
+                        stored_corp_df,
+                        nlp,
+                        user_session_id,
+                        CorpusKeys.TARGET,
+                        stored_exceptions
+                    ))
+
+        # Option 4: Process new target corpus from a tabular file
+        if corpus_source == 'Tabular':
+            st.markdown("---")
+            st.markdown(
+                """
+                :material/priority:
+                Upload a single **Parquet**, **CSV**, or **TSV** file
+                with columns named **doc_id** and **text**.
+
+                :material/priority:
+                Extra columns are allowed, but only **doc_id** and **text**
+                will be used for corpus processing.
+
+                :material/priority:
+                Once you've selected your file, click the **UPLOAD** button
+                and a processing button will appear in the sidebar.
+
+                :material/priority:
+                Select **a model** from the sidebar.
+
+                :material/priority:
+                After processing, you will have the option
+                to save your corpus to use for future analysis.
+
+                :material/priority:
+                Be sure that all document IDs are unique.
+                """
+                )
+
+            corp_df, ready, exceptions = None, False, []
+
+            with st.form("tabular-corpus-form", clear_on_submit=True):
+                corp_file = st.file_uploader(
+                    "Upload your target corpus",
+                    type=["parquet", "csv", "tsv"],
+                    accept_multiple_files=False
+                )
+                submitted = st.form_submit_button(LABEL_UPLOAD_TARGET)
+
+                if submitted:
+                    st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
+                if submitted and corp_file is None:
+                    st.warning(
+                        "Please select a file to upload.",
+                        icon=":material/warning:")
+
+                if submitted:
+                    corp_df, ready, exceptions = handle_uploaded_tabular(
+                        corp_file,
+                        CHECK_SIZE,
+                        MAX_TEXT,
+                        check_language_flag=ENABLE_DETECT
+                    )
+
+                    if ready and corp_df is not None:
+                        st.session_state[user_session_id][LoadCorpusKeys.CORPUS_DF] = corp_df  # noqa: E501
+                        st.session_state[user_session_id][LoadCorpusKeys.EXCEPTIONS] = exceptions  # noqa: E501
+
+            if ready:
+                st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = True
+
+            st.sidebar.markdown("### Models")
+            models = load_models()
+            selected_dict = st.sidebar.selectbox(
+                "Select a DocuScope model:",
+                options=MODEL_OPTIONS,
+                help="The Large Dictionary model has a more eleaborated tagset than the Common Dictionary model. Click 'About the models' (on the right) to learn more.",  # noqa: E501
+                )
+            nlp = models[selected_dict]
+            st.session_state[user_session_id][LoadCorpusKeys.MODEL] = selected_dict
+
+            st.sidebar.markdown("---")
+
+            if st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS]:
                 stored_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.CORPUS_DF)  # noqa: E501
                 stored_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.EXCEPTIONS)  # noqa: E501
 

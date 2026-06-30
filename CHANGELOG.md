@@ -5,6 +5,14 @@ All notable changes to DocuScope Corpus Analysis & Concordancer will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-06-29
+
+### Added
+
+- Added a Tabular corpus source option for target and reference corpora, supporting single-file Parquet, CSV, and TSV uploads with required `doc_id` and `text` columns.
+- Added validation for tabular uploads, including missing columns, empty tables, null or blank `doc_id`/`text` values, duplicate document IDs, target/reference ID overlap, language detection failures, and corpus size limits.
+- Added focused unit tests for tabular upload handling across supported formats and validation failure cases.
+
 ## [0.4.1] - 2025-10-19
 
 ### Changed
