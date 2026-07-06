@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added validation for tabular uploads, including missing columns, empty tables, null or blank `doc_id`/`text` values, duplicate document IDs, target/reference ID overlap, language detection failures, and corpus size limits.
 - Added focused unit tests for tabular upload handling across supported formats and validation failure cases.
 
+### Fixed
+
+- Improved TSV parsing for tabular corpus uploads by reading delimited files as strings before validation.
+- Reduced false language-check failures for tabular corpora with numeric document IDs by validating language against the combined text column rather than individual rows.
+
 ## [0.4.1] - 2025-10-19
 
 ### Changed
