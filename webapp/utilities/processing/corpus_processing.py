@@ -614,9 +614,9 @@ def handle_uploaded_tabular(
         if file_ext == "parquet":
             df = pl.read_parquet(file_buffer)
         elif file_ext == "tsv":
-            df = pl.read_csv(file_buffer, separator="\t")
+            df = pl.read_csv(file_buffer, separator="\t", infer_schema=False)
         else:
-            df = pl.read_csv(file_buffer)
+            df = pl.read_csv(file_buffer, infer_schema=False)
     except Exception as e:
         st.error(f"Error processing tabular corpus file: {e}")
         return None, False, []
@@ -705,19 +705,13 @@ def handle_uploaded_tabular(
         return None, False, []
 
     if check_language_flag:
-        lang_fail = []
-        for row in df.iter_rows(named=True):
-            if not check_language(row["text"]):
-                lang_fail.append(row["doc_id"])
-        if len(lang_fail) > 0:
+        corpus_text = " ".join(df.get_column("text").to_list())
+        if not check_language(corpus_text):
             st.error(
-                f"""
+                """
                 The table you selected could not be processed.
-                Documents with these IDs are either not in English or
+                The text column is either not in English or
                 are incompatible with the requirement of the model:
-                ```
-                {sorted(lang_fail)}
-                ```
                 """,
                 icon=":material/warning:"
             )
