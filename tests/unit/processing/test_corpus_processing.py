@@ -104,6 +104,54 @@ class TestHandleUploadedTabular:
         assert result_df.height == 2
         mock_success.assert_called_once()
 
+    @patch('streamlit.success')
+    def test_handle_uploaded_tabular_tsv_numeric_doc_ids(self, mock_success):
+        uploaded = tabular_upload(
+            pl.DataFrame({
+                "doc_id": [0, 1, 10],
+                "text": ["First document", "Second document", "Third document"]
+            }),
+            "corpus.tsv"
+        )
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=False, max_size=0
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.get_column("doc_id").to_list() == ["0", "1", "10"]
+        mock_success.assert_called_once()
+
+    @patch('streamlit.success')
+    @patch('webapp.utilities.processing.corpus_processing.check_language')
+    def test_handle_uploaded_tabular_checks_language_once_for_corpus(
+        self, mock_check_language, mock_success
+    ):
+        mock_check_language.return_value = True
+        uploaded = tabular_upload(
+            pl.DataFrame({
+                "doc_id": [0, 1],
+                "text": ["First document", "Second document"]
+            }),
+            "corpus.csv"
+        )
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded,
+            check_size=False,
+            max_size=0,
+            check_language_flag=True
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.get_column("doc_id").to_list() == ["0", "1"]
+        mock_check_language.assert_called_once_with(
+            "First document Second document"
+        )
+        mock_success.assert_called_once()
+
     @patch('streamlit.error')
     def test_handle_uploaded_tabular_requires_doc_id_and_text(self, mock_error):
         uploaded = tabular_upload(
