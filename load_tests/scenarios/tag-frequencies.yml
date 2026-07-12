@@ -1,0 +1,26 @@
+config:
+  target: "http://127.0.0.1:8501"
+  phases:
+    - duration: 30
+      arrivalRate: 2
+      maxVusers: 12
+      name: warmup
+    - duration: 120
+      arrivalRate: 4
+      maxVusers: 30
+      name: tag_frequency_steady_state
+  engines:
+    playwright: {}
+  processor: "../processors/streamlit-metrics.mjs"
+  defaults:
+    headers:
+      Cache-Control: no-cache
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: tag-frequencies
+    engine: playwright
+    beforeScenario: beforeScenario
+    afterScenario: afterScenario
+    testFunction: tagFrequencyScenario
