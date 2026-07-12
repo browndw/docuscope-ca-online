@@ -1,0 +1,28 @@
+config:
+  target: "http://127.0.0.1:8501"
+  phases:
+    - duration: 180
+      arrivalCount: 30
+      maxVusers: 30
+      name: first_class_arrival
+    - pause: 120
+      name: between_classes
+    - duration: 180
+      arrivalCount: 30
+      maxVusers: 60
+      name: second_class_arrival
+  engines:
+    playwright: {}
+  processor: "../processors/streamlit-metrics.mjs"
+  defaults:
+    headers:
+      Cache-Control: no-cache
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: token-frequencies-classroom
+    engine: playwright
+    beforeScenario: beforeScenario
+    afterScenario: afterScenario
+    testFunction: classroomTokenFrequencyScenario
