@@ -1,0 +1,26 @@
+config:
+  target: "http://127.0.0.1:8501"
+  phases:
+    - duration: 30
+      arrivalRate: 4
+      maxVusers: 24
+      name: warmup
+    - duration: 120
+      arrivalRate: 8
+      maxVusers: 60
+      name: token_frequency_second_class_steady_state
+  engines:
+    playwright: {}
+  processor: "../processors/streamlit-metrics.mjs"
+  defaults:
+    headers:
+      Cache-Control: no-cache
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  - name: token-frequencies-max60
+    engine: playwright
+    beforeScenario: beforeScenario
+    afterScenario: afterScenario
+    testFunction: tokenFrequencyScenario
