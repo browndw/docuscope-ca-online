@@ -5,8 +5,9 @@ Tests corpus processing workflows, memory management, and data handling.
 """
 
 import polars as pl
-import io
+from pathlib import Path
 import sys
+import tempfile
 from unittest.mock import patch, MagicMock
 
 # Mock Streamlit to avoid import issues
@@ -20,189 +21,13 @@ except ImportError:
 from webapp.utilities.processing.corpus_processing import (
     finalize_corpus_load,
     finalize_corpus_load_optimized,
-    handle_uploaded_tabular,
     process_new,
+    process_internal,
+    attach_queued_internal_target,
+    PROCESS_TARGET_PROBE_METADATA_NO_PERSIST,
+    PROCESS_TARGET_PROBE_NO_METADATA,
 )
-from webapp.utilities.state import SessionKeys
-
-
-class MockUploadedFile:
-    """Minimal uploaded file stand-in for Streamlit upload handlers."""
-
-    def __init__(self, name: str, data: bytes):
-        self.name = name
-        self._data = data
-
-    def getvalue(self):
-        return self._data
-
-
-def tabular_upload(df: pl.DataFrame, name: str) -> MockUploadedFile:
-    """Build a mock uploaded file from a Polars DataFrame."""
-    extension = name.rsplit(".", 1)[-1]
-    if extension == "parquet":
-        buffer = io.BytesIO()
-        df.write_parquet(buffer)
-        data = buffer.getvalue()
-    elif extension == "tsv":
-        data = df.write_csv(separator="\t").encode("utf-8")
-    else:
-        data = df.write_csv().encode("utf-8")
-    return MockUploadedFile(name, data)
-
-
-class TestHandleUploadedTabular:
-    """Test tabular raw-corpus upload handling."""
-
-    def setup_method(self):
-        self.df = pl.DataFrame({
-            "doc_id": ["doc 2", "doc1"],
-            "text": [" Second document ", "First document"],
-            "group": ["B", "A"]
-        })
-
-    @patch('streamlit.success')
-    def test_handle_uploaded_tabular_parquet(self, mock_success):
-        uploaded = tabular_upload(self.df, "corpus.parquet")
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded, check_size=True, max_size=10_000
-        )
-
-        assert ready is True
-        assert exceptions == []
-        assert result_df.columns == ["doc_id", "text"]
-        assert result_df.get_column("doc_id").to_list() == ["doc1", "doc2"]
-        assert result_df.get_column("text").to_list() == [
-            "First document", "Second document"
-        ]
-        mock_success.assert_called_once()
-
-    @patch('streamlit.success')
-    def test_handle_uploaded_tabular_csv(self, mock_success):
-        uploaded = tabular_upload(self.df, "corpus.csv")
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded, check_size=False, max_size=0
-        )
-
-        assert ready is True
-        assert exceptions == []
-        assert result_df.height == 2
-        mock_success.assert_called_once()
-
-    @patch('streamlit.success')
-    def test_handle_uploaded_tabular_tsv(self, mock_success):
-        uploaded = tabular_upload(self.df, "corpus.tsv")
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded, check_size=False, max_size=0
-        )
-
-        assert ready is True
-        assert exceptions == []
-        assert result_df.height == 2
-        mock_success.assert_called_once()
-
-    @patch('streamlit.success')
-    def test_handle_uploaded_tabular_tsv_numeric_doc_ids(self, mock_success):
-        uploaded = tabular_upload(
-            pl.DataFrame({
-                "doc_id": [0, 1, 10],
-                "text": ["First document", "Second document", "Third document"]
-            }),
-            "corpus.tsv"
-        )
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded, check_size=False, max_size=0
-        )
-
-        assert ready is True
-        assert exceptions == []
-        assert result_df.get_column("doc_id").to_list() == ["0", "1", "10"]
-        mock_success.assert_called_once()
-
-    @patch('streamlit.success')
-    @patch('webapp.utilities.processing.corpus_processing.check_language')
-    def test_handle_uploaded_tabular_checks_language_once_for_corpus(
-        self, mock_check_language, mock_success
-    ):
-        mock_check_language.return_value = True
-        uploaded = tabular_upload(
-            pl.DataFrame({
-                "doc_id": [0, 1],
-                "text": ["First document", "Second document"]
-            }),
-            "corpus.csv"
-        )
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded,
-            check_size=False,
-            max_size=0,
-            check_language_flag=True
-        )
-
-        assert ready is True
-        assert exceptions == []
-        assert result_df.get_column("doc_id").to_list() == ["0", "1"]
-        mock_check_language.assert_called_once_with(
-            "First document Second document"
-        )
-        mock_success.assert_called_once()
-
-    @patch('streamlit.error')
-    def test_handle_uploaded_tabular_requires_doc_id_and_text(self, mock_error):
-        uploaded = tabular_upload(
-            pl.DataFrame({"doc_id": ["doc1"], "body": ["Text"]}),
-            "corpus.csv"
-        )
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded, check_size=False, max_size=0
-        )
-
-        assert result_df is None
-        assert ready is False
-        assert exceptions == []
-        mock_error.assert_called_once()
-
-    @patch('streamlit.error')
-    def test_handle_uploaded_tabular_rejects_duplicate_doc_ids(self, mock_error):
-        uploaded = tabular_upload(
-            pl.DataFrame({
-                "doc_id": ["doc 1", "doc1"],
-                "text": ["First", "Second"]
-            }),
-            "corpus.csv"
-        )
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded, check_size=False, max_size=0
-        )
-
-        assert result_df is None
-        assert ready is False
-        assert exceptions == []
-        mock_error.assert_called_once()
-
-    @patch('streamlit.error')
-    def test_handle_uploaded_tabular_rejects_reference_overlap(self, mock_error):
-        uploaded = tabular_upload(self.df, "corpus.csv")
-
-        result_df, ready, exceptions = handle_uploaded_tabular(
-            uploaded,
-            check_size=False,
-            max_size=0,
-            check_ref=True,
-            target_docs=["doc1"]
-        )
-
-        assert result_df is None
-        assert ready is False
-        assert exceptions == []
-        mock_error.assert_called_once()
+from webapp.utilities.state import CorpusPersistencePolicy, SessionKeys
 
 
 class TestFinalizeCorpusLoad:
@@ -218,32 +43,27 @@ class TestFinalizeCorpusLoad:
             "pos": ["UH", "NN1"]
         })
 
-    @patch('webapp.utilities.processing.corpus_processing.ds.frequency_table')
-    @patch('webapp.utilities.processing.corpus_processing.ds.tags_table')
-    @patch('webapp.utilities.processing.corpus_processing.ds.tags_dtm')
-    @patch('webapp.utilities.processing.corpus_processing.load_corpus_new')
+    @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.set_session_persistence_policy')
+    @patch('webapp.utilities.processing.corpus_processing.build_corpus_metadata_descriptor')
     @patch('webapp.utilities.processing.corpus_processing.cleanup_original_corpus_data')
     @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
     @patch('webapp.utilities.processing.corpus_processing.app_core')
     @patch('streamlit.rerun')
     def test_finalize_corpus_load_target(
-        self, mock_rerun, mock_app_core, mock_init_metadata, mock_cleanup,
-        mock_load_corpus, mock_dtm, mock_tags_table, mock_freq_table
+        self,
+        mock_rerun,
+        mock_app_core,
+        mock_init_metadata,
+        mock_cleanup,
+        mock_build_metadata,
+        mock_set_policy,
+        mock_get_manager,
     ):
         """Test finalizing target corpus load."""
-        # Mock return values - each function returns a tuple of 2 DataFrames
-        mock_freq_table.return_value = (
-            pl.DataFrame({"token": ["hello"], "frequency": [1]}),  # ft_pos
-            pl.DataFrame({"tag": ["Character"], "frequency": [1]})  # ft_ds
-        )
-        mock_tags_table.return_value = (
-            pl.DataFrame({"doc_id": ["doc1"], "token": ["hello"], "count": [1]}),  # tt_pos
-            pl.DataFrame({"doc_id": ["doc1"], "tag": ["Character"], "count": [1]})  # tt_ds
-        )
-        mock_dtm.return_value = (
-            pl.DataFrame({"doc_id": ["doc1"], "hello": [1]}),  # dtm_pos
-            pl.DataFrame({"doc_id": ["doc1"], "Character": [1]})  # dtm_ds
-        )
+        mock_manager = MagicMock()
+        mock_get_manager.return_value = mock_manager
+        mock_build_metadata.return_value = {"ndocs": 2}
 
         with patch('streamlit.session_state', {}):
             st.session_state[self.user_session_id] = {}
@@ -256,22 +76,25 @@ class TestFinalizeCorpusLoad:
                 self.test_tokens, self.user_session_id, 'target'
             )
 
-            # Verify all processing functions were called
-            mock_freq_table.assert_called_once_with(
-                self.test_tokens, count_by="both"
-            )
-            mock_tags_table.assert_called_once_with(
-                self.test_tokens, count_by="both"
-            )
-            mock_dtm.assert_called_once_with(
-                self.test_tokens, count_by="both"
+            mock_set_policy.assert_called_once_with(
+                self.user_session_id,
+                CorpusPersistencePolicy.SERVER_SAVED,
+                corpus_type='target',
             )
 
-            # Verify load_corpus_new was called with all the data
-            mock_load_corpus.assert_called_once()
+            mock_get_manager.assert_called_once_with(
+                self.user_session_id, 'target'
+            )
+            mock_manager.set_core_data.assert_called_once_with(
+                self.test_tokens,
+                persist=False,
+            )
 
             # Verify metadata initialization for target
-            mock_init_metadata.assert_called_once_with(self.user_session_id)
+            mock_init_metadata.assert_called_once_with(
+                self.user_session_id,
+                {"ndocs": 2},
+            )
 
             # Verify session manager update
             mock_session_manager.update_session_state.assert_called_once()
@@ -280,22 +103,21 @@ class TestFinalizeCorpusLoad:
             mock_cleanup.assert_called_once_with(self.user_session_id, 'target')
             mock_rerun.assert_called_once()
 
-    @patch('webapp.utilities.processing.corpus_processing.ds.frequency_table')
-    @patch('webapp.utilities.processing.corpus_processing.ds.tags_table')
-    @patch('webapp.utilities.processing.corpus_processing.ds.tags_dtm')
-    @patch('webapp.utilities.processing.corpus_processing.load_corpus_new')
+    @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.set_session_persistence_policy')
+    @patch('webapp.utilities.processing.corpus_processing.build_corpus_metadata_descriptor')
     @patch('webapp.utilities.processing.corpus_processing.cleanup_original_corpus_data')
     @patch('webapp.utilities.processing.corpus_processing.init_metadata_reference')
     @patch('webapp.utilities.processing.corpus_processing.app_core')
     @patch('streamlit.rerun')
     def test_finalize_corpus_load_reference(
         self, mock_rerun, mock_app_core, mock_init_metadata, mock_cleanup,
-        mock_load_corpus, mock_dtm, mock_tags_table, mock_freq_table
+        mock_build_metadata, mock_set_policy, mock_get_manager
     ):
         """Test finalizing reference corpus load."""
-        mock_freq_table.return_value = (MagicMock(), MagicMock())
-        mock_tags_table.return_value = (MagicMock(), MagicMock())
-        mock_dtm.return_value = (MagicMock(), MagicMock())
+        mock_manager = MagicMock()
+        mock_get_manager.return_value = mock_manager
+        mock_build_metadata.return_value = {"ndocs": 2}
 
         with patch('streamlit.session_state', {}):
             st.session_state[self.user_session_id] = {}
@@ -304,8 +126,26 @@ class TestFinalizeCorpusLoad:
                 self.test_tokens, self.user_session_id, 'reference'
             )
 
+            mock_set_policy.assert_called_once_with(
+                self.user_session_id,
+                CorpusPersistencePolicy.SERVER_SAVED,
+                corpus_type='reference',
+            )
+
             # Verify metadata initialization for reference
-            mock_init_metadata.assert_called_once_with(self.user_session_id)
+            mock_init_metadata.assert_called_once_with(
+                self.user_session_id,
+                {"ndocs": 2},
+            )
+            mock_get_manager.assert_called_once_with(
+                self.user_session_id, 'reference'
+            )
+            mock_manager.set_core_data.assert_called_once_with(
+                self.test_tokens,
+                persist=False,
+            )
+            mock_cleanup.assert_called_once_with(self.user_session_id, 'reference')
+            mock_rerun.assert_called_once()
 
 
 class TestFinalizeCorpusLoadOptimized:
@@ -321,17 +161,21 @@ class TestFinalizeCorpusLoadOptimized:
         })
 
     @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.set_session_persistence_policy')
+    @patch('webapp.utilities.processing.corpus_processing.build_corpus_metadata_descriptor')
     @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
     @patch('webapp.utilities.processing.corpus_processing.app_core')
     @patch('webapp.utilities.processing.corpus_processing.cleanup_original_corpus_data')
     @patch('streamlit.rerun')
     def test_finalize_corpus_load_optimized_target(
         self, mock_rerun, mock_cleanup, mock_app_core,
-        mock_init_metadata, mock_get_manager
+        mock_init_metadata, mock_build_metadata, mock_set_policy,
+        mock_get_manager
     ):
         """Test optimized finalization for target corpus."""
         mock_manager = MagicMock()
         mock_get_manager.return_value = mock_manager
+        mock_build_metadata.return_value = {"ndocs": 2}
         mock_session_manager = MagicMock()
         mock_app_core.session_manager = mock_session_manager
 
@@ -339,14 +183,27 @@ class TestFinalizeCorpusLoadOptimized:
             self.test_tokens, self.user_session_id, 'target'
         )
 
+        mock_set_policy.assert_called_once_with(
+            self.user_session_id,
+            CorpusPersistencePolicy.SERVER_SAVED,
+            corpus_type='target',
+        )
+
         # Verify corpus manager setup
         mock_get_manager.assert_called_once_with(
             self.user_session_id, 'target'
         )
-        mock_manager.set_core_data.assert_called_once_with(self.test_tokens)
+        mock_manager.set_core_data.assert_called_once_with(
+            self.test_tokens,
+            persist=False,
+        )
+        mock_manager.set_file_refs.assert_called_once()
 
         # Verify session state updates
-        mock_init_metadata.assert_called_once_with(self.user_session_id)
+        mock_init_metadata.assert_called_once_with(
+            self.user_session_id,
+            {"ndocs": 2},
+        )
         mock_session_manager.update_session_state.assert_called_once_with(
             self.user_session_id, SessionKeys.HAS_TARGET, True
         )
@@ -356,17 +213,21 @@ class TestFinalizeCorpusLoadOptimized:
         mock_rerun.assert_called_once()
 
     @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.set_session_persistence_policy')
+    @patch('webapp.utilities.processing.corpus_processing.build_corpus_metadata_descriptor')
     @patch('webapp.utilities.processing.corpus_processing.init_metadata_reference')
     @patch('webapp.utilities.processing.corpus_processing.app_core')
     @patch('webapp.utilities.processing.corpus_processing.cleanup_original_corpus_data')
     @patch('streamlit.rerun')
     def test_finalize_corpus_load_optimized_reference(
         self, mock_rerun, mock_cleanup, mock_app_core,
-        mock_init_metadata, mock_get_manager
+        mock_init_metadata, mock_build_metadata, mock_set_policy,
+        mock_get_manager
     ):
         """Test optimized finalization for reference corpus."""
         mock_manager = MagicMock()
         mock_get_manager.return_value = mock_manager
+        mock_build_metadata.return_value = {"ndocs": 2}
         mock_session_manager = MagicMock()
         mock_app_core.session_manager = mock_session_manager
 
@@ -374,11 +235,140 @@ class TestFinalizeCorpusLoadOptimized:
             self.test_tokens, self.user_session_id, 'reference'
         )
 
+        mock_set_policy.assert_called_once_with(
+            self.user_session_id,
+            CorpusPersistencePolicy.SERVER_SAVED,
+            corpus_type='reference',
+        )
+
+        mock_manager.set_core_data.assert_called_once_with(
+            self.test_tokens,
+            persist=False,
+        )
+        mock_manager.set_file_refs.assert_called_once()
+
         # Verify reference-specific behavior
-        mock_init_metadata.assert_called_once_with(self.user_session_id)
+        mock_init_metadata.assert_called_once_with(
+            self.user_session_id,
+            {"ndocs": 2},
+        )
         mock_session_manager.update_session_state.assert_called_once_with(
             self.user_session_id, SessionKeys.HAS_REFERENCE, True
         )
+
+    @patch('webapp.utilities.processing.corpus_processing.set_session_persistence_policy')
+    @patch('webapp.utilities.processing.corpus_processing.build_corpus_metadata_descriptor')
+    @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
+    @patch('webapp.utilities.processing.corpus_processing.app_core')
+    @patch('webapp.utilities.processing.corpus_processing.cleanup_original_corpus_data')
+    @patch('streamlit.rerun')
+    def test_finalize_corpus_load_optimized_writes_session_artifact_for_server_saved(
+        self,
+        mock_rerun,
+        mock_cleanup,
+        mock_app_core,
+        mock_init_metadata,
+        mock_build_metadata,
+        mock_set_policy,
+    ):
+        class StubManager:
+            def __init__(self):
+                self.session_corpus_data = {}
+                self.file_refs = None
+
+            def set_core_data(self, ds_tokens, persist=True):
+                self.session_corpus_data['ds_tokens'] = ds_tokens
+
+            def set_file_refs(self, file_map):
+                self.file_refs = file_map
+                self.session_corpus_data.setdefault('_artifact_refs', {})
+                for key, path in file_map.items():
+                    self.session_corpus_data['_artifact_refs'][key] = {
+                        'storage_type': 'gzip_pickle',
+                        'path': path,
+                    }
+                    self.session_corpus_data.pop(key, None)
+
+        mock_manager = StubManager()
+        mock_build_metadata.return_value = {'ndocs': 2}
+        mock_session_manager = MagicMock()
+        mock_app_core.session_manager = mock_session_manager
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch(
+                'webapp.utilities.processing.corpus_processing.get_corpus_manager',
+                return_value=mock_manager,
+            ):
+                with patch(
+                    'webapp.utilities.processing.corpus_processing.get_config',
+                    return_value=tmpdir,
+                ):
+                    finalize_corpus_load_optimized(
+                        self.test_tokens,
+                        self.user_session_id,
+                        'target',
+                        CorpusPersistencePolicy.SERVER_SAVED,
+                    )
+
+            artifact_path = Path(mock_manager.file_refs['ds_tokens'])
+            assert artifact_path.exists()
+            assert artifact_path.name == 'ds_tokens.gz'
+            assert artifact_path.parent.joinpath('metadata_descriptor.json').exists()
+            assert mock_manager.session_corpus_data['ds_tokens'].equals(self.test_tokens)
+
+
+class TestAttachQueuedInternalTarget:
+    """Test queue-prepared target attachment behavior."""
+
+    @patch('webapp.utilities.processing.corpus_processing.load_corpus_internal')
+    @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.set_session_persistence_policy')
+    @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
+    @patch('webapp.utilities.processing.corpus_processing._persist_session_updates')
+    @patch('webapp.utilities.processing.corpus_processing.registry_service')
+    @patch('streamlit.rerun')
+    def test_attach_queued_internal_target_sets_frequency_artifact_refs(
+        self,
+        mock_rerun,
+        mock_registry,
+        mock_persist_updates,
+        mock_init_metadata,
+        mock_set_policy,
+        mock_get_manager,
+        mock_load_internal,
+    ):
+        """Queue completion payload should attach shared frequency refs eagerly."""
+
+        mock_manager = MagicMock()
+        mock_manager.is_ready.return_value = True
+        mock_get_manager.return_value = mock_manager
+
+        queue_artifact = MagicMock(status="ready")
+        mock_registry.get_artifact_by_id.return_value = queue_artifact
+        mock_registry.load_json_artifact.return_value = {"frequency_artifact_id": 42}
+
+        attach_queued_internal_target(
+            "webapp/_corpora/ld/A_MICUSP_mini",
+            "queued-session",
+            queue_artifact_id=17,
+        )
+
+        mock_load_internal.assert_called_once_with(
+            "webapp/_corpora/ld/A_MICUSP_mini",
+            "queued-session",
+            corpus_type="target",
+        )
+        mock_registry.get_artifact_by_id.assert_called_once_with(17)
+        mock_registry.load_json_artifact.assert_called_once_with(queue_artifact)
+        mock_manager.set_artifact_refs.assert_called_once_with(
+            "frequency_bundle",
+            42,
+            ["ft_pos", "ft_ds"],
+        )
+        mock_set_policy.assert_called_once()
+        mock_init_metadata.assert_called_once_with("queued-session")
+        mock_persist_updates.assert_called_once()
+        mock_rerun.assert_called_once()
 
 
 class TestProcessNew:
@@ -426,7 +416,10 @@ class TestProcessNew:
 
         # Verify finalization was called
         mock_finalize.assert_called_once_with(
-            mock_processed_tokens, self.user_session_id, self.corpus_type
+            mock_processed_tokens,
+            self.user_session_id,
+            self.corpus_type,
+            CorpusPersistencePolicy.SERVER_SAVED,
         )
 
     @patch('webapp.utilities.processing.corpus_processing.ds.docuscope_parse')
@@ -462,7 +455,10 @@ class TestProcessNew:
 
         # Verify finalization was called since processing succeeded
         mock_finalize.assert_called_once_with(
-            mock_processed_tokens, self.user_session_id, self.corpus_type
+            mock_processed_tokens,
+            self.user_session_id,
+            self.corpus_type,
+            CorpusPersistencePolicy.SERVER_SAVED,
         )
 
     @patch('webapp.utilities.processing.corpus_processing.ds.docuscope_parse')
@@ -546,7 +542,46 @@ class TestCorpusProcessingIntegration:
             corp=test_df, nlp_model=self.mock_nlp
         )
         mock_finalize.assert_called_once_with(
-            mock_processed_tokens, self.user_session_id, 'target'
+            mock_processed_tokens,
+            self.user_session_id,
+            'target',
+            CorpusPersistencePolicy.SERVER_SAVED,
+        )
+
+    @patch('streamlit.success')
+    @patch('webapp.utilities.processing.corpus_processing.ds.docuscope_parse')
+    @patch('webapp.utilities.processing.corpus_processing.finalize_corpus_load')
+    def test_process_new_temporary_policy_passes_through(
+        self, mock_finalize, mock_docuscope_parse, mock_success
+    ):
+        test_df = pl.DataFrame({
+            "doc_id": ["doc1", "doc2"],
+            "text": ["Hello world", "Test document"],
+        })
+        mock_processed_tokens = pl.DataFrame({
+            "doc_id": ["doc1"],
+            "token": ["hello"],
+            "pos_tag": ["NN1"],
+            "ds_tag": ["Character"],
+            "pos_id": [0],
+            "ds_id": [0],
+        })
+        mock_docuscope_parse.return_value = mock_processed_tokens
+
+        with patch('streamlit.session_state', {self.user_session_id: {}}):
+            process_new(
+                test_df,
+                self.mock_nlp,
+                self.user_session_id,
+                'target',
+                persistence_policy=CorpusPersistencePolicy.TEMPORARY_SESSION_ONLY,
+            )
+
+        mock_finalize.assert_called_once_with(
+            mock_processed_tokens,
+            self.user_session_id,
+            'target',
+            CorpusPersistencePolicy.TEMPORARY_SESSION_ONLY,
         )
 
     @patch('webapp.utilities.processing.corpus_processing.ds.docuscope_parse')
@@ -564,3 +599,154 @@ class TestCorpusProcessingIntegration:
         mock_docuscope_parse.assert_called_once_with(
             corp=test_df, nlp_model=self.mock_nlp
         )
+
+
+class TestProcessInternalProbeModes:
+    """Test load-test probe branches for internal corpus processing."""
+
+    def setup_method(self):
+        self.user_session_id = "test_session"
+        self.corpus_path = "webapp/_corpora/ld/A_MICUSP_mini"
+
+    @patch('webapp.utilities.processing.corpus_processing.st.caption')
+    @patch('webapp.utilities.processing.corpus_processing.st.rerun')
+    @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
+    @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.load_corpus_internal')
+    @patch('webapp.utilities.processing.corpus_processing.os.getenv')
+    def test_process_internal_no_metadata_probe(
+        self,
+        mock_getenv,
+        mock_load_internal,
+        mock_get_manager,
+        mock_init_metadata,
+        mock_rerun,
+        mock_caption,
+    ):
+        mock_getenv.return_value = PROCESS_TARGET_PROBE_NO_METADATA
+        mock_manager = MagicMock()
+        mock_manager.is_ready.return_value = True
+        mock_get_manager.return_value = mock_manager
+        session_state = {
+            self.user_session_id: {
+                'session': pl.from_dict({
+                    SessionKeys.HAS_TARGET: [False],
+                    SessionKeys.TARGET_DB: [''],
+                })
+            }
+        }
+
+        with patch('streamlit.session_state', session_state):
+            process_internal(self.corpus_path, self.user_session_id, 'target')
+
+        mock_load_internal.assert_called_once_with(
+            self.corpus_path,
+            self.user_session_id,
+            corpus_type='target',
+        )
+        mock_init_metadata.assert_not_called()
+        mock_rerun.assert_not_called()
+        mock_caption.assert_called_once_with(
+            f'LOAD_TEST_PROCESS_TARGET_READY:target:{PROCESS_TARGET_PROBE_NO_METADATA}'
+        )
+
+        session = session_state[self.user_session_id]['session'].to_dict(as_series=False)
+        assert session[SessionKeys.TARGET_DB] == [self.corpus_path]
+        assert session[SessionKeys.HAS_TARGET] == [True]
+        mock_manager.warm_shared_frequency_data.assert_not_called()
+
+    @patch('webapp.utilities.processing.corpus_processing.st.caption')
+    @patch('webapp.utilities.processing.corpus_processing.st.rerun')
+    @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
+    @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.load_corpus_internal')
+    @patch('webapp.utilities.processing.corpus_processing.os.getenv')
+    def test_process_internal_metadata_no_persist_probe(
+        self,
+        mock_getenv,
+        mock_load_internal,
+        mock_get_manager,
+        mock_init_metadata,
+        mock_rerun,
+        mock_caption,
+    ):
+        mock_getenv.return_value = PROCESS_TARGET_PROBE_METADATA_NO_PERSIST
+        mock_manager = MagicMock()
+        mock_manager.is_ready.return_value = True
+        mock_get_manager.return_value = mock_manager
+        session_state = {
+            self.user_session_id: {
+                'session': pl.from_dict({
+                    SessionKeys.HAS_TARGET: [False],
+                    SessionKeys.TARGET_DB: [''],
+                })
+            }
+        }
+
+        with patch('streamlit.session_state', session_state):
+            process_internal(self.corpus_path, self.user_session_id, 'target')
+
+        mock_load_internal.assert_called_once_with(
+            self.corpus_path,
+            self.user_session_id,
+            corpus_type='target',
+        )
+        mock_init_metadata.assert_called_once_with(self.user_session_id)
+        mock_rerun.assert_not_called()
+        mock_caption.assert_called_once_with(
+            'LOAD_TEST_PROCESS_TARGET_READY:'
+            f'target:{PROCESS_TARGET_PROBE_METADATA_NO_PERSIST}'
+        )
+
+        session = session_state[self.user_session_id]['session'].to_dict(as_series=False)
+        assert session[SessionKeys.TARGET_DB] == [self.corpus_path]
+        assert session[SessionKeys.HAS_TARGET] == [True]
+        mock_manager.warm_shared_frequency_data.assert_not_called()
+
+    @patch('webapp.utilities.processing.corpus_processing.st.rerun')
+    @patch('webapp.utilities.processing.corpus_processing.auto_persist_session')
+    @patch('webapp.utilities.processing.corpus_processing.mark_session_dirty')
+    @patch('webapp.utilities.processing.corpus_processing.init_metadata_target')
+    @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
+    @patch('webapp.utilities.processing.corpus_processing.load_corpus_internal')
+    @patch('webapp.utilities.processing.corpus_processing.os.getenv')
+    def test_process_internal_full_probe(
+        self,
+        mock_getenv,
+        mock_load_internal,
+        mock_get_manager,
+        mock_init_metadata,
+        mock_mark_dirty,
+        mock_auto_persist,
+        mock_rerun,
+    ):
+        mock_getenv.return_value = 'full'
+        mock_manager = MagicMock()
+        mock_manager.is_ready.return_value = True
+        mock_get_manager.return_value = mock_manager
+        session_state = {
+            self.user_session_id: {
+                'session': pl.from_dict({
+                    SessionKeys.HAS_TARGET: [False],
+                    SessionKeys.TARGET_DB: [''],
+                })
+            }
+        }
+
+        with patch('streamlit.session_state', session_state):
+            process_internal(self.corpus_path, self.user_session_id, 'target')
+
+        mock_load_internal.assert_called_once_with(
+            self.corpus_path,
+            self.user_session_id,
+            corpus_type='target',
+        )
+        mock_init_metadata.assert_called_once_with(self.user_session_id)
+        mock_mark_dirty.assert_called_once_with(self.user_session_id)
+        mock_auto_persist.assert_not_called()
+        mock_manager.warm_shared_frequency_data.assert_called_once_with()
+
+        session = session_state[self.user_session_id]['session'].to_dict(as_series=False)
+        assert session[SessionKeys.TARGET_DB] == [self.corpus_path]
+        assert session[SessionKeys.HAS_TARGET] == [True]
+        mock_rerun.assert_called_once()

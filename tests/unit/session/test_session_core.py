@@ -4,8 +4,13 @@ Tests for webapp.utilities.session.session_core module.
 Tests session initialization, updates, and management functionality.
 """
 
+import gzip
+import json
+import pickle
+from pathlib import Path
 import polars as pl
 import sys
+from tempfile import TemporaryDirectory
 from unittest.mock import patch, MagicMock
 
 # Mock Streamlit to avoid import issues
@@ -17,11 +22,14 @@ except ImportError:
     st = MagicMock()
 
 from webapp.utilities.session.session_core import (
+    METADATA_DESCRIPTOR_FILE,
     init_session,
     update_session,
-    get_corpus_categories
+    get_corpus_categories,
+    init_metadata_target,
+    write_metadata_descriptor_sidecar,
 )
-from webapp.utilities.state import SessionKeys
+from webapp.utilities.state import SessionKeys, MetadataKeys
 
 
 class TestInitSession:
@@ -257,6 +265,168 @@ class TestSessionIntegration:
         self.session_id = "unit_test_session"
         st.session_state.clear()
         st.session_state[self.session_id] = {}
+
+
+class TestMetadataInitialization:
+    """Test metadata initialization behavior for the shared descriptor builder."""
+
+    def setup_method(self):
+        """Set up test session before each test."""
+        self.session_id = "unit_test_session"
+        st.session_state.clear()
+        st.session_state[self.session_id] = {}
+
+    @patch('webapp.utilities.session.session_core.get_corpus_manager')
+    @patch('streamlit.session_state', {})
+    def test_init_metadata_target_builds_minimal_descriptor(self, mock_get_manager):
+        session_id = 'test_session'
+        st.session_state[session_id] = {}
+
+        mock_manager = MagicMock()
+        mock_manager.get_core_data.return_value = pl.DataFrame({
+            'doc_id': ['doc2', 'doc1', 'doc1'],
+            'pos_id': [0, 0, 1],
+            'pos_tag': ['NN1', 'Y', 'JJ'],
+            'ds_id': [0, 0, 1],
+            'ds_tag': ['ConfidenceHigh', 'Untagged', 'Actors'],
+            'token': ['alpha', '.', 'beta'],
+        })
+        mock_get_manager.return_value = mock_manager
+
+        init_metadata_target(session_id)
+
+        metadata_df = st.session_state[session_id][SessionKeys.METADATA_TARGET]
+        metadata = metadata_df.to_dict(as_series=False)
+
+        assert metadata[MetadataKeys.NDOCS] == [2]
+        assert metadata[MetadataKeys.MODEL] == ['Common Dictionary']
+        assert metadata[MetadataKeys.DOCIDS] == [{'ids': ['doc1', 'doc2']}]
+        assert metadata[MetadataKeys.TAGS_DS] == [{'tags': ['Actors', 'ConfidenceHigh']}]
+        assert metadata[MetadataKeys.TAGS_POS] == [{'tags': ['JJ', 'NN1']}]
+        assert MetadataKeys.DOCCATS not in metadata
+        assert MetadataKeys.COLLOCATIONS not in metadata
+        assert MetadataKeys.KEYNESS_PARTS not in metadata
+        assert MetadataKeys.VARIANCE not in metadata
+
+    @patch('webapp.utilities.session.session_core.get_corpus_manager')
+    @patch('streamlit.session_state', {})
+    def test_init_metadata_target_uses_file_backed_descriptor_cache(
+        self, mock_get_manager
+    ):
+        session_id = 'test_session'
+        st.session_state[session_id] = {}
+
+        with TemporaryDirectory() as temp_dir:
+            artifact_path = f"{temp_dir}/ds_tokens.gz"
+            with gzip.open(artifact_path, 'wb') as file_handle:
+                pickle.dump(
+                    pl.DataFrame({
+                        'doc_id': ['doc2', 'doc1', 'doc1'],
+                        'pos_id': [0, 0, 1],
+                        'pos_tag': ['NN1', 'Y', 'JJ'],
+                        'ds_id': [0, 0, 1],
+                        'ds_tag': ['ConfidenceHigh', 'Untagged', 'Actors'],
+                        'token': ['alpha', '.', 'beta'],
+                    }),
+                    file_handle,
+                )
+
+            mock_manager = MagicMock()
+            mock_manager.session_corpus_data = {}
+            mock_manager._get_artifact_refs.return_value = {
+                'ds_tokens': {
+                    'storage_type': 'gzip_pickle',
+                    'path': artifact_path,
+                }
+            }
+            mock_get_manager.return_value = mock_manager
+
+            init_metadata_target(session_id)
+
+            metadata_df = st.session_state[session_id][SessionKeys.METADATA_TARGET]
+            metadata = metadata_df.to_dict(as_series=False)
+
+            mock_manager.get_core_data.assert_not_called()
+            assert metadata[MetadataKeys.NDOCS] == [2]
+            assert metadata[MetadataKeys.MODEL] == ['Common Dictionary']
+            assert metadata[MetadataKeys.DOCIDS] == [{'ids': ['doc1', 'doc2']}]
+            assert metadata[MetadataKeys.TAGS_DS] == [
+                {'tags': ['Actors', 'ConfidenceHigh']}
+            ]
+            assert metadata[MetadataKeys.TAGS_POS] == [{'tags': ['JJ', 'NN1']}]
+
+    @patch('webapp.utilities.session.session_core.get_corpus_manager')
+    @patch('streamlit.session_state', {})
+    def test_init_metadata_target_prefers_sidecar_descriptor(
+        self, mock_get_manager
+    ):
+        session_id = 'test_session'
+        st.session_state[session_id] = {}
+
+        with TemporaryDirectory() as temp_dir:
+            artifact_path = f"{temp_dir}/ds_tokens.gz"
+            sidecar_path = f"{temp_dir}/metadata_descriptor.json"
+
+            with gzip.open(artifact_path, 'wb') as file_handle:
+                pickle.dump(pl.DataFrame({'doc_id': ['doc1']}), file_handle)
+
+            with open(sidecar_path, 'w', encoding='utf-8') as file_handle:
+                json.dump(
+                    {
+                        MetadataKeys.TOKENS_POS: 10,
+                        MetadataKeys.TOKENS_DS: 9,
+                        MetadataKeys.NDOCS: 2,
+                        MetadataKeys.MODEL: 'Common Dictionary',
+                        MetadataKeys.DOCIDS: {'ids': ['doc1', 'doc2']},
+                        MetadataKeys.TAGS_DS: {'tags': ['Actors']},
+                        MetadataKeys.TAGS_POS: {'tags': ['NN1']},
+                    },
+                    file_handle,
+                )
+
+            mock_manager = MagicMock()
+            mock_manager.session_corpus_data = {}
+            mock_manager._get_artifact_refs.return_value = {
+                'ds_tokens': {
+                    'storage_type': 'gzip_pickle',
+                    'path': artifact_path,
+                }
+            }
+            mock_get_manager.return_value = mock_manager
+
+            init_metadata_target(session_id)
+
+            metadata_df = st.session_state[session_id][SessionKeys.METADATA_TARGET]
+            metadata = metadata_df.to_dict(as_series=False)
+
+            mock_manager.get_core_data.assert_not_called()
+            assert metadata[MetadataKeys.NDOCS] == [2]
+            assert metadata[MetadataKeys.DOCIDS] == [{'ids': ['doc1', 'doc2']}]
+            assert metadata[MetadataKeys.TAGS_DS] == [{'tags': ['Actors']}]
+            assert metadata[MetadataKeys.TAGS_POS] == [{'tags': ['NN1']}]
+
+    def test_write_metadata_descriptor_sidecar_uses_corpus_directory_boundary(self):
+        with TemporaryDirectory() as temp_dir:
+            corpus_dir = f"{temp_dir}/private_corpus"
+            sidecar_path = write_metadata_descriptor_sidecar(
+                corpus_dir,
+                metadata={
+                    MetadataKeys.TOKENS_POS: 10,
+                    MetadataKeys.TOKENS_DS: 9,
+                    MetadataKeys.NDOCS: 2,
+                    MetadataKeys.MODEL: 'Common Dictionary',
+                    MetadataKeys.DOCIDS: {'ids': ['doc1', 'doc2']},
+                    MetadataKeys.TAGS_DS: {'tags': ['Actors']},
+                    MetadataKeys.TAGS_POS: {'tags': ['NN1']},
+                },
+            )
+
+            assert sidecar_path == Path(corpus_dir) / METADATA_DESCRIPTOR_FILE
+            with open(sidecar_path, 'r', encoding='utf-8') as file_handle:
+                descriptor = json.load(file_handle)
+
+            assert descriptor[MetadataKeys.NDOCS] == 2
+            assert descriptor[MetadataKeys.DOCIDS] == {'ids': ['doc1', 'doc2']}
 
     def test_init_and_update_workflow(self):
         """Test complete workflow of initializing and updating session."""

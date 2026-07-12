@@ -20,6 +20,7 @@ except ImportError:
     STREAMLIT_AVAILABLE = False
 
 from webapp.utilities.corpus.data_manager import CorpusDataManager
+from webapp.utilities.state import TargetKeys
 
 
 class TestCorpusDataManager:
@@ -123,7 +124,7 @@ class TestCorpusDataManager:
 
         # Check derived keys
         expected_derived = [
-            "dtm_ds", "dtm_pos", "ft_ds", "ft_pos", "tt_ds", "tt_pos"
+            "dtm_ds", "dtm_pos", "ft_ds", "ft_pos", "ft_pos_general", "tt_ds", "tt_pos"
         ]
         assert len(manager.derived_keys) == len(expected_derived)
         for key in expected_derived:
@@ -264,6 +265,44 @@ class TestCorpusDataManagerEdgeCases:
             set(manager.additional_keys)
         )
         assert set(manager.all_keys) == expected_all
+
+    def test_get_data_caches_general_pos_frequency_table(self):
+        """General POS frequency tables should be derived once and cached."""
+        user_session_id = "general_pos_session"
+        st.session_state.clear()
+        st.session_state[user_session_id] = {
+            "target": {},
+            "reference": {},
+        }
+
+        manager = CorpusDataManager(user_session_id, "target")
+        ft_pos = pl.DataFrame({
+            "Token": ["a"],
+            "Tag": ["NN1"],
+            "AF": [1],
+            "RF": [1.0],
+            "Range": [100.0],
+        })
+        ft_pos_general = pl.DataFrame({
+            "Token": ["a"],
+            "Tag": ["NounCommon"],
+            "AF": [1],
+            "RF": [1.0],
+            "Range": [100.0],
+        })
+
+        manager.session_corpus_data[TargetKeys.FT_POS] = ft_pos
+
+        with patch(
+            'webapp.utilities.analysis.freq_simplify_pl',
+            return_value=ft_pos_general,
+        ) as mock_freq_simplify:
+            first = manager.get_data(TargetKeys.FT_POS_GENERAL)
+            second = manager.get_data(TargetKeys.FT_POS_GENERAL)
+
+        assert first is ft_pos_general
+        assert second is ft_pos_general
+        mock_freq_simplify.assert_called_once_with(ft_pos)
 
 
 class TestCorpusDataManagerIntegration:
