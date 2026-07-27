@@ -10,12 +10,16 @@ class SessionKeys:
     # Session DataFrame container
     SESSION_DATAFRAME = "session"
     # Session state flags stored in the DataFrame
+    CORPUS_PERSISTENCE_POLICY = "corpus_persistence_policy"
+    TARGET_PERSISTENCE_POLICY = "target_persistence_policy"
+    REFERENCE_PERSISTENCE_POLICY = "reference_persistence_policy"
     HAS_TARGET = "has_target"
     TARGET_DB = "target_db"
     HAS_META = "has_meta"
     HAS_REFERENCE = "has_reference"
     REFERENCE_DB = "reference_db"
     FREQ_TABLE = "freq_table"
+    FREQ_TABLE_TRANSIENT = "freq_table_transient"
     TAGS_TABLE = "tags_table"
     KEYNESS_TABLE = "keyness_table"
     NGRAMS = "ngrams"
@@ -113,6 +117,7 @@ class CorpusKeys:
 class TargetKeys:
     DS_TOKENS = "ds_tokens"
     FT_POS = "ft_pos"
+    FT_POS_GENERAL = "ft_pos_general"
     FT_DS = "ft_ds"
     TT_POS = "tt_pos"
     TT_DS = "tt_ds"
@@ -169,6 +174,12 @@ class LoadCorpusKeys:
     CORPUS_DF = "corpus_df"
     REF_CORPUS_DF = "ref_corpus_df"
     REF_READY_TO_PROCESS = "ref_ready_to_process"
+
+
+class CorpusPersistencePolicy:
+    SERVER_SAVED = "server_saved"
+    TEMPORARY_SESSION_ONLY = "temporary_session_only"
+    LOCAL_EXPORT_ONLY = "local_export_only"
 
 
 class BoxplotKeys:
