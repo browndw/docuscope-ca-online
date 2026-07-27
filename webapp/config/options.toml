@@ -1,11 +1,12 @@
 [version]
-version = "0.4.2"  # Update this version when making changes
+version = "0.4.1"  # Update this version when making changes
 
 [global]
 # Set to true for desktop mode (single user, local storage)
-# Set to false for enterprise mode (multi-user, sharded storage)
+# Set to false for enterprise mode (multi-user, Postgres-backed control plane)
 # This affects session management, caching, and AI configuration
 desktop_mode = false
+test_mode = true
 
 # Enable size checks for text and Polars DataFrames
 check_size = true
@@ -72,11 +73,11 @@ session_cache_authorization = true
 audit_access_attempts = true
 
 [session]
-# Session persistence backend: "memory", "sqlite", "sharded_sqlite"
+# Session persistence backend: "memory", "postgres", or transitional "sqlite"
 # Backend automatically switches based on desktop_mode:
-# - desktop_mode = true: uses "sqlite" (single database)
-# - desktop_mode = false: uses "sharded_sqlite" (enterprise scale)
-backend = "sqlite"
+# - desktop_mode = true: uses "memory"
+# - desktop_mode = false: uses "postgres"
+backend = "postgres"
 storage_path = "webapp/_session"
 
 # Enterprise session/analysis caching (separate from Firestore cache_mode)
@@ -87,26 +88,11 @@ enable_analysis_cache = true
 cache_compression = true
 
 # Enterprise cache settings (when desktop_mode = false)
-cache_backend = "sqlite_sharded"  # "sqlite", "sqlite_sharded"
+cache_backend = "sqlite"
 cache_db_path = "webapp/_session/cache.db"
 cache_max_size_mb = 500
 cache_ttl_hours = 24
 cache_cleanup_interval_minutes = 30
-
-# Enterprise sharding (only when desktop_mode = false)
-# Automatically enabled for enterprise deployments
-enable_sharding = false  # Auto-enabled when desktop_mode = false
-shard_count = 8
-shard_strategy = "user_hash"  # "user_hash", "round_robin", "load_based"
-
-# Primary databases (sharded)
-sessions_shard_pattern = "webapp/_session/sessions_shard_{}.db"
-cache_shard_pattern = "webapp/_session/cache_shard_{}.db"
-
-# Shared databases (not sharded)
-analytics_db_path = "webapp/_session/analytics.db"
-temp_db_path = "webapp/_session/temp.db"
-health_db_path = "webapp/_session/health.db"
 
 # Connection pool settings for enterprise scale
 connection_pool_size = 20
