@@ -39,8 +39,10 @@ from webapp.utilities.state.widget_key_manager import create_persist_function
 from webapp.utilities.analysis import (
     has_target_corpus, has_reference_corpus,
     render_corpus_not_loaded_error, generate_keyness_tables,
-    freq_simplify_pl
+    freq_simplify_pl, attach_keyness_artifact
 )
+from webapp.persistence import registry_service
+from webapp.queue import enqueue_keyness_preparation, get_queue, get_redis_queue_config
 from webapp.utilities.plotting import (
     plot_compare_corpus_bar, plot_download_link
 )
@@ -60,6 +62,7 @@ COMPARE_CORPORA_PERSISTENT_WIDGETS = [
 app_core.register_page_widgets(COMPARE_CORPORA_PERSISTENT_WIDGETS)
 
 TOKEN_LIMIT = 1_500_000
+KEYNESS_QUEUE_STATE_KEY = "keyness_queue_state"
 
 # Configuration constants
 KEYNESS_TOKEN_TAGSET_CONFIG = {
@@ -82,6 +85,154 @@ st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def _get_keyness_queue_state(user_session_id: str) -> dict | None:
+    """Return queued keyness state for the current session, if any."""
+
+    queue_state = st.session_state.get(KEYNESS_QUEUE_STATE_KEY)
+    if not isinstance(queue_state, dict):
+        return None
+    if queue_state.get("session_id") != user_session_id:
+        return None
+    return queue_state
+
+
+def _clear_keyness_queue_state(user_session_id: str) -> None:
+    """Clear queued keyness state for the current session."""
+
+    if _get_keyness_queue_state(user_session_id) is not None:
+        st.session_state.pop(KEYNESS_QUEUE_STATE_KEY, None)
+
+
+def _can_queue_keyness(session: dict) -> tuple[str, str] | None:
+    """Return built-in target/reference paths when keyness can be queued."""
+
+    if not get_redis_queue_config().enabled:
+        return None
+
+    target_source = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    reference_source = safe_session_get(session, SessionKeys.REFERENCE_DB, "")
+    if not target_source or not reference_source:
+        return None
+    return str(target_source), str(reference_source)
+
+
+def _submit_keyness_job(
+    user_session_id: str,
+    target_source: str,
+    reference_source: str,
+    threshold: float,
+    swap_target: bool,
+) -> None:
+    """Submit built-in keyness generation through Redis/RQ."""
+
+    result = enqueue_keyness_preparation(
+        target_source=target_source,
+        reference_source=reference_source,
+        threshold=threshold,
+        swap_target=swap_target,
+    )
+    if result.state == "ready" and result.artifact_id is not None:
+        _clear_keyness_queue_state(user_session_id)
+        if attach_keyness_artifact(user_session_id, result.artifact_id):
+            st.rerun()
+        st.error("Ready keyness artifact could not be attached. Please retry.")
+        return
+
+    st.session_state[KEYNESS_QUEUE_STATE_KEY] = {
+        "session_id": user_session_id,
+        "target_source": target_source,
+        "reference_source": reference_source,
+        "threshold": threshold,
+        "swap_target": swap_target,
+        "control_plane_job_id": result.control_plane_job_id,
+        "rq_job_id": result.rq_job_id,
+        "artifact_id": result.artifact_id,
+    }
+    st.rerun()
+
+
+@st.fragment(run_every="2s")
+def _render_keyness_queue_status(user_session_id: str) -> None:
+    """Poll queued keyness status and attach it once the job completes."""
+
+    queue_state = _get_keyness_queue_state(user_session_id)
+    if queue_state is None:
+        return
+
+    control_plane_job_id = queue_state.get("control_plane_job_id")
+    rq_job_id = queue_state.get("rq_job_id")
+    if not isinstance(rq_job_id, str) or not rq_job_id:
+        if isinstance(control_plane_job_id, int):
+            rq_job_id = f"keyness-{control_plane_job_id}"
+            queue_state["rq_job_id"] = rq_job_id
+            st.session_state[KEYNESS_QUEUE_STATE_KEY] = queue_state
+        else:
+            rq_job_id = None
+
+    if control_plane_job_id is None:
+        _clear_keyness_queue_state(user_session_id)
+        st.warning("Queued keyness job state was incomplete. Please try again.")
+        return
+
+    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    if job_row is None:
+        _clear_keyness_queue_state(user_session_id)
+        st.warning("Queued keyness job could not be found. Please try again.")
+        return
+
+    if job_row.status == "pending":
+        if not isinstance(rq_job_id, str) or not rq_job_id:
+            registry_service.mark_job_failed(
+                control_plane_job_id,
+                "Queued keyness job was pending without a queue job id.",
+            )
+            _clear_keyness_queue_state(user_session_id)
+            st.error("Queued keyness generation failed before execution. Please retry.")
+            return
+
+        try:
+            rq_job = get_queue().fetch_job(rq_job_id)
+        except Exception:
+            rq_job = None
+
+        if rq_job is None:
+            registry_service.mark_job_failed(
+                control_plane_job_id,
+                "Queue job record was missing while control-plane status was pending.",
+            )
+            _clear_keyness_queue_state(user_session_id)
+            st.error("Queued keyness generation failed before execution. Please retry.")
+            return
+
+        rq_status_raw = rq_job.get_status(refresh=True)
+        rq_status = str(getattr(rq_status_raw, "value", rq_status_raw)).strip().lower()
+        if rq_status == "failed":
+            failure_reason = "Queued keyness job failed before completion."
+            if isinstance(rq_job.exc_info, str) and rq_job.exc_info.strip():
+                failure_reason = rq_job.exc_info.strip().splitlines()[-1]
+            registry_service.mark_job_failed(control_plane_job_id, failure_reason)
+            _clear_keyness_queue_state(user_session_id)
+            st.error(f"Queued keyness generation failed: {failure_reason}")
+            return
+
+    if job_row.status == "completed":
+        _clear_keyness_queue_state(user_session_id)
+        if job_row.artifact_id is not None and attach_keyness_artifact(
+            user_session_id,
+            job_row.artifact_id,
+        ):
+            st.rerun()
+        st.error("Queued keyness artifact could not be attached. Please retry.")
+        return
+
+    if job_row.status == "failed":
+        _clear_keyness_queue_state(user_session_id)
+        st.error(f"Queued keyness generation failed: {job_row.failure_reason}")
+        return
+
+    st.info("Generating keyness tables in the background...")
 
 
 def render_corpus_info_headers(
@@ -202,7 +353,7 @@ def render_tags_keyness_interface(
 
             # Plot with color customization
             fig = plot_compare_corpus_bar(df, color_dict=color_dict)
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="stretch")
             plot_download_link(fig, filename="compare_corpus_bar.png")
 
     st.sidebar.markdown("---")
@@ -349,6 +500,18 @@ def main():
                 render_corpus_not_loaded_error("reference")
                 return
 
+            queue_sources = _can_queue_keyness(session)
+            if queue_sources is not None:
+                target_source, reference_source = queue_sources
+                _submit_keyness_job(
+                    user_session_id,
+                    target_source,
+                    reference_source,
+                    pval_selected,
+                    swap_selected,
+                )
+                return
+
             # If all validations pass, generate the keyness tables
             generate_keyness_tables(
                 user_session_id,
@@ -384,6 +547,8 @@ def main():
         if st.session_state[user_session_id].get(WarningKeys.KEYNESS):
             msg, icon = st.session_state[user_session_id][WarningKeys.KEYNESS]
             st.error(msg, icon=icon)
+
+        _render_keyness_queue_status(user_session_id)
 
         st.sidebar.markdown("---")
 
