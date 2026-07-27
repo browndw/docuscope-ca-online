@@ -21,6 +21,21 @@ MIN_CATEGORIES = 2
 MAX_CATEGORIES = 20
 
 
+def _apply_metadata_defaults(metadata: dict, corpus_type: str) -> dict:
+    """Backfill derived-analysis placeholders so existing UI code keeps working."""
+
+    normalized = metadata.copy()
+
+    if corpus_type == CorpusKeys.TARGET:
+        normalized.setdefault(MetadataKeys.DOCCATS, [{'cats': []}])
+
+    normalized.setdefault(MetadataKeys.COLLOCATIONS, {'temp': []})
+    normalized.setdefault(MetadataKeys.KEYNESS_PARTS, [{'temp': []}])
+    normalized.setdefault(MetadataKeys.VARIANCE, [{'temp': {}}])
+
+    return normalized
+
+
 # init_metadata_target function moved to session_core.py to eliminate duplication
 
 
@@ -61,7 +76,7 @@ def load_metadata(corpus_type: str, session_id: str) -> dict:
         # It's already a dictionary or other object
         metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
 
-    return metadata
+    return _apply_metadata_defaults(metadata, corpus_type)
 
 
 def update_metadata(
