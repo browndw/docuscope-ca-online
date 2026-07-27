@@ -380,7 +380,7 @@ def enterprise_ai_call(function_name: str):
     Decorator for AI functions to add enterprise-grade protection.
 
     This decorator adds circuit breaker protection, request routing,
-    and error handling to AI function calls like pandabot_user_query.
+    and error handling to AI function calls such as Plotbot generation.
 
     Parameters
     ----------
