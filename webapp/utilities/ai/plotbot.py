@@ -7,6 +7,7 @@ executable plotting code and can refine it based on user feedback.
 """
 
 import hashlib
+from dataclasses import dataclass
 
 import pandas as pd
 import polars as pl
@@ -29,9 +30,8 @@ from webapp.utilities.ai.shared import (
     prune_message_thread, fig_to_svg, increment_session_quota
 )
 from webapp.utilities.ai.code_execution import is_code_safe, strip_imports
-from webapp.utilities.ai.enterprise_integration import (
-    make_protected_openai_call, determine_api_key_type
-)
+from webapp.utilities.ai.enterprise_integration import determine_api_key_type
+from webapp.utilities.ai.providers import ChatCompletionProvider, get_default_chat_provider
 from webapp.utilities.storage.backend_factory import get_session_backend
 from webapp.config.unified import get_ai_config
 from webapp.utilities.core import app_core
@@ -51,6 +51,36 @@ FORBIDDEN_PATTERNS = [
     r'^\s*sys\.',            # sys. usage at line start
     r'^\s*subprocess\.',     # subprocess. usage at line start
 ]
+
+
+@dataclass(frozen=True)
+class PlotbotServiceResult:
+    """UI-independent result for one Plotbot generation/execution request."""
+
+    code: str | None
+    result: dict
+    used_cached_code: bool = False
+
+    @property
+    def success(self) -> bool:
+        """Return True when code execution produced a plot."""
+        return self.result.get("type") == "plot"
+
+
+@dataclass(frozen=True)
+class PlotbotSerializedResult:
+    """Queue-friendly Plotbot result with no live figure object."""
+
+    code: str | None
+    result_type: str
+    error: str | None = None
+    plot_svg: str | None = None
+    used_cached_code: bool = False
+
+    @property
+    def success(self) -> bool:
+        """Return True when execution produced a plot."""
+        return self.result_type == "plot"
 
 # AI logging is automatically configured by importing the centralized logging system
 
@@ -240,7 +270,9 @@ def plotbot_code_generate_or_update(
     schema: str,
     api_key: str,
     llm_params: dict,
-    code_chunk: str = None
+    code_chunk: str = None,
+    chat_provider: ChatCompletionProvider | None = None,
+    track_quota: bool = True
 ) -> str:
     """
     Generate or update plotting code using the LLM.
@@ -300,6 +332,7 @@ def plotbot_code_generate_or_update(
     - Use plotly.express functions like px.bar(), px.scatter(), px.line(), etc.
     - Assign the result to a variable called 'fig'.
     - Do not call 'fig.show()'.
+    - For gridlines, use fig.update_xaxes(showgrid=True) and fig.update_yaxes(showgrid=True). Do not use fig.update_layout(grid_xaxis=...) or fig.update_layout(grid_yaxis=...).
 
     Example:
     fig = px.bar(df, x='col1', y='col2')
@@ -330,11 +363,14 @@ def plotbot_code_generate_or_update(
     - Do not include any import statements.
     - The DataFrame is called 'df'.
     - Use only columns that exist in the DataFrame. If the user mentions a column that does not exist, ignore it and use available columns instead.
+    - Preserve any valid columns named by the user. Replace only the missing column names.
+    - When replacing a missing column, choose one available non-numeric column for categorical axes and one available numeric column for values. If one requested column is valid, keep it and choose a compatible replacement column near it in the column list above.
     - If the request involves numeric data (like line charts, bar charts, histograms), use only numeric columns.
     - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns.
     - Ensure the code is error-free and matches the DataFrame schema.
     - If you need to set axis labels or titles, use generic names if the user does not specify.
-    - Include concise comments in the code to explain non-obvious steps or terminology (e.g., what a spine is or how to remove it).
+    - Include 1-3 concise comments explaining non-obvious visualization choices, such as why a column is mapped to x, y, color, facet, or hover data.
+    - Do not comment obvious Python syntax. Comments should help a student understand the plotting grammar behind the chart.
     - Do not include explanations or markdown outside the code.
     {lib_instructions}
 
@@ -370,6 +406,7 @@ def plotbot_code_generate_or_update(
     - Use plotly.express functions like px.bar(), px.scatter(), px.line(), etc.
     - Assign the result to a variable called 'fig'.
     - Do not call 'fig.show()'.
+    - For gridlines, use fig.update_xaxes(showgrid=True) and fig.update_yaxes(showgrid=True). Do not use fig.update_layout(grid_xaxis=...) or fig.update_layout(grid_yaxis=...).
 
     Example:
     fig = px.bar(df, x='col1', y='col2')
@@ -401,12 +438,18 @@ def plotbot_code_generate_or_update(
     - Only output valid Python code, with no explanations or markdown formatting.
     - Do not include any import statements.
     - The DataFrame is called 'df'.
+    - Make the minimum necessary edits to the current code. Do not recreate the plot from scratch unless the user asks for a different plot type or different data mapping.
+    - For title, label, legend, color, gridline, size, or other style-only requests, keep the existing plot creation line and dataframe column mappings unchanged; add or adjust only the relevant update calls.
     - Use only columns that exist in the DataFrame. If the user mentions a column that does not exist, ignore it and use available columns instead.
+    - Preserve any valid columns named by the user. Replace only the missing column names.
+    - Preserve the current code's existing x, y, color, facet, labels, names, and values column mappings unless the user explicitly asks to change those mappings.
+    - When replacing a missing column, choose one available non-numeric column for categorical axes and one available numeric column for values. If one requested column is valid, keep it and choose a compatible replacement column near it in the column list above.
     - If the request involves numeric data (like line charts, bar charts, histograms), use only numeric columns.
     - If the request involves categorical or non-numeric data (like pie charts or scatter plots with labels), you can use non-numeric columns.
     - Ensure the code is error-free and matches the DataFrame schema.
     - If you need to set axis labels or titles, use generic names if the user does not specify.
-    - Include concise comments in the code to explain non-obvious steps or terminology (e.g., what a spine is or how to remove it).
+    - Include 1-3 concise comments explaining non-obvious visualization choices, such as why a column is mapped to x, y, color, facet, or hover data.
+    - Do not comment obvious Python syntax. Comments should help a student understand the plotting grammar behind the chart.
     - Do not include explanations or markdown outside the code.
     {lib_instructions}
 
@@ -431,57 +474,53 @@ def plotbot_code_generate_or_update(
             "presence_penalty": llm_params["presence_penalty"]
         }
 
-        # Make the protected call using enterprise infrastructure
-        response = make_protected_openai_call(
+        # Make the model call through a provider boundary so Plotbot is not
+        # coupled to a single hosted or local runner.
+        provider = chat_provider or get_default_chat_provider()
+        full_response = provider.generate_text(
             api_key=api_key,
             request_params=request_params,
-            request_type="chat_completion",
             cache_key=f"plotbot_code_{user_request}_{plot_lib}_{len(str(df.shape))}"
         )
 
         # Handle error responses from circuit breaker
-        if isinstance(response, dict) and response.get("type") == "error":
-            return response
+        if isinstance(full_response, dict) and full_response.get("type") == "error":
+            return full_response
 
-        full_response = ""
-        for chunk in response:
-            chunk_content = chunk.choices[0].delta.content
-            if chunk_content:
-                full_response += chunk_content
-
-        # Increment quota tracker after successful API call
-        try:
-            # Only track quota when NOT in desktop mode AND using community API key
-            if not DESKTOP:
-                try:
-                    user_email = (st.user.email if hasattr(st, 'user') and st.user and
-                                  hasattr(st.user, 'email') else 'anonymous')
-                except Exception:
-                    user_email = 'anonymous'
-
-                # Determine if we're using community or individual API key
-                key_type = determine_api_key_type(DESKTOP, api_key)
-
-                # Only track quota if using community key (not user's personal key)
-                if user_email != 'anonymous' and key_type == "community":
-                    # Update session quota (for current session)
-                    increment_session_quota(user_email)
-
-                    # Log to database for persistent quota tracking
+        if track_quota:
+            # Increment quota tracker after successful API call
+            try:
+                # Only track quota when NOT in desktop mode AND using community API key
+                if not DESKTOP:
                     try:
-                        backend = get_session_backend()
-                        backend.log_user_query(
-                            user_id=user_email,
-                            session_id=None,  # Use NULL to avoid FK constraints
-                            assistant_type="plotbot",
-                            message_content=user_request[:500] if user_request else None
-                        )
-                    except Exception as log_error:
-                        # Log the error but don't fail the main request
-                        st.error(f"Warning: Failed to log query for quota tracking: "
-                                 f"{log_error}")
-        except Exception:
-            pass  # Don't fail if quota tracking fails
+                        user_email = (st.user.email if hasattr(st, 'user') and st.user and
+                                      hasattr(st.user, 'email') else 'anonymous')
+                    except Exception:
+                        user_email = 'anonymous'
+
+                    # Determine if we're using community or individual API key
+                    key_type = determine_api_key_type(DESKTOP, api_key)
+
+                    # Only track quota if using community key (not user's personal key)
+                    if user_email != 'anonymous' and key_type == "community":
+                        # Update session quota (for current session)
+                        increment_session_quota(user_email)
+
+                        # Log to database for persistent quota tracking
+                        try:
+                            backend = get_session_backend()
+                            backend.log_user_query(
+                                user_id=user_email,
+                                session_id=None,  # Use NULL to avoid FK constraints
+                                assistant_type="plotbot",
+                                message_content=user_request[:500] if user_request else None
+                            )
+                        except Exception as log_error:
+                            # Log the error but don't fail the main request
+                            st.error(f"Warning: Failed to log query for quota tracking: "
+                                     f"{log_error}")
+            except Exception:
+                pass  # Don't fail if quota tracking fails
 
         if "```python" in full_response:
             full_response = full_response.replace("```python", "")
@@ -500,10 +539,10 @@ def plotbot_code_generate_or_update(
 
         return full_response
 
-    except Exception:
+    except Exception as exc:
         return {
             "type": "error",
-            "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
+            "value": f"Plotbot could not prepare the model request: {str(exc)}"
         }
 
 
@@ -622,6 +661,122 @@ def plotbot_code_execute(plot_code: str,
         }
 
 
+def run_plotbot_service(
+    df: pd.DataFrame,
+    plot_lib: str,
+    user_input: str,
+    api_key: str,
+    llm_params: dict,
+    schema: str = None,
+    code_chunk: str = None,
+    cached_code: str = None,
+    chat_provider: ChatCompletionProvider | None = None,
+    track_quota: bool = False
+) -> PlotbotServiceResult:
+    """Generate or reuse Plotbot code, execute it, and return a normalized result."""
+    schema = schema or str(df.dtypes.to_dict())
+    used_cached_code = isinstance(cached_code, str) and bool(cached_code.strip())
+
+    if used_cached_code:
+        plot_code = cached_code
+    else:
+        plot_code = plotbot_code_generate_or_update(
+            df=df,
+            user_request=user_input,
+            plot_lib=plot_lib,
+            schema=schema,
+            api_key=api_key,
+            llm_params=llm_params,
+            code_chunk=code_chunk,
+            chat_provider=chat_provider,
+            track_quota=track_quota
+        )
+
+    if plot_code is None or (isinstance(plot_code, dict) and plot_code.get("type") == "error"):  # noqa: E501
+        return PlotbotServiceResult(
+            code=None,
+            result={
+                "type": "error",
+                "value": (
+                    plot_code.get("value") if isinstance(plot_code, dict) else
+                    "Sorry, I couldn't generate your plot. Please try rephrasing your request."
+                )
+            },
+            used_cached_code=used_cached_code
+        )
+
+    if not isinstance(plot_code, str) or not plot_code.strip():
+        return PlotbotServiceResult(
+            code=None,
+            result={
+                "type": "error",
+                "value": "Sorry, I couldn't generate valid plot code. Please try again."
+            },
+            used_cached_code=used_cached_code
+        )
+
+    plot_result = plotbot_code_execute(plot_code=plot_code, plot_lib=plot_lib, df=df)
+    if not isinstance(plot_result, dict):
+        plot_result = {
+            "type": "error",
+            "value": "Sorry, something went wrong while generating your plot."
+        }
+
+    return PlotbotServiceResult(
+        code=plot_code,
+        result=plot_result,
+        used_cached_code=used_cached_code
+    )
+
+
+def run_plotbot_serialized_service(
+    df: pd.DataFrame,
+    plot_lib: str,
+    user_input: str,
+    api_key: str,
+    llm_params: dict,
+    schema: str = None,
+    code_chunk: str = None,
+    cached_code: str = None,
+    chat_provider: ChatCompletionProvider | None = None,
+    track_quota: bool = False,
+    include_svg: bool = True
+) -> PlotbotSerializedResult:
+    """Run Plotbot and return a JSON-serializable result for queued execution."""
+    service_result = run_plotbot_service(
+        df=df,
+        plot_lib=plot_lib,
+        user_input=user_input,
+        api_key=api_key,
+        llm_params=llm_params,
+        schema=schema,
+        code_chunk=code_chunk,
+        cached_code=cached_code,
+        chat_provider=chat_provider,
+        track_quota=track_quota
+    )
+    result_type = service_result.result.get("type", "error")
+
+    if result_type != "plot":
+        return PlotbotSerializedResult(
+            code=service_result.code,
+            result_type="error",
+            error=str(service_result.result.get("value", "Plotbot did not generate a plot.")),
+            used_cached_code=service_result.used_cached_code
+        )
+
+    plot_svg = None
+    if include_svg:
+        plot_svg = fig_to_svg(figure=service_result.result.get("value"), plot_lib=plot_lib)
+
+    return PlotbotSerializedResult(
+        code=service_result.code,
+        result_type=result_type,
+        plot_svg=plot_svg,
+        used_cached_code=service_result.used_cached_code
+    )
+
+
 def plotbot_user_query(session_id: str,
                        df: pd.DataFrame,
                        plot_lib: str,
@@ -735,54 +890,47 @@ def plotbot_user_query(session_id: str,
             # Check for cached code only (never cache figures)
             cached = cache_dict.get(cache_key)
             cached_code = cached.get("code") if cached else None
-            if (cached and isinstance(cached_code, str) and
-                    cached_code.strip()):
-                plot_code = cached_code
-            else:
-                plot_code = plotbot_code_generate_or_update(
-                    df=df,
-                    user_request=user_input,
-                    plot_lib=plot_lib,
-                    schema=schema,
-                    api_key=api_key,
-                    llm_params=llm_params,
-                    code_chunk=code_chunk
+
+            plot_code, plot_fig = generate_plotbot_code_and_result(
+                df=df,
+                plot_lib=plot_lib,
+                user_input=user_input,
+                api_key=api_key,
+                llm_params=llm_params,
+                schema=schema,
+                code_chunk=code_chunk,
+                cached_code=cached_code
+            )
+
+            # Standardized error handling for code generation
+            if plot_code is None or (isinstance(plot_code, dict) and plot_code.get("type") == "error"):  # noqa: E501
+                error_message = (
+                    plot_code.get("value") if isinstance(plot_code, dict) else
+                    "Sorry, I couldn't generate your plot. Please try rephrasing your request."
                 )
 
-                # Standardized error handling for code generation
-                if plot_code is None or (isinstance(plot_code, dict) and plot_code.get("type") == "error"):  # noqa: E501
+                # Add specific messaging for enterprise circuit breaker events
+                if (isinstance(plot_code, dict) and
+                        "circuit breaker" in error_message.lower()):
                     error_message = (
-                        plot_code.get("value") if isinstance(plot_code, dict) else
-                        "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
+                        ":warning: **AI Service Temporarily Unavailable**\n\n"
+                        "The AI plotting assistant is experiencing high demand. "
+                        "Please try again in a few moments, or consider using "
+                        "manual plotting tools in the meantime."
+                    )
+                elif (isinstance(plot_code, dict) and
+                      "rate limit" in error_message.lower()):
+                    error_message = (
+                        ":hourglass_flowing_sand: **Rate Limit Reached**\n\n"
+                        "Please wait a moment before making another plotting request."
                     )
 
-                    # Add specific messaging for enterprise circuit breaker events
-                    if (isinstance(plot_code, dict) and
-                            "circuit breaker" in error_message.lower()):
-                        error_message = (
-                            ":warning: **AI Service Temporarily Unavailable**\n\n"
-                            "The AI plotting assistant is experiencing high demand. "
-                            "Please try again in a few moments, or consider using "
-                            "manual plotting tools in the meantime."
-                        )
-                    elif (isinstance(plot_code, dict) and
-                          "rate limit" in error_message.lower()):
-                        error_message = (
-                            ":hourglass_flowing_sand: **Rate Limit Reached**\n\n"
-                            "Please wait a moment before making another plotting request."
-                        )
+                st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
+                    {"role": "assistant", "type": "error", "value": error_message}
+                )
+                prune_message_thread(session_id, SessionKeys.AI_PLOTBOT_CHAT)
+                return
 
-                    st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
-                        {"role": "assistant", "type": "error", "value": error_message}
-                    )
-                    prune_message_thread(session_id, SessionKeys.AI_PLOTBOT_CHAT)
-                    return
-
-                # Cache only the code (never cache figures)
-                if not (isinstance(plot_code, dict) and plot_code.get("type") == "error"):
-                    cache_dict[cache_key] = {"code": plot_code}
-
-            # Final validation: ensure plot_code is a valid string
             if not isinstance(plot_code, str) or not plot_code.strip():
                 error_msg = "Sorry, I couldn't generate valid plot code. Please try again."
                 st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
@@ -791,14 +939,8 @@ def plotbot_user_query(session_id: str,
                 prune_message_thread(session_id, SessionKeys.AI_PLOTBOT_CHAT)
                 return
 
-            # Always execute the code to generate a fresh figure
-            plot_fig = plotbot_code_execute(plot_code=plot_code, plot_lib=plot_lib, df=df)
-
-            if not isinstance(plot_fig, dict):
-                plot_fig = {
-                    "type": "error",
-                    "value": "Sorry, something went wrong while generating your plot."
-                }
+            if not (cached and isinstance(cached_code, str) and cached_code.strip()):
+                cache_dict[cache_key] = {"code": plot_code}
 
             if plot_fig.get("type") == "error":
                 st.session_state[session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
@@ -870,6 +1012,35 @@ def plotbot_user_query(session_id: str,
         prune_message_thread(session_id, "plotbot")
 
 
+def generate_plotbot_code_and_result(
+    df: pd.DataFrame,
+    plot_lib: str,
+    user_input: str,
+    api_key: str,
+    llm_params: dict,
+    schema: str = None,
+    code_chunk: str = None,
+    cached_code: str = None,
+    chat_provider: ChatCompletionProvider | None = None,
+    track_quota: bool = True
+) -> tuple[str | dict | None, dict]:
+    """Generate or reuse Plotbot code and execute it into a result dictionary."""
+    service_result = run_plotbot_service(
+        df=df,
+        plot_lib=plot_lib,
+        user_input=user_input,
+        api_key=api_key,
+        llm_params=llm_params,
+        schema=schema,
+        code_chunk=code_chunk,
+        cached_code=cached_code,
+        chat_provider=chat_provider,
+        track_quota=track_quota
+    )
+
+    return service_result.code, service_result.result
+
+
 def generate_plotbot_code_and_plot(
     df: pd.DataFrame,
     plot_lib: str,
@@ -904,18 +1075,17 @@ def generate_plotbot_code_and_plot(
     tuple[str, dict]
         Generated code and plot result.
     """
-    schema = str(df.dtypes.to_dict())
-
-    # Generate the code
-    plot_code = plotbot_code_generate_or_update(
-        df, user_input, plot_lib, schema, api_key, llm_params, code_chunk
+    plot_code, plot_result = generate_plotbot_code_and_result(
+        df=df,
+        plot_lib=plot_lib,
+        user_input=user_input,
+        api_key=api_key,
+        llm_params=llm_params,
+        code_chunk=code_chunk
     )
 
-    if not plot_code:
+    if not plot_code or isinstance(plot_code, dict):
         return None, None
-
-    # Execute the code
-    plot_result = plotbot_code_execute(plot_code, df, plot_lib)
 
     if plot_result.get("type") == "plot":
         return plot_code, plot_result.get("value")
