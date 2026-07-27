@@ -84,6 +84,7 @@ class ConfigurationManager:
                 'check_size': False,
                 'check_language': False,
                 'desktop_mode': True,  # Safe default
+                'test_mode': False,
                 'max_text_size': 20000000,
                 'max_polars_size': 150000000
             },
@@ -151,10 +152,11 @@ class ConfigurationManager:
             The configuration with runtime adjustments applied.
         """
         original_desktop_mode = config['global']['desktop_mode']
+        test_mode = config['global'].get('test_mode', False)
         secrets_available = self._check_secrets_availability()
 
         # If desktop_mode = false but secrets are missing, force desktop mode
-        if not original_desktop_mode and not secrets_available:
+        if not original_desktop_mode and not secrets_available and not test_mode:
             logger.warning(
                 "Configuration specifies desktop_mode=false, but required secrets "
                 "(OpenAI API key) are not available. Automatically switching to "
@@ -163,8 +165,8 @@ class ConfigurationManager:
             config['global']['desktop_mode'] = True
             config['cache']['cache_mode'] = False
 
-        # If desktop mode is enabled, disable caching for safety
-        if config['global']['desktop_mode']:
+        # Disable Firestore-backed caching in desktop or test mode.
+        if config['global']['desktop_mode'] or test_mode:
             config['cache']['cache_mode'] = False
 
         return config
@@ -251,10 +253,15 @@ class ConfigurationManager:
         return self.get_config()['global']['desktop_mode']
 
     @property
+    def test_mode(self) -> bool:
+        """Get enterprise test mode setting."""
+        return self.get_config()['global'].get('test_mode', False)
+
+    @property
     def cache_mode(self) -> bool:
         """Get cache mode setting (considers desktop mode logic)."""
         config = self.get_config()
-        if config['global']['desktop_mode']:
+        if config['global']['desktop_mode'] or config['global'].get('test_mode', False):
             return False
         return config['cache']['cache_mode']
 
