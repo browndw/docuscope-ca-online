@@ -29,6 +29,9 @@ setup_utility_logging("storage")
 
 # Use fallback-aware config to prevent initialization with invalid secrets
 DESKTOP = get_config('desktop_mode', 'global', True)
+TEST_MODE = get_config('test_mode', 'global', False)
+
+creds = None
 
 
 def should_store_to_firestore(enable_firestore: bool = None) -> bool:
@@ -45,6 +48,9 @@ def should_store_to_firestore(enable_firestore: bool = None) -> bool:
     bool
         True if Firestore storage is enabled
     """
+    if TEST_MODE:
+        return False
+
     if enable_firestore is not None:
         return enable_firestore
 
@@ -57,12 +63,12 @@ def should_store_to_firestore(enable_firestore: bool = None) -> bool:
         return get_config('cache_mode', 'cache', False)
 
 
-if DESKTOP is False:
+if DESKTOP is False and not TEST_MODE:
     # Set up the Google Cloud Firestore credentials
     try:
         key_dict = st.secrets["firestore"]["key_dict"]
         creds = service_account.Credentials.from_service_account_info(key_dict)
-    except FileNotFoundError:
+    except Exception:
         creds = None
 
 
