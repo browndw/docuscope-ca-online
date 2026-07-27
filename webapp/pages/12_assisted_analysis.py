@@ -1,37 +1,21 @@
 """
-This app provides an interface for AI-assisted analysis of tabular data
-using Pandabot, a chat assistant that can answer questions and perform
-data analysis tasks.
+This app provides an interface for deterministic DFM statistics.
 """
 
-import json
 import streamlit as st
-from datetime import datetime, timezone
-
-# Core application utilities with standardized patterns
-from webapp.config.unified import get_ai_config
-from webapp.config.config_utils import get_runtime_setting
-
-# UI error boundaries (imported directly to avoid None fallback)
-from webapp.utilities.ui.error_boundaries import SafeComponentRenderer
+import docuscospacy as ds
 
 # Module-specific imports
 from webapp.utilities.session import (
     get_or_init_user_session, safe_session_get, load_metadata
 )
-from webapp.utilities.ai import (
-    clear_pandasai, pandabot_user_query,
-    setup_ai_session_state, get_api_key,
-    render_api_key_input, render_data_selection_interface,
-    render_data_preview_controls, render_quota_tracker,
-    should_show_api_key_input, render_work_preservation_interface,
-    should_show_work_preservation_interface, export_conversation_history,
-    clear_pandasai_table
-)
 from webapp.utilities.analysis import (
-    generate_tags_table
+    available_dfm_features,
+    compute_dfm_statistics,
+    generate_tags_table,
+    get_dfm_statistic_options,
 )
-from webapp.utilities.core import app_core
+from webapp.utilities.corpus import get_corpus_data_manager
 from webapp.utilities.ui import (
     sidebar_help_link, render_table_generation_interface
 )
@@ -42,244 +26,276 @@ from webapp.menu import (
     menu, require_login
 )
 
-TITLE = "AI-Assisted Analysis"
-ICON = ":material/smart_toy:"
+TITLE = "Matrix Explorer"
+ICON = ":material/table_view:"
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
 )
 
-# Get AI configuration using standardized access
-AI_CONFIG = get_ai_config()
-DESKTOP = AI_CONFIG['desktop_mode']
-CACHE = AI_CONFIG['cache_enabled']
-LLM_MODEL = AI_CONFIG['model']
-LLM_PARAMS = AI_CONFIG['parameters']
-QUOTA = AI_CONFIG['quota']
+DFM_SOURCES = {
+    "DocuScope DFM": {
+        "key": "dtm_ds",
+        "tagset": "DocuScope",
+        "transform": None,
+    },
+    "Parts-of-Speech DFM": {
+        "key": "dtm_pos",
+        "tagset": "Parts-of-Speech",
+        "transform": None,
+    },
+    "Parts-of-Speech DFM (general)": {
+        "key": "dtm_pos",
+        "tagset": "Parts-of-Speech",
+        "transform": ds.dtm_simplify,
+    },
+}
 
 
-def render_pandabot_chat_interface(
-    user_session_id: str,
-    api_key: str,
-    df,
-    selected_query: str
-) -> None:
-    """Render the chat interface for Pandabot."""
-    # Display chat history
-    for message in st.session_state[user_session_id]["pandasai"]:
-        with st.chat_message(message["role"]):
-            if message["type"] == "string":
-                st.markdown(message["value"])
-            elif message["type"] == "code":
-                st.code(message["value"], language="python")
-            elif message["type"] == "error":
-                st.error(message["value"], icon=":material/error:")
-            elif message["type"] == "plot":
-                # Display plot image with error boundary
-                SafeComponentRenderer.safe_image(
-                    message["value"], "Generated plot unavailable"
-                )
-            elif message["type"] == "dataframe":
-                st.dataframe(
-                    message["value"], use_container_width=True
-                )
+def _metadata_categories(metadata_target: dict | None) -> list[str]:
+    """Return filename-derived metadata categories when available."""
+    if not metadata_target:
+        return []
+    doccats = metadata_target.get("doccats", [])
+    if isinstance(doccats, list) and doccats:
+        first = doccats[0]
+        if isinstance(first, dict):
+            return list(first.get("cats", []))
+    if isinstance(doccats, dict):
+        return list(doccats.get("cats", []))
+    return []
 
-    # Chat input
-    user_prompt = st.chat_input(
-        "Ask a question about your data or request an analysis."
+
+def _load_selected_dfm(user_session_id: str, source_label: str):
+    """Load one target DFM source from the corpus data manager."""
+    source = DFM_SOURCES[source_label]
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    dfm = manager.get_data(source["key"])
+    if dfm is None:
+        return None, source
+    transform = source.get("transform")
+    if transform is not None:
+        dfm = transform(dfm)
+    return dfm, source
+
+
+def _build_group_selection(
+    metadata_groups: list[str],
+    group_mode: str,
+    selected_groups: list[str] | None,
+    group_a: list[str] | None,
+    group_b: list[str] | None,
+) -> tuple[list[str] | None, list[str] | None, str | None]:
+    """Build row-aligned group labels and optional group filters from UI controls."""
+    if group_mode == "No grouping":
+        return None, None, None
+    if group_mode == "Metadata groups":
+        return metadata_groups, selected_groups or None, None
+
+    group_a = group_a or []
+    group_b = group_b or []
+    overlap = sorted(set(group_a).intersection(group_b))
+    if overlap:
+        return None, None, f"Categories cannot be in both group A and group B: {', '.join(overlap)}"
+    if not group_a or not group_b:
+        return None, None, "Select at least one category for group A and group B."
+
+    recoded_groups = [
+        "Group A" if group in group_a else "Group B" if group in group_b else "Other"
+        for group in metadata_groups
+    ]
+    return recoded_groups, ["Group A", "Group B"], None
+
+
+def _render_statistics_table(table, statistic: str) -> None:
+    """Render a statistics table with the selected statistic visually emphasized."""
+    if statistic not in table.columns:
+        st.dataframe(table, width='stretch', hide_index=True)
+        return
+
+    styled_table = table.to_pandas().style.set_properties(
+        subset=[statistic],
+        **{"background-color": "#fff3bf", "font-weight": "700"},
+    )
+    st.dataframe(styled_table, width='stretch', hide_index=True)
+
+
+def render_dfm_explorer(user_session_id: str, session: dict) -> None:
+    """Render deterministic DFM statistics controls and result table."""
+    metadata_target = None
+    if safe_session_get(session, SessionKeys.HAS_TARGET, False):
+        metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+    metadata_groups = _metadata_categories(metadata_target)
+
+    st.markdown(
+        body=(
+            ":material/table_view: Select a document-feature matrix, choose a statistic, "
+            "and return a computed table. No model call is needed for this step."
+        )
     )
 
-    if user_prompt:
-        with st.spinner(":sparkles: Analyzing data..."):
-            st.session_state[user_session_id]["pandasai"].append(
-                {"role": "user", "type": "string", "value": user_prompt}
-            )
-            # Increment user prompt count
-            prompt_count_key = SessionKeys.AI_PANDABOT_PROMPT_COUNT
-            if prompt_count_key not in st.session_state[user_session_id]:
-                st.session_state[user_session_id][prompt_count_key] = 1
-            else:
-                st.session_state[user_session_id][prompt_count_key] += 1
+    source_label = st.selectbox(
+        "DFM source",
+        options=list(DFM_SOURCES.keys()),
+        key="dfm_explorer_source",
+    )
+    dfm, source = _load_selected_dfm(user_session_id, source_label)
+    if dfm is None:
+        st.warning("The selected DFM is not available yet.", icon=":material/info:")
+        return
 
-            # Generate response
-            pandabot_user_query(
-                df=df.to_pandas() if hasattr(df, 'to_pandas') else df,
-                api_key=api_key,
-                prompt=user_prompt,
-                session_id=user_session_id,
-                prompt_position=st.session_state[user_session_id][prompt_count_key],
-                cache_mode=get_runtime_setting('cache_mode', False, 'cache')
-            )
-            st.rerun()
+    selectable_features = available_dfm_features(dfm, source["tagset"])
+    feature_scope = st.segmented_control(
+        "Feature scope",
+        ["All features", "Selected features"],
+        default="All features",
+        key="dfm_explorer_feature_scope",
+        help="Use all available features or narrow the statistic to selected tags.",
+    )
+    selected_features = None
+    if feature_scope == "Selected features":
+        selected_features = st.segmented_control(
+            "Features",
+            selectable_features,
+            selection_mode="multi",
+            key="dfm_explorer_selected_features",
+            help="Choose one or more DFM features to include in the computed table.",
+        )
+        if not selected_features:
+            st.warning("Select at least one feature.", icon=":material/info:")
+            return
 
+    group_choices = ["No grouping"]
+    if metadata_groups:
+        group_choices.extend(["Metadata groups", "Compare group sets"])
+    group_mode = st.segmented_control(
+        "Grouping",
+        group_choices,
+        default="No grouping",
+        key="dfm_explorer_grouping",
+        help="Use metadata categories as groups, or recode categories into group A and B.",
+    )
+    selected_groups = None
+    group_a = None
+    group_b = None
+    all_groups = sorted(set(metadata_groups))
+    if group_mode == "Metadata groups":
+        selected_groups = st.segmented_control(
+            "Groups",
+            all_groups,
+            selection_mode="multi",
+            key="dfm_explorer_selected_groups",
+            help="Choose which metadata groups to include.",
+        )
+        if not selected_groups:
+            st.warning("Select at least one group.", icon=":material/info:")
+            return
+    elif group_mode == "Compare group sets":
+        group_a = st.segmented_control(
+            "Select categories for group A",
+            all_groups,
+            selection_mode="multi",
+            key="dfm_explorer_group_a",
+            help="Group A can combine multiple metadata categories.",
+        )
+        group_b = st.segmented_control(
+            "Select categories for group B",
+            all_groups,
+            selection_mode="multi",
+            key="dfm_explorer_group_b",
+            help="Group B can combine multiple metadata categories.",
+        )
 
-def render_pandabot_interface(user_session_id: str, session: dict) -> None:
-    """Render the main Pandabot interface with data selection and analysis."""
+    statistic_options = get_dfm_statistic_options()
+    statistic = st.segmented_control(
+        "Statistic",
+        list(statistic_options.keys()),
+        default="mean_rf",
+        format_func=lambda key: statistic_options[key],
+        key="dfm_explorer_statistic",
+    )
+    rank_axis_options = ["features"]
+    if group_mode != "No grouping":
+        rank_axis_options.append("groups")
+    rank_axis = st.segmented_control(
+        "Rank",
+        rank_axis_options,
+        default="features",
+        format_func=lambda value: "Features" if value == "features" else "Groups",
+        key="dfm_explorer_rank_axis",
+    )
+    rank_order = st.segmented_control(
+        "Order",
+        ["Highest", "Lowest"],
+        default="Highest",
+        key="dfm_explorer_rank_order",
+    )
+    limit = st.number_input(
+        "Rows to return",
+        min_value=1,
+        max_value=100,
+        value=10,
+        step=1,
+        key="dfm_explorer_limit",
+    )
+
+    groups, selected_groups_filter, group_error = _build_group_selection(
+        metadata_groups=metadata_groups,
+        group_mode=group_mode,
+        selected_groups=selected_groups,
+        group_a=group_a,
+        group_b=group_b,
+    )
+    if group_error:
+        st.warning(group_error, icon=":material/info:")
+        return
+    if groups is not None and len(groups) != dfm.height:
+        st.warning(
+            "Metadata categories are not aligned with the selected DFM rows.",
+            icon=":material/info:",
+        )
+        groups = None
+
     try:
-        # Initialize session state
-        setup_ai_session_state(user_session_id, "pandasai")
-
-        # Get user info for quota tracking
-        try:
-            user_email = (st.user.email if hasattr(st, 'user') and st.user.email
-                          else 'anonymous')
-        except Exception:
-            user_email = session.get('user_email', 'anonymous')
-
-        # Get API key first
-        api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
-
-        # Check if we should show API key input based on quota and current key status
-        has_user_key = (
-            api_key is not None and
-            st.session_state[user_session_id].get(SessionKeys.AI_USER_KEY) is not None
+        result = compute_dfm_statistics(
+            dfm=dfm,
+            statistic=statistic,
+            tagset=source["tagset"],
+            rank_axis=rank_axis,
+            groups=groups,
+            selected_features=selected_features,
+            selected_groups=selected_groups_filter,
+            descending=rank_order == "Highest",
+            limit=int(limit),
         )
+    except Exception as exc:
+        st.error(f"Could not compute DFM statistics: {exc}", icon=":material/error:")
+        return
 
-        # Render quota tracker in sidebar (for online mode)
-        if not has_user_key:
-            render_quota_tracker(user_email)
+    st.info(result.note, icon=":material/info:")
+    _render_statistics_table(result.table, statistic)
 
-        # Check if we should show work preservation interface first
-        show_work_preservation = should_show_work_preservation_interface(
-            user_email, user_session_id, has_user_key, "pandabot"
-        )
-
-        # Only show API key input if work preservation is not needed
-        show_api_input = (
-            should_show_api_key_input(user_email, has_user_key) and
-            not show_work_preservation
-        )
-
-        # Introduction
-        st.markdown(
-            body=(
-                ":panda_face: Pandabot is a chat assistant designed to work "
-                "with tabular data (or data frames).\n\n"
-                ":material/priority: I can help you analyze, filter, and "
-                "summarize your data using natural language.\n\n"
-                ":material/priority: Ask me questions about patterns, "
-                "statistics, or trends in your data."
-            )
-        )
-
-        # Show appropriate interface based on state
-        if show_work_preservation:
-            # Show work preservation interface when quota is exhausted but user has work
-            render_work_preservation_interface(user_session_id, user_email, "pandabot")
-        elif show_api_input:
-            # Show API key input when no work preservation needed
-            render_api_key_input(user_session_id)
-        elif api_key:
-            # Add chat controls to sidebar
-            st.sidebar.markdown(
-                body="### Chat Controls",
-                help=(
-                    "You can clear the chat history to start a new conversation. "
-                    "This will remove all previous messages and plots."
-                ))
-            if st.sidebar.button(
-                "Clear Chat History",
-                icon=":material/refresh:"
-            ):
-                clear_pandasai(user_session_id)
-                st.rerun()
-
-            st.sidebar.markdown("---")
-
-            # Add workflow export to sidebar
-            st.sidebar.markdown("### Export Workflow")
-
-            # Get workflow data
-            workflow_json = export_conversation_history(user_session_id, "pandabot")
-
-            if workflow_json:
-                # Parse to show summary
-                try:
-                    data = json.loads(workflow_json)
-                    step_count = len(data.get("workflow_steps", []))
-                    plot_count = data.get("summary", {}).get("plots_generated", 0)
-
-                    st.sidebar.write(f"**{step_count}** conversation steps")
-                    if plot_count > 0:
-                        st.sidebar.write(f"**{plot_count}** plots included")
-                except Exception:
-                    st.sidebar.write("Workflow available")
-
-                # Download button
-                timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-                filename = f"pandabot_workflow_{timestamp}.json"
-
-                st.sidebar.download_button(
-                    label="Download Workflow",
-                    data=workflow_json,
-                    file_name=filename,
-                    mime="application/json",
-                    icon=":material/file_download:",
-                    help="Download your complete analysis workflow with embedded plots"
-                )
-            else:
-                st.sidebar.info("Start a conversation to create a workflow")
-
-            # Get metadata if available
-            metadata_target = None
-            if safe_session_get(session, SessionKeys.HAS_TARGET, False):
-                metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
-
-            metadata_reference = None
-            if safe_session_get(session, SessionKeys.HAS_REFERENCE, False):
-                metadata_reference = load_metadata(CorpusKeys.REFERENCE, user_session_id)
-
-            # Initialize widget state management
-            app_core.widget_manager.register_persistent_keys([
-                'analysis_corpus_select', 'analysis_query_select', 'analysis_prompt',
-                'analysis_model_select'
-            ])
-
-            # Data selection interface
-            selected_query, df = render_data_selection_interface(
-                user_session_id=user_session_id,
-                session=session,
-                bot_prefix="pandasai",
-                clear_function=clear_pandasai_table,
-                metadata_target=metadata_target,
-                metadata_reference=metadata_reference
-            )
-
-            # Data preview with controls
-            if df is not None:
-                df = render_data_preview_controls(
-                    df=df,
-                    query=selected_query,
-                    user_session_id=user_session_id
-                )
-
-            # Chat interface
-            render_pandabot_chat_interface(
-                user_session_id, api_key, df, selected_query
-            )
-
-    except Exception as e:
-        st.error(f"Error loading Pandabot interface: {str(e)}", icon=":material/error:")
+    csv = result.table.write_csv()
+    st.download_button(
+        "Download table",
+        data=csv,
+        file_name="dfm_statistics.csv",
+        mime="text/csv",
+        icon=":material/file_download:",
+    )
 
 
 def main():
-    """Main function to run the Streamlit app for AI-assisted analysis."""
+    """Main function to run the Streamlit app for DFM exploration."""
     # Set login requirements for navigation
     require_login()
     menu()
     st.markdown(
         body=f"## {TITLE}",
         help=(
-            "To use Pandabot, you need to select a table from the sidebar. "
-            "Once you have selected a table, you can enter your prompt "
-            "in the chat input box. "
-            "Pandabot will then generate a response based on the table you selected.\n\n"
-            "If you are using the online version, you can use the API key "
-            "provided by CMU, though there is a daily quota limit. "
-            "If you're using the desktop version or you reach your quota, "
-            "you can enter your own OpenAI API key to use Pandabot "
-            "without any quota limits."
+            "Select a document-feature matrix and a statistic to return a computed "
+            "analysis table. This deterministic workflow does not require an AI model."
         )
     )
 
@@ -291,7 +307,7 @@ def main():
 
     # Check if tags table is available
     if safe_session_get(session, SessionKeys.TAGS_TABLE, False):
-        render_pandabot_interface(user_session_id, session)
+        render_dfm_explorer(user_session_id, session)
     else:
         # Show generation interface for tags table
         render_table_generation_interface(
