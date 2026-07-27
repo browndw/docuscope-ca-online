@@ -10,11 +10,11 @@ This app allows users to:
 - Provide a user-friendly interface for corpus analysis
 """
 
-import docuscospacy as ds
 import streamlit as st
 
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
+from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.state.widget_key_manager import create_persist_function
 
 from webapp.utilities.session import (
@@ -23,12 +23,13 @@ from webapp.utilities.session import (
 from webapp.utilities.analysis import (
     generate_frequency_table
     )
+from webapp.utilities.analysis.statistical_analysis import FREQUENCY_RENDER_TRACE_KEY
 from webapp.utilities.ui import (
     render_data_table_interface, render_table_generation_interface,
     sidebar_help_link, tagset_selection,
     )
 from webapp.utilities.state import (
-    CorpusKeys, SessionKeys,
+    CorpusKeys, MetadataKeys, SessionKeys,
     TargetKeys, WarningKeys
 )
 from webapp.utilities.corpus import (
@@ -40,6 +41,37 @@ from webapp.menu import (
 
 TITLE = "Token Frequencies"
 ICON = ":material/table_view:"
+SLOW_PAGE_OPERATION_MS = 100
+logger = get_logger()
+
+
+def _has_frequency_table_ready(user_session_id: str, session: dict) -> bool:
+    """Return whether the token-frequency page should render the table view."""
+
+    if safe_session_get(session, SessionKeys.FREQ_TABLE, False):
+        return True
+
+    return bool(
+        st.session_state.get(user_session_id, {}).get(
+            SessionKeys.FREQ_TABLE_TRANSIENT,
+            False,
+        )
+    )
+
+
+def _metadata_tag_options(metadata_target: dict, tag_radio: str) -> list[str] | None:
+    """Return precomputed tag options from metadata when available."""
+
+    metadata_key = (
+        MetadataKeys.TAGS_POS
+        if tag_radio == "Parts-of-Speech"
+        else MetadataKeys.TAGS_DS
+    )
+    tag_data = metadata_target.get(metadata_key)
+    if isinstance(tag_data, dict):
+        tags = tag_data.get("tags")
+        return tags if isinstance(tags, list) else None
+    return None
 
 # Register persistent widgets for this page
 TOKEN_FREQUENCIES_PERSISTENT_WIDGETS = [
@@ -51,16 +83,10 @@ app_core.register_page_widgets(TOKEN_FREQUENCIES_PERSISTENT_WIDGETS)
 # Configuration constants
 TAGSET_CONFIG = {
     "Parts-of-Speech": {
-        "General": TargetKeys.FT_POS,
+        "General": TargetKeys.FT_POS_GENERAL,
         "Specific": TargetKeys.FT_POS
     },
     "DocuScope": TargetKeys.FT_DS
-}
-SIMPLIFY_CONFIG = {
-    "Parts-of-Speech": {
-        "General": ds.freq_simplify,
-        "Specific": None
-    }
 }
 
 st.set_page_config(
@@ -76,7 +102,8 @@ def render_frequency_table_interface(
     try:
         # Validate corpus data using the new manager
         manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
-        if not manager.is_ready():
+        manager_ready = manager.is_ready()
+        if not manager_ready:
             st.warning(
                 "No target corpus loaded. Please load a corpus first.",
                 icon=":material/warning:"
@@ -103,17 +130,17 @@ def render_frequency_table_interface(
             return
 
         # Load the tags table for the target using the new system
-        df, tag_options, tag_radio, tag_type = tagset_selection(
+        df, _, tag_radio, tag_type = tagset_selection(
             user_session_id=user_session_id,
             session_state=st.session_state,
             persist_func=create_persist_function(user_session_id),
             tagset_keys=TAGSET_CONFIG,
-            simplify_funcs=SIMPLIFY_CONFIG,
             tag_filters={
                 # Add filters here to exclude tags for specific tagsets/subtypes
             },
             tag_radio_key="ft_radio",
-            tag_type_key="ft_type_radio"
+            tag_type_key="ft_type_radio",
+            include_tag_options=False,
         )
 
         # Use generalized data table interface (filtering applied inside)
@@ -123,6 +150,7 @@ def render_frequency_table_interface(
             base_filename="token_frequencies",
             no_data_message="No frequency data available to display.",
             apply_tag_filter=True,
+            tag_options=_metadata_tag_options(metadata_target, tag_radio),
             user_session_id=user_session_id
         )
 
@@ -143,6 +171,7 @@ def main() -> None:
     # Set login requirements for navigation
     require_login()
     menu()
+
     st.markdown(
         body=f"## {TITLE}",
         help=(
@@ -158,7 +187,7 @@ def main() -> None:
     sidebar_help_link("token-frequencies.html")
 
     # Route to appropriate interface based on whether frequency table exists
-    if safe_session_get(session, SessionKeys.FREQ_TABLE, False):
+    if _has_frequency_table_ready(user_session_id, session):
         render_frequency_table_interface(user_session_id, session)
     else:
         render_table_generation_interface(
@@ -172,7 +201,6 @@ def main() -> None:
         )
 
     st.sidebar.markdown("---")
-
 
 if __name__ == "__main__":
     main()
