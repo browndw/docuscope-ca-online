@@ -266,7 +266,7 @@ def render_boxplot_interface(
                     key_prefix=f"color_picker_boxplot_{user_session_id}"
                 )
                 fig = plot_grouped_boxplot(df_plot, color=color_dict)
-                SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
+                SafeComponentRenderer.safe_plotly_chart(fig, width="stretch")
                 plot_download_link(fig, filename="grouped_boxplots.png")
 
                 stats = st.session_state[user_session_id][BoxplotKeys.GROUP_STATS]
@@ -350,7 +350,7 @@ def render_boxplot_interface(
                 key_prefix=f"color_picker_boxplot_general_{user_session_id}"
             )
             fig = plot_general_boxplot(df_plot, color=color_dict)
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="stretch")
             plot_download_link(fig, filename="boxplots.png")
 
             stats = st.session_state[user_session_id][BoxplotKeys.STATS]
@@ -546,7 +546,7 @@ def render_scatterplot_interface(
                 color=color_dict,
                 trendline=show_trend
             )
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=False)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="content")
             plot_download_link(fig, filename="scatterplot_highlight.png")
             cc_dict = st.session_state[user_session_id][ScatterplotKeys.GROUP_CORRELATION]
             cc_dict = correlation_update(
@@ -661,7 +661,7 @@ def render_scatterplot_interface(
                 color=color_dict,
                 trendline=show_trend
                 )
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=False)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="content")
             plot_download_link(fig, filename="scatterplot.png")
             cc_dict = st.session_state[user_session_id][ScatterplotKeys.CORRELATION]
             st.info(correlation_info(cc_dict))
@@ -831,7 +831,7 @@ def render_pca_interface(
                 x_label=pca_x,
                 y_label=pca_y
             )
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=False)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="content")
             plot_download_link(fig, filename="pca_scatter.png")
             st.info(variance_info(pca_x, pca_y, ve_1, ve_2))
         # --- TAB 2 ---
@@ -880,7 +880,7 @@ def render_pca_interface(
                 pc1_label=pca_x2, pc2_label=pca_y2,
                 sort_by=sort_by
             )
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="stretch")
             plot_download_link(fig, filename="pca_variable_contrib_bar.png")
 
     else:
