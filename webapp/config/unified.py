@@ -27,24 +27,23 @@ class ConfigManager:
 
         Returns (found, value) tuple. Uses lazy import to avoid circular deps.
         """
-        if not self._runtime_config_available:
-            try:
-                # Lazy import to avoid circular dependency
-                from webapp.config.runtime_config import runtime_config
-                self._runtime_config_available = True
+        try:
+            # Lazy import to avoid circular dependency
+            from webapp.config.runtime_config import runtime_config
+            self._runtime_config_available = True
 
-                # Check for runtime override
-                override_key = f"{section}.{key}"
-                overrides = runtime_config.get_all_overrides()
-                if override_key in overrides:
-                    return True, overrides[override_key]['value']
+            # Check for runtime override
+            override_key = f"{section}.{key}"
+            overrides = runtime_config.get_all_overrides()
+            if override_key in overrides:
+                return True, overrides[override_key]['value']
 
-            except ImportError:
-                # Runtime config not available (expected during initialization)
-                pass
-            except Exception:
-                # Runtime config failed - continue with static config
-                pass
+        except ImportError:
+            # Runtime config not available (expected during initialization)
+            self._runtime_config_available = False
+        except Exception:
+            # Runtime config failed - continue with static config
+            pass
 
         return False, None
 
@@ -163,6 +162,10 @@ class ConfigManager:
 
         return False
 
+    def is_test_mode(self) -> bool:
+        """Check if enterprise test mode is enabled."""
+        return bool(self.get_static('test_mode', 'global', False))
+
     def is_desktop_mode(self) -> bool:
         """
         Check if application is in desktop mode with intelligent fallback.
@@ -182,6 +185,11 @@ class ConfigManager:
         # If already in desktop mode, return True
         if configured_desktop_mode:
             return True
+
+        # Test mode keeps enterprise behavior even without secrets so that
+        # load and integration testing can run locally.
+        if self.is_test_mode():
+            return False
 
         # If configured for enterprise mode, check if secrets are available
         secrets_available = self._check_secrets_availability()
@@ -204,7 +212,7 @@ class ConfigManager:
             True if cache is enabled and not in desktop mode
         """
         # Cache is disabled in desktop mode for safety
-        if self.is_desktop_mode():
+        if self.is_desktop_mode() or self.is_test_mode():
             return False
 
         return self.get('cache_mode', 'cache', False)
