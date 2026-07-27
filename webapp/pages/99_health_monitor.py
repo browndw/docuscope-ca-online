@@ -82,7 +82,7 @@ def simple_fallback_health():
             backend_type = type(backend).__name__
             if backend_type == "InMemorySessionBackend":
                 actual_backend = "memory"
-            elif backend_type == "ShardedSQLiteSessionBackend":
+            elif backend_type == "SQLiteSessionBackend":
                 actual_backend = "sqlite"
             else:
                 actual_backend = backend_type.lower()
@@ -114,7 +114,7 @@ def simple_json_metrics():
         backend_type = type(backend).__name__
         if backend_type == "InMemorySessionBackend":
             actual_backend = "memory"
-        elif backend_type == "ShardedSQLiteSessionBackend":
+        elif backend_type == "SQLiteSessionBackend":
             actual_backend = "sqlite"
         else:
             actual_backend = backend_type.lower()
