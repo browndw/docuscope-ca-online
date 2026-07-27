@@ -188,6 +188,9 @@ def should_use_async_storage() -> bool:
     if is_desktop_mode():
         return False
 
+    if get_static_value('test_mode', 'global', False):
+        return False
+
     # Check runtime configuration with fallback
     try:
         from webapp.config.config_utils import get_runtime_setting
