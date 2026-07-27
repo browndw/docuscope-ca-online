@@ -2,7 +2,7 @@
 User Authorization System
 
 This module provides role-based access control for the corpus analysis application.
-It manages user permissions through a local SQLite database and integrates with
+It manages user permissions through the Postgres control plane and integrates with
 Google OAuth authentication.
 
 Features:
@@ -10,19 +10,17 @@ Features:
 - Permission management
 - Session-based authorization caching
 - Audit trail for access attempts
-- Automatic database initialization
+- Automatic control-plane initialization
 """
 
-import sqlite3
-import json
 from datetime import datetime, timezone
 from functools import wraps
 from typing import List, Dict, Any, Optional, Callable
-from pathlib import Path
 
 import streamlit as st
 
 from webapp.config.unified import get_config
+from webapp.persistence.authorization_service import AuthorizationService
 from webapp.utilities.configuration.logging_config import get_logger
 
 logger = get_logger()
@@ -50,20 +48,24 @@ DEFAULT_ROLES = {
 
 # Cache for authorization checks during session
 _auth_cache = {}
+_authorization_service: AuthorizationService | None = None
 
 
-def get_auth_db_path() -> Path:
-    """Get the path to the authorization database."""
-    users_dir = Path("webapp/_users")
-    users_dir.mkdir(exist_ok=True)
-    return users_dir / "authorization.db"
+def _get_authorization_service() -> AuthorizationService:
+    """Return the shared Postgres-backed authorization service."""
+
+    global _authorization_service
+    if _authorization_service is None:
+        _authorization_service = AuthorizationService()
+    return _authorization_service
 
 
 def is_authorization_enabled() -> bool:
     """Check if user authorization is enabled based on configuration."""
-    # Authorization is disabled in desktop mode
+    # Authorization is disabled in desktop mode and test mode.
     desktop_mode = get_config('desktop_mode', 'global')
-    if desktop_mode:
+    test_mode = get_config('test_mode', 'global', False)
+    if desktop_mode or test_mode:
         return False
 
     # Check if explicitly enabled in config
@@ -71,93 +73,17 @@ def is_authorization_enabled() -> bool:
 
 
 def initialize_authorization_db() -> None:
-    """Initialize the authorization database with required tables and default data."""
+    """Initialize the authorization tables with required defaults."""
     if not is_authorization_enabled():
         return
 
-    db_path = get_auth_db_path()
-
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-
-            # Create user roles table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS user_roles (
-                    role_name TEXT PRIMARY KEY,
-                    description TEXT NOT NULL,
-                    permissions TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Create authorized users table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS authorized_users (
-                    email TEXT PRIMARY KEY,
-                    role TEXT NOT NULL DEFAULT 'user',
-                    permissions TEXT,
-                    added_by TEXT,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_accessed TIMESTAMP,
-                    active BOOLEAN DEFAULT TRUE,
-                    FOREIGN KEY (role) REFERENCES user_roles (role_name)
-                )
-            """)
-
-            # Create access log table for auditing
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS access_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT NOT NULL,
-                    page TEXT,
-                    required_role TEXT,
-                    access_granted BOOLEAN,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    ip_address TEXT,
-                    user_agent TEXT
-                )
-            """)
-
-            # Insert default roles if not exists
-            for role_name, role_data in DEFAULT_ROLES.items():
-                cursor.execute("""
-                    INSERT OR IGNORE INTO user_roles (role_name, description, permissions)
-                    VALUES (?, ?, ?)
-                """, (
-                    role_name,
-                    role_data['description'],
-                    json.dumps(role_data['permissions'])
-                ))
-
-            # Add default admin user if specified in config and no admin exists
-            default_admin = get_config('default_admin_email', 'authorization', None)
-            if default_admin:
-                cursor.execute(
-                    "SELECT COUNT(*) FROM authorized_users WHERE role = 'admin'"
-                )
-                admin_count = cursor.fetchone()[0]
-
-                if admin_count == 0:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO authorized_users
-                        (email, role, added_by) VALUES (?, 'admin', 'system')
-                    """, (default_admin.lower(),))
-
-            conn.commit()
+        default_admin = get_config('default_admin_email', 'authorization', None)
+        _get_authorization_service().initialize_defaults(DEFAULT_ROLES, default_admin)
 
     except Exception as e:
         logger.error(f"Failed to initialize authorization database: {e}")
         raise
-
-
-def _get_auth_connection():
-    """Get a connection to the authorization database."""
-    if not is_authorization_enabled():
-        return None
-
-    db_path = get_auth_db_path()
-    return sqlite3.connect(db_path)
 
 
 def _normalize_email(email: str) -> str:
@@ -188,26 +114,15 @@ def get_user_role(email: str) -> Optional[str]:
             return cached_data['role']
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return None
+        role = _get_authorization_service().get_user_role(email)
 
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT role FROM authorized_users
-                WHERE email = ? AND active = TRUE
-            """, (email,))
+        # Cache the result
+        st.session_state[cache_key] = {
+            'role': role,
+            'cached_at': datetime.now(timezone.utc)
+        }
 
-            result = cursor.fetchone()
-            role = result[0] if result else None
-
-            # Cache the result
-            st.session_state[cache_key] = {
-                'role': role,
-                'cached_at': datetime.now(timezone.utc)
-            }
-
-            return role
+        return role
 
     except Exception as e:
         logger.error(f"Failed to get user role for {email}: {e}")
@@ -224,37 +139,7 @@ def get_user_permissions(email: str) -> List[str]:
         return []
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return []
-
-            cursor = conn.cursor()
-
-            # Get role permissions
-            cursor.execute("""
-                SELECT permissions FROM user_roles WHERE role_name = ?
-            """, (role,))
-
-            result = cursor.fetchone()
-            if result:
-                role_permissions = json.loads(result[0])
-            else:
-                role_permissions = []
-
-            # Get user-specific permissions
-            cursor.execute("""
-                SELECT permissions FROM authorized_users
-                WHERE email = ? AND active = TRUE
-            """, (_normalize_email(email),))
-
-            result = cursor.fetchone()
-            user_permissions = []
-            if result and result[0]:
-                user_permissions = json.loads(result[0])
-
-            # Combine permissions (user-specific override role permissions)
-            all_permissions = set(role_permissions + user_permissions)
-            return list(all_permissions)
+        return _get_authorization_service().get_user_permissions(email)
 
     except Exception as e:
         logger.error(f"Failed to get permissions for {email}: {e}")
@@ -323,27 +208,20 @@ def add_authorized_user(email: str, role: str = 'user',
         return False
 
     email = _normalize_email(email)
-    permissions_json = json.dumps(custom_permissions) if custom_permissions else None
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return False
+        added = _get_authorization_service().add_authorized_user(
+            email,
+            role,
+            added_by,
+            custom_permissions,
+        )
 
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT OR REPLACE INTO authorized_users
-                (email, role, permissions, added_by, active)
-                VALUES (?, ?, ?, ?, TRUE)
-            """, (email, role, permissions_json, added_by))
-
-            conn.commit()
-
-            # Clear cache
-            cache_key = _get_session_cache_key(email)
-            if cache_key in st.session_state:
-                del st.session_state[cache_key]
-            return True
+        # Clear cache
+        cache_key = _get_session_cache_key(email)
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+        return added
 
     except Exception as e:
         logger.error(f"Failed to add authorized user {email}: {e}")
@@ -361,23 +239,13 @@ def remove_authorized_user(email: str) -> bool:
     email = _normalize_email(email)
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return False
+        removed = _get_authorization_service().remove_authorized_user(email)
 
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE authorized_users SET active = FALSE
-                WHERE email = ?
-            """, (email,))
-
-            conn.commit()
-
-            # Clear cache
-            cache_key = _get_session_cache_key(email)
-            if cache_key in st.session_state:
-                del st.session_state[cache_key]
-            return True
+        # Clear cache
+        cache_key = _get_session_cache_key(email)
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+        return removed
 
     except Exception as e:
         logger.error(f"Failed to remove authorized user {email}: {e}")
@@ -395,26 +263,21 @@ def update_user_role(email: str, new_role: str, updated_by: str = None) -> bool:
     email = _normalize_email(email)
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return False
+        updated = _get_authorization_service().update_user_role(
+            email,
+            new_role,
+            updated_by,
+        )
 
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE authorized_users
-                SET role = ?, added_by = ?, added_at = CURRENT_TIMESTAMP
-                WHERE email = ? AND active = TRUE
-            """, (new_role, updated_by, email))
+        # Clear cache
+        cache_key = _get_session_cache_key(email)
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
 
-            conn.commit()
-
-            # Clear cache
-            cache_key = _get_session_cache_key(email)
-            if cache_key in st.session_state:
-                del st.session_state[cache_key]
+        if updated:
 
             logger.info(f"Updated user {email} role to: {new_role}")
-            return True
+        return updated
 
     except Exception as e:
         logger.error(f"Failed to update user role for {email}: {e}")
@@ -427,30 +290,7 @@ def list_authorized_users() -> List[Dict[str, Any]]:
         return []
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return []
-
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT email, role, added_by, added_at, last_accessed, active
-                FROM authorized_users
-                WHERE active = TRUE
-                ORDER BY added_at DESC
-            """)
-
-            users = []
-            for row in cursor.fetchall():
-                users.append({
-                    'email': row[0],
-                    'role': row[1],
-                    'added_by': row[2],
-                    'added_at': row[3],
-                    'last_accessed': row[4],
-                    'active': bool(row[5])
-                })
-
-            return users
+        return _get_authorization_service().list_authorized_users()
 
     except Exception as e:
         logger.error(f"Failed to list authorized users: {e}")
@@ -535,18 +375,7 @@ def _update_last_accessed(email: str) -> None:
         return
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return
-
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE authorized_users
-                SET last_accessed = CURRENT_TIMESTAMP
-                WHERE email = ? AND active = TRUE
-            """, (_normalize_email(email),))
-
-            conn.commit()
+        _get_authorization_service().update_last_accessed(email)
 
     except Exception as e:
         logger.debug(f"Failed to update last accessed for {email}: {e}")
@@ -567,33 +396,18 @@ def _log_access_attempt(
         return
 
     try:
-        with _get_auth_connection() as conn:
-            if conn is None:
-                return
-
-            cursor = conn.cursor()
-
-            # Get current page name
-            page = getattr(  # noqa: F841
-                st.runtime.scriptrunner_utils.script_run_context.get_script_run_ctx(),
-                'page_script_hash', 'unknown'
-                )
-
-            cursor.execute(
-                """
-                INSERT INTO access_log
-                (email, page, required_role, access_granted)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    _normalize_email(email),
-                    f"{required_role}:{required_permission}" if required_permission else required_role,  # noqa: E501
-                    required_role,
-                    granted
-                    )
-                )
-
-            conn.commit()
+        page = getattr(
+            st.runtime.scriptrunner_utils.script_run_context.get_script_run_ctx(),
+            'page_script_hash',
+            'unknown',
+        )
+        _get_authorization_service().log_access_attempt(
+            email,
+            page,
+            required_role,
+            required_permission,
+            granted,
+        )
 
     except Exception as e:
         logger.debug(f"Failed to log access attempt: {e}")
