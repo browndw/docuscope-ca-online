@@ -34,8 +34,10 @@ from webapp.utilities.analysis import (
     has_target_corpus, render_corpus_not_loaded_error
 )
 from webapp.utilities.analysis import (
-    generate_collocations
+    attach_collocation_artifact, generate_collocations
 )
+from webapp.persistence import registry_service
+from webapp.queue import enqueue_collocation_preparation, get_queue, get_redis_queue_config
 from webapp.utilities.state import (
     safe_clear_widget_state,
     SessionKeys, CorpusKeys,
@@ -48,10 +50,181 @@ from webapp.menu import (
 
 TITLE = "Collocates"
 ICON = ":material/network_node:"
+COLLOCATION_QUEUE_STATE_KEY = "collocation_queue_state"
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
+    )
+
+
+def _collocation_parameters(
+    node_word: str,
+    node_tag: str | None,
+    to_left: int,
+    to_right: int,
+    stat_mode: str,
+    count_by: str,
+) -> dict:
+    """Return metadata parameters for a collocation table."""
+
+    return {
+        "node_word": node_word,
+        "node_tag": node_tag,
+        "to_left": to_left,
+        "to_right": to_right,
+        "stat_mode": stat_mode,
+        "count_by": count_by,
+    }
+
+
+def _get_collocation_queue_state(user_session_id: str) -> dict | None:
+    """Return queued collocation state for the current session, if any."""
+
+    queue_state = st.session_state.get(COLLOCATION_QUEUE_STATE_KEY)
+    if not isinstance(queue_state, dict):
+        return None
+    if queue_state.get("session_id") != user_session_id:
+        return None
+    return queue_state
+
+
+def _clear_collocation_queue_state(user_session_id: str) -> None:
+    """Clear queued collocation state for the current session."""
+
+    if _get_collocation_queue_state(user_session_id) is not None:
+        st.session_state.pop(COLLOCATION_QUEUE_STATE_KEY, None)
+
+
+def _can_queue_collocations(session: dict) -> str | None:
+    """Return built-in target path when collocations can be queued."""
+
+    if not get_redis_queue_config().enabled:
+        return None
+
+    target_source = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    if not target_source:
+        return None
+    return str(target_source)
+
+
+def _submit_collocation_job(
+    user_session_id: str,
+    target_source: str,
+    node_word: str,
+    node_tag: str | None,
+    to_left: int,
+    to_right: int,
+    stat_mode: str,
+    count_by: str,
+) -> None:
+    """Submit built-in collocation generation through Redis/RQ."""
+
+    colloc_params = _collocation_parameters(
+        node_word,
+        node_tag,
+        to_left,
+        to_right,
+        stat_mode,
+        count_by,
+    )
+    result = enqueue_collocation_preparation(
+        target_source=target_source,
+        node_word=node_word,
+        node_tag=node_tag,
+        to_left=to_left,
+        to_right=to_right,
+        stat_mode=stat_mode,
+        count_by=count_by,
+    )
+    if result.state == "ready" and result.artifact_id is not None:
+        _clear_collocation_queue_state(user_session_id)
+        if attach_collocation_artifact(user_session_id, result.artifact_id, colloc_params):
+            st.rerun()
+        st.error("Ready collocation artifact could not be attached. Please retry.")
+        return
+
+    st.session_state[COLLOCATION_QUEUE_STATE_KEY] = {
+        "session_id": user_session_id,
+        "target_source": target_source,
+        "node_word": node_word,
+        "node_tag": node_tag,
+        "to_left": to_left,
+        "to_right": to_right,
+        "stat_mode": stat_mode,
+        "count_by": count_by,
+        "colloc_params": colloc_params,
+        "control_plane_job_id": result.control_plane_job_id,
+        "rq_job_id": result.rq_job_id,
+        "artifact_id": result.artifact_id,
+    }
+    st.rerun()
+
+
+@st.fragment(run_every="2s")
+def _render_collocation_queue_status(user_session_id: str) -> None:
+    """Poll queued collocation status and attach it once the job completes."""
+
+    queue_state = _get_collocation_queue_state(user_session_id)
+    if queue_state is None:
+        return
+
+    control_plane_job_id = queue_state.get("control_plane_job_id")
+    rq_job_id = queue_state.get("rq_job_id")
+    if not isinstance(rq_job_id, str) or not rq_job_id:
+        if isinstance(control_plane_job_id, int):
+            rq_job_id = f"collocation-{control_plane_job_id}"
+            queue_state["rq_job_id"] = rq_job_id
+            st.session_state[COLLOCATION_QUEUE_STATE_KEY] = queue_state
+        else:
+            rq_job_id = None
+
+    if control_plane_job_id is None:
+        _clear_collocation_queue_state(user_session_id)
+        st.warning("Queued collocation job state was incomplete. Please try again.")
+        return
+
+    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    if job_row is None:
+        _clear_collocation_queue_state(user_session_id)
+        st.warning("Queued collocation job could not be found. Please try again.")
+        return
+
+    if job_row.status == "completed" and job_row.artifact_id is not None:
+        colloc_params = queue_state.get("colloc_params")
+        if not isinstance(colloc_params, dict):
+            colloc_params = _collocation_parameters(
+                str(queue_state.get("node_word", "")),
+                queue_state.get("node_tag"),
+                int(queue_state.get("to_left", 4)),
+                int(queue_state.get("to_right", 4)),
+                str(queue_state.get("stat_mode", "npmi")),
+                str(queue_state.get("count_by", "pos")),
+            )
+        if attach_collocation_artifact(user_session_id, job_row.artifact_id, colloc_params):
+            _clear_collocation_queue_state(user_session_id)
+            st.rerun()
+        _clear_collocation_queue_state(user_session_id)
+        st.error("Completed collocation artifact could not be attached. Please retry.")
+        return
+
+    if job_row.status == "failed":
+        _clear_collocation_queue_state(user_session_id)
+        st.error("Collocation generation failed. Please adjust the configuration and try again.")
+        return
+
+    rq_status = "unknown"
+    if rq_job_id:
+        try:
+            rq_job = get_queue().fetch_job(rq_job_id)
+            if rq_job is not None:
+                rq_status = str(getattr(rq_job.get_status(), "value", rq_job.get_status()))
+        except Exception:
+            rq_status = "unavailable"
+
+    st.status(
+        f"Preparing shared collocations table... ({job_row.status}, queue: {rq_status})",
+        state="running",
     )
 
 
@@ -444,6 +617,20 @@ def render_generation_controls(
             )
             return
 
+        target_source = _can_queue_collocations(session)
+        if target_source is not None:
+            _submit_collocation_job(
+                user_session_id,
+                target_source,
+                node_word,
+                node_tag,
+                to_left,
+                to_right,
+                stat_mode,
+                count_by,
+            )
+            return
+
         # If all validation passes, generate the collocations
         generate_collocations(
             user_session_id, node_word, node_tag, to_left, to_right, stat_mode, count_by
@@ -456,6 +643,8 @@ def render_generation_controls(
         action=collocations_action,
         spinner_message="Processing collocates..."
     )
+
+    _render_collocation_queue_status(user_session_id)
 
     # Display any warnings
     if st.session_state[user_session_id].get(WarningKeys.COLLOCATIONS):
