@@ -6,13 +6,16 @@ and user session persistence.
 """
 
 # Import core session functions
-from webapp.utilities.session.session_core import (
+# noqa: F401 re-exported package API
+from webapp.utilities.session.session_core import (  # noqa: F401
+    build_corpus_metadata_descriptor,
     get_corpus_categories,
     init_metadata_target,
     init_metadata_reference,
     init_session,
     safe_session_get,
-    update_session
+    update_session,
+    write_metadata_descriptor_sidecar,
 )
 # Import session management functions from session_management.py (matches legacy)
 from webapp.utilities.session.session_management import (
@@ -30,6 +33,11 @@ from webapp.utilities.session.metadata_handlers import (
     handle_target_metadata_processing,
     MIN_CATEGORIES,
     MAX_CATEGORIES
+)
+from webapp.utilities.session.session_persistence import (
+    get_session_persistence_policy,
+    set_session_persistence_policy,
+    session_allows_persistence,
 )
 from webapp.utilities.session.validation_enhanced import (
     enhanced_health_checker,
@@ -49,7 +57,12 @@ __all__ = [
     'init_session',
     'init_ai_assist',
     'update_session',
+    'write_metadata_descriptor_sidecar',
+    'get_session_persistence_policy',
+    'set_session_persistence_policy',
+    'session_allows_persistence',
     'get_or_init_user_session',
+    'build_corpus_metadata_descriptor',
     'get_corpus_categories',
     'validate_session_state',
     'validate_session_structure',
