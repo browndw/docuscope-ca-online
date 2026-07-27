@@ -166,7 +166,7 @@ def plot_action_button(
         key=key,
         help=help_text,
         type="secondary",
-        use_container_width=False,
+        width="content",
         icon=":material/manufacturing:"
     )
     if pressed:
