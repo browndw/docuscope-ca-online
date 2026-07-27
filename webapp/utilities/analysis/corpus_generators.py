@@ -8,9 +8,240 @@ analyses including n-grams, collocations, and keyword-in-context searches.
 import streamlit as st
 import docuscospacy as ds
 
+from webapp.persistence import (
+    SharedArtifactWorkflow,
+    build_shared_collocation_identity,
+    build_shared_ngram_identity,
+    registry_service,
+)
 from webapp.utilities.core import app_core
+from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.state import CorpusKeys, TargetKeys, WarningKeys, SessionKeys
 from webapp.utilities.corpus import get_corpus_data_manager
+from webapp.utilities.session import safe_session_get
+
+
+logger = get_logger()
+shared_artifact_workflow = SharedArtifactWorkflow(registry_service, logger)
+
+
+def _get_shared_collocation_identity(
+        user_session_id: str,
+        node_word: str,
+        node_tag: str,
+        to_left: int,
+        to_right: int,
+        stat_mode: str,
+        count_by: str
+):
+    """Return a shared collocation identity for built-in target corpora."""
+
+    session = st.session_state.get(user_session_id, {})
+    target_db = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    if not target_db:
+        return None
+
+    return build_shared_collocation_identity(
+        target_source=target_db,
+        node_word=node_word,
+        node_tag=node_tag,
+        to_left=to_left,
+        to_right=to_right,
+        stat_mode=stat_mode,
+        count_by=count_by,
+    )
+
+
+def _get_shared_ngram_identity(
+        user_session_id: str,
+        analysis_type: str,
+        ngram_span: int,
+        count_by: str,
+        from_anchor: str | None = None,
+        node_word: str | None = None,
+        tag: str | None = None,
+        position: int | None = None,
+        search_type: str | None = None,
+):
+    """Return a shared n-gram/cluster identity for built-in target corpora."""
+
+    session = st.session_state.get(user_session_id, {})
+    target_db = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    if not target_db:
+        return None
+
+    return build_shared_ngram_identity(
+        target_source=target_db,
+        analysis_type=analysis_type,
+        ngram_span=ngram_span,
+        count_by=count_by,
+        from_anchor=from_anchor,
+        node_word=node_word,
+        tag=tag,
+        position=position,
+        search_type=search_type,
+    )
+
+
+def _ngram_parameters(
+        analysis_type: str,
+        ngram_span: int,
+        count_by: str,
+        from_anchor: str | None = None,
+        node_word: str | None = None,
+        tag: str | None = None,
+        position: int | None = None,
+        search_type: str | None = None,
+) -> dict:
+    """Return stable parameters for shared n-gram/cluster generation."""
+
+    return {
+        "analysis_type": analysis_type,
+        "ngram_span": ngram_span,
+        "count_by": count_by,
+        "from_anchor": from_anchor,
+        "node_word": node_word.strip() if isinstance(node_word, str) else node_word,
+        "tag": tag,
+        "position": position,
+        "search_type": search_type,
+    }
+
+
+def attach_ngram_artifact(
+        user_session_id: str,
+        artifact_id: int,
+        artifact_type: str | None = None,
+) -> bool:
+    """Attach a ready n-gram/cluster artifact to the target corpus session."""
+
+    if artifact_type is None:
+        artifact = registry_service.get_artifact_by_id(artifact_id)
+        if artifact is None or artifact.status != "ready":
+            return False
+        artifact_type = artifact.artifact_type
+
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    manager.set_artifact_refs(
+        artifact_type,
+        artifact_id,
+        [TargetKeys.NGRAMS],
+    )
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.NGRAMS,
+        True,
+    )
+    st.session_state[user_session_id][WarningKeys.NGRAM] = None
+    return True
+
+
+def _load_cached_ngrams(user_session_id: str, identity) -> bool:
+    """Attach built-in n-grams/clusters from the shared artifact registry if ready."""
+
+    loaded = shared_artifact_workflow.load_ready(
+        identity,
+        registry_service.load_ngram_bundle,
+        cache_name="ngram",
+    )
+    if loaded is None:
+        return False
+
+    artifact, _ = loaded
+    try:
+        attach_ngram_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            artifact_type=artifact.artifact_type,
+        )
+        st.success('N-grams loaded from shared cache!')
+        st.rerun()
+    except Exception as exc:
+        logger.warning(f"Shared n-gram cache load failed: {exc}")
+        return False
+
+    return True
+
+
+def _collocation_parameters(
+        node_word: str,
+        node_tag: str,
+        to_left: int,
+        to_right: int,
+        stat_mode: str,
+        count_by: str
+) -> dict:
+    """Return the session metadata payload for a collocation table."""
+
+    return {
+        'node_word': node_word,
+        'node_tag': node_tag,
+        'to_left': to_left,
+        'to_right': to_right,
+        'stat_mode': stat_mode,
+        'count_by': count_by
+    }
+
+
+def attach_collocation_artifact(
+        user_session_id: str,
+        artifact_id: int,
+        colloc_params: dict,
+        artifact_type: str | None = None,
+) -> bool:
+    """Attach a ready collocation artifact to the current target corpus session."""
+
+    if artifact_type is None:
+        artifact = registry_service.get_artifact_by_id(artifact_id)
+        if artifact is None or artifact.status != "ready":
+            return False
+        artifact_type = artifact.artifact_type
+
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    manager.set_artifact_refs(
+        artifact_type,
+        artifact_id,
+        [TargetKeys.COLLOCATIONS],
+    )
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.COLLOCATIONS,
+        True,
+    )
+    app_core.session_manager.update_metadata(
+        user_session_id,
+        CorpusKeys.TARGET,
+        {SessionKeys.COLLOCATIONS: colloc_params}
+    )
+    st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = None
+    return True
+
+
+def _load_cached_collocations(user_session_id: str, identity, colloc_params: dict) -> bool:
+    """Attach built-in collocations from the shared artifact registry if available."""
+
+    loaded = shared_artifact_workflow.load_ready(
+        identity,
+        registry_service.load_collocation_bundle,
+        cache_name="collocation",
+    )
+    if loaded is None:
+        return False
+
+    artifact, _ = loaded
+    try:
+        attach_collocation_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            colloc_params,
+            artifact_type=artifact.artifact_type,
+        )
+        st.success('Collocations loaded from shared cache!')
+        st.rerun()
+    except Exception as exc:
+        logger.warning(f"Shared collocation cache load failed: {exc}")
+        return False
+
+    return True
 
 
 def generate_ngrams(
@@ -45,11 +276,40 @@ def generate_ngrams(
         )
         return
 
+    identity = _get_shared_ngram_identity(
+        user_session_id,
+        analysis_type="ngrams",
+        ngram_span=ngram_span,
+        count_by=ts,
+    )
+    if _load_cached_ngrams(user_session_id, identity):
+        return
+
+    cache_decision = shared_artifact_workflow.reserve(
+        identity,
+        cache_name="ngram",
+        ready_loader=lambda: _load_cached_ngrams(user_session_id, identity),
+        poll_attempts=20,
+        poll_interval_seconds=0.25,
+    )
+    if cache_decision.state == "ready":
+        return
+    if cache_decision.state == "pending":
+        st.session_state[user_session_id][WarningKeys.NGRAM] = (
+            "This shared n-grams table is already being prepared. Please try again in a moment.",
+            ":material/hourglass_top:"
+        )
+        return
+
+    job_id = cache_decision.job_id if cache_decision.state == "reserved" else None
+
     # --- Main logic ---
     manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
     tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
 
     if tok_pl is None or getattr(tok_pl, "height", 0) == 0:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "No tokens found for target corpus")
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             """
             No tokens found for the target corpus.
@@ -59,14 +319,21 @@ def generate_ngrams(
         )
         return
 
-    ngram_df = ds.ngrams(
-        tokens_table=tok_pl,
-        span=ngram_span,
-        count_by=ts
-    )
+    try:
+        ngram_df = ds.ngrams(
+            tokens_table=tok_pl,
+            span=ngram_span,
+            count_by=ts
+        )
+    except Exception as exc:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, str(exc))
+        raise
 
     # --- Data-dependent warnings ---
     if ngram_df is None or getattr(ngram_df, "height", 0) < 2:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "N-gram search returned no results")
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             "Your search didn't return any results.",
             ":material/info:"
@@ -74,12 +341,28 @@ def generate_ngrams(
         return
 
     # --- Success ---
-    st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.NGRAMS] = ngram_df
-    app_core.session_manager.update_session_state(
-        user_session_id,
-        SessionKeys.NGRAMS,
-        True
+    artifact = shared_artifact_workflow.store(
+        identity,
+        job_id,
+        cache_name="ngram",
+        store_func=lambda artifact_identity: registry_service.store_ngram_bundle(
+            artifact_identity,
+            ngram_df,
+        ),
     )
+    if artifact is not None:
+        attach_ngram_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            artifact_type=artifact.artifact_type,
+        )
+    else:
+        manager.set_data(TargetKeys.NGRAMS, ngram_df)
+        app_core.session_manager.update_session_state(
+            user_session_id,
+            SessionKeys.NGRAMS,
+            True
+        )
     st.session_state[user_session_id][WarningKeys.NGRAM] = None
     st.rerun()
 
@@ -122,11 +405,45 @@ def generate_clusters(
             )
             return
 
+    ngram_params = _ngram_parameters(
+        analysis_type="clusters",
+        ngram_span=ngram_span,
+        count_by=ts,
+        from_anchor=from_anchor,
+        node_word=node_word,
+        tag=tag,
+        position=position,
+        search_type=search,
+    )
+    identity = _get_shared_ngram_identity(user_session_id, **ngram_params)
+    if _load_cached_ngrams(user_session_id, identity):
+        return
+
+    cache_decision = shared_artifact_workflow.reserve(
+        identity,
+        cache_name="ngram",
+        ready_loader=lambda: _load_cached_ngrams(user_session_id, identity),
+        poll_attempts=20,
+        poll_interval_seconds=0.25,
+    )
+    if cache_decision.state == "ready":
+        return
+    if cache_decision.state == "pending":
+        st.session_state[user_session_id][WarningKeys.NGRAM] = (
+            "This shared cluster table is already being prepared. Please try again in a moment.",
+            ":material/hourglass_top:"
+        )
+        return
+
+    job_id = cache_decision.job_id if cache_decision.state == "reserved" else None
+
     # --- Main logic ---
     manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
     tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
 
     if tok_pl is None:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "No corpus data available")
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             "No corpus data available. Please load a corpus first.",
             ":material/error:"
@@ -134,32 +451,41 @@ def generate_clusters(
         return
 
     ngram_df = None
-    if from_anchor == 'Token':
-        ngram_df = ds.clusters_by_token(
-            tokens_table=tok_pl,
-            node_word=node_word,
-            node_position=position,
-            span=ngram_span,
-            search_type=search,
-            count_by=ts
-        )
-    elif from_anchor == 'Tag':
-        ngram_df = ds.clusters_by_tag(
-            tokens_table=tok_pl,
-            tag=tag,
-            tag_position=position,
-            span=ngram_span,
-            count_by=ts
-        )
+    try:
+        if from_anchor == 'Token':
+            ngram_df = ds.clusters_by_token(
+                tokens_table=tok_pl,
+                node_word=node_word,
+                node_position=position,
+                span=ngram_span,
+                search_type=search,
+                count_by=ts
+            )
+        elif from_anchor == 'Tag':
+            ngram_df = ds.clusters_by_tag(
+                tokens_table=tok_pl,
+                tag=tag,
+                tag_position=position,
+                span=ngram_span,
+                count_by=ts
+            )
+    except Exception as exc:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, str(exc))
+        raise
 
     # --- Data-dependent warnings ---
     if ngram_df is None or getattr(ngram_df, "height", 0) == 0:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "Cluster search returned no matches")
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             "Your search didn't return any matches. Try something else.",
             ":material/info:"
         )
         return
     elif getattr(ngram_df, "height", 0) > 100000:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "Cluster search returned too many matches")
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             "Your search returned too many matches! Try something more specific.",
             ":material/info:"
@@ -167,12 +493,28 @@ def generate_clusters(
         return
 
     # --- Success ---
-    st.session_state[user_session_id][CorpusKeys.TARGET][TargetKeys.NGRAMS] = ngram_df
-    app_core.session_manager.update_session_state(
-        user_session_id,
-        SessionKeys.NGRAMS,
-        True,
+    artifact = shared_artifact_workflow.store(
+        identity,
+        job_id,
+        cache_name="ngram",
+        store_func=lambda artifact_identity: registry_service.store_ngram_bundle(
+            artifact_identity,
+            ngram_df,
+        ),
     )
+    if artifact is not None:
+        attach_ngram_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            artifact_type=artifact.artifact_type,
+        )
+    else:
+        manager.set_data(TargetKeys.NGRAMS, ngram_df)
+        app_core.session_manager.update_session_state(
+            user_session_id,
+            SessionKeys.NGRAMS,
+            True,
+        )
     st.session_state[user_session_id][WarningKeys.NGRAM] = None
     st.rerun()
 
@@ -324,11 +666,56 @@ def generate_collocations(
         )
         return
 
+    colloc_params = _collocation_parameters(
+        node_word,
+        node_tag,
+        to_left,
+        to_right,
+        stat_mode,
+        count_by,
+    )
+    identity = _get_shared_collocation_identity(
+        user_session_id,
+        node_word,
+        node_tag,
+        to_left,
+        to_right,
+        stat_mode,
+        count_by,
+    )
+
+    if _load_cached_collocations(user_session_id, identity, colloc_params):
+        return
+
+    cache_decision = shared_artifact_workflow.reserve(
+        identity,
+        cache_name="collocation",
+        ready_loader=lambda: _load_cached_collocations(
+            user_session_id,
+            identity,
+            colloc_params,
+        ),
+        poll_attempts=20,
+        poll_interval_seconds=0.25,
+    )
+    if cache_decision.state == "ready":
+        return
+    if cache_decision.state == "pending":
+        st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = (
+            "This shared collocations table is already being prepared. Please try again in a moment.",
+            ":material/hourglass_top:"
+        )
+        return
+
+    job_id = cache_decision.job_id if cache_decision.state == "reserved" else None
+
     # --- Main logic ---
     manager = get_corpus_data_manager(user_session_id, "target")
     tok_pl = manager.get_data(TargetKeys.DS_TOKENS)
 
     if tok_pl is None or getattr(tok_pl, "height", 0) == 0:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "No tokens found for target corpus")
         st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = (
             """
             No tokens found for the target corpus.
@@ -338,18 +725,25 @@ def generate_collocations(
         )
         return
 
-    coll_df = ds.coll_table(
-        tok_pl,
-        node_word=node_word,
-        node_tag=node_tag,
-        preceding=to_left,
-        following=to_right,
-        statistic=stat_mode,
-        count_by=count_by
-    )
+    try:
+        coll_df = ds.coll_table(
+            tok_pl,
+            node_word=node_word,
+            node_tag=node_tag,
+            preceding=to_left,
+            following=to_right,
+            statistic=stat_mode,
+            count_by=count_by
+        )
+    except Exception as exc:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, str(exc))
+        raise
 
     # --- Data-dependent warnings ---
     if coll_df is None or coll_df.is_empty():
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, "Collocation search returned no matches")
         st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = (
             "Your search didn't return any matches. Try something else.",
             ":material/info:"
@@ -357,29 +751,37 @@ def generate_collocations(
         return
 
     # --- Success ---
-    # Store collocations result using the new corpus data manager
-    manager.set_data("collocations", coll_df)
-
-    app_core.session_manager.update_session_state(
-        user_session_id,
-        'collocations',
-        True,
+    artifact = shared_artifact_workflow.store(
+        identity,
+        job_id,
+        cache_name="collocation",
+        store_func=lambda artifact_identity: registry_service.store_collocation_bundle(
+            artifact_identity,
+            coll_df,
+        ),
     )
+    if artifact is not None:
+        attach_collocation_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            colloc_params,
+            artifact_type=artifact.artifact_type,
+        )
+    else:
+        # Store collocations result using the new corpus data manager
+        manager.set_data(TargetKeys.COLLOCATIONS, coll_df)
 
-    # Store collocation parameters as a dictionary in metadata
-    colloc_params = {
-        'node_word': node_word,
-        'node_tag': node_tag,
-        'to_left': to_left,
-        'to_right': to_right,
-        'stat_mode': stat_mode,
-        'count_by': count_by
-    }
-    app_core.session_manager.update_metadata(
-        user_session_id,
-        CorpusKeys.TARGET,
-        {'collocations': colloc_params}
-    )
+        app_core.session_manager.update_session_state(
+            user_session_id,
+            SessionKeys.COLLOCATIONS,
+            True,
+        )
+
+        app_core.session_manager.update_metadata(
+            user_session_id,
+            CorpusKeys.TARGET,
+            {SessionKeys.COLLOCATIONS: colloc_params}
+        )
 
     st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = None
     st.success('Collocations generated!')
