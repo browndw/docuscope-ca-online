@@ -7,11 +7,7 @@ corpus data manager for memory-efficient lazy loading.
 """
 
 import os
-import gzip
 import glob
-import pickle
-import random
-import time
 import polars as pl
 import streamlit as st
 
@@ -52,48 +48,20 @@ def load_corpus_internal(
     manager = get_corpus_manager(session_id, corpus_type)
 
     files_list = glob.glob(os.path.join(db_path, '*.gz'))
+    file_map = {
+        str(os.path.basename(file_path)).removesuffix(".gz"): file_path
+        for file_path in files_list
+    }
 
-    # Prioritize core data file
-    core_files = [f for f in files_list if 'ds_tokens' in f]
-    other_files = [f for f in files_list if 'ds_tokens' not in f]
+    # Only register lightweight file references here. Built-in corpus artifacts
+    # should be loaded on demand instead of eagerly hydrating all tables into
+    # per-user session state.
+    if 'ds_tokens' in file_map:
+        manager.set_file_refs(file_map)
+        return
 
-    # Try up to 3 times to load files
-    for attempt in range(3):
-        # Shuffle non-core files to prevent contention in concurrent access
-        random.shuffle(other_files)
-        # Always try core files first
-        ordered_files = core_files + other_files
-
-        data = {}
-
-        # Attempt to load all files
-        for file in ordered_files:
-            try:
-                with gzip.open(file, 'rb') as f:
-                    file_key = str(os.path.basename(file)).removesuffix(".gz")
-                    data[file_key] = pickle.load(f)
-            except Exception:
-                # Silently continue on individual file failures
-                pass
-
-        # Check if we successfully loaded core data at minimum
-        if 'ds_tokens' in data:
-            # Load all available data through the manager
-            manager.load_all_data(data)
-
-            # Data loaded successfully - no console output needed for deployed app
-            # UI will show corpus loading status through session state
-
-            return
-
-        # If this wasn't the last attempt, we'll try again
-        if attempt < 2:
-            # Brief pause before retry to reduce contention
-            time.sleep(0.1 * (attempt + 1))  # Increasing delay
-
-    # All 3 attempts failed - show error to user
-    files_loaded = len(data) if 'data' in locals() else 0
-    core_loaded = 'ds_tokens' in data if 'data' in locals() else False
+    files_loaded = len(file_map)
+    core_loaded = 'ds_tokens' in file_map
 
     st.error(
         f"""
