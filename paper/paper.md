@@ -53,7 +53,7 @@ Key trade-offs included choosing Polars over Pandas (prioritizing performance fo
 
 # Implementation
 
-The software is built on Python 3.11 with spaCy [@spacy2020] for linguistic processing, Polars [@polars2023] for high-performance columnar data operations, Streamlit [@streamlit2023] for the web interface, and Plotly for interactive visualizations. The `docuscospacy` package integrates DocuScope rhetorical tagging into the spaCy pipeline. All core functionality operates offline with bundled models; external API keys are required only for optional AI-assisted analysis features. Comprehensive tests exercise parsing accuracy, session persistence, and analysis workflows.
+The software is built on Python 3.11 with spaCy [@spacy2023] for linguistic processing, Polars [@polars2023] for high-performance columnar data operations, Streamlit [@streamlit2023] for the web interface, and Plotly for interactive visualizations. The `docuscospacy` package integrates DocuScope rhetorical tagging into the spaCy pipeline. All core functionality operates offline with bundled models; external API keys are required only for optional AI-assisted analysis features. Comprehensive tests exercise parsing accuracy, session persistence, and analysis workflows.
 
 ## Ecosystem
 
