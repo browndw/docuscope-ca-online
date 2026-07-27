@@ -714,7 +714,7 @@ def render_data_preview_controls(
                 df.head(10).with_columns(
                     pl.selectors.float().round(3)
                 ),
-                use_container_width=True,
+                width="stretch",
                 disabled=True)
 
         return df
