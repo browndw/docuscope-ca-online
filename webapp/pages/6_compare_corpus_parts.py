@@ -47,8 +47,10 @@ from webapp.utilities.state import (
 from webapp.utilities.state.widget_key_manager import create_persist_function
 from webapp.utilities.analysis import (
     has_target_corpus, render_corpus_not_loaded_error,
-    freq_simplify_pl, generate_keyness_parts
+    freq_simplify_pl, generate_keyness_parts, attach_keyness_parts_artifact
 )
+from webapp.persistence import registry_service
+from webapp.queue import enqueue_keyness_parts_preparation, get_queue, get_redis_queue_config
 from webapp.menu import (   # noqa: E402
     menu,
     require_login
@@ -67,10 +69,168 @@ COMPARE_CORPUS_PARTS_PERSISTENT_WIDGETS = [
 ]
 app_core.register_page_widgets(COMPARE_CORPUS_PARTS_PERSISTENT_WIDGETS)
 
+KEYNESS_PARTS_QUEUE_STATE_KEY = "keyness_parts_queue_state"
+
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def _normalize_category_selection(categories: list) -> list[str]:
+    """Return a stable category list for queue/artifact identity matching."""
+
+    return sorted(str(category) for category in categories)
+
+
+def _get_keyness_parts_queue_state(user_session_id: str) -> dict | None:
+    """Return queued corpus-parts keyness state for this session, if any."""
+
+    queue_state = st.session_state.get(KEYNESS_PARTS_QUEUE_STATE_KEY)
+    if not isinstance(queue_state, dict):
+        return None
+    if queue_state.get("session_id") != user_session_id:
+        return None
+    return queue_state
+
+
+def _clear_keyness_parts_queue_state(user_session_id: str) -> None:
+    """Clear queued corpus-parts keyness state for this session."""
+
+    if _get_keyness_parts_queue_state(user_session_id) is not None:
+        st.session_state.pop(KEYNESS_PARTS_QUEUE_STATE_KEY, None)
+
+
+def _can_queue_keyness_parts(session: dict) -> str | None:
+    """Return built-in target path when corpus-parts keyness can be queued."""
+
+    if not get_redis_queue_config().enabled:
+        return None
+
+    target_source = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    if not target_source:
+        return None
+    return str(target_source)
+
+
+def _submit_keyness_parts_job(
+    user_session_id: str,
+    target_source: str,
+    target_categories: list[str],
+    reference_categories: list[str],
+    threshold: float,
+    swap_target: bool,
+) -> None:
+    """Submit built-in corpus-parts keyness generation through Redis/RQ."""
+
+    result = enqueue_keyness_parts_preparation(
+        target_source=target_source,
+        target_categories=target_categories,
+        reference_categories=reference_categories,
+        threshold=threshold,
+        swap_target=swap_target,
+    )
+    if result.state == "ready" and result.artifact_id is not None:
+        _clear_keyness_parts_queue_state(user_session_id)
+        if attach_keyness_parts_artifact(user_session_id, result.artifact_id):
+            st.rerun()
+        st.error("Ready corpus-parts artifact could not be attached. Please retry.")
+        return
+
+    st.session_state[KEYNESS_PARTS_QUEUE_STATE_KEY] = {
+        "session_id": user_session_id,
+        "target_source": target_source,
+        "target_categories": target_categories,
+        "reference_categories": reference_categories,
+        "threshold": threshold,
+        "swap_target": swap_target,
+        "control_plane_job_id": result.control_plane_job_id,
+        "rq_job_id": result.rq_job_id,
+        "artifact_id": result.artifact_id,
+    }
+    st.rerun()
+
+
+@st.fragment(run_every="2s")
+def _render_keyness_parts_queue_status(user_session_id: str) -> None:
+    """Poll queued corpus-parts keyness status and attach when ready."""
+
+    queue_state = _get_keyness_parts_queue_state(user_session_id)
+    if queue_state is None:
+        return
+
+    control_plane_job_id = queue_state.get("control_plane_job_id")
+    rq_job_id = queue_state.get("rq_job_id")
+    if not isinstance(rq_job_id, str) or not rq_job_id:
+        if isinstance(control_plane_job_id, int):
+            rq_job_id = f"keyness-parts-{control_plane_job_id}"
+            queue_state["rq_job_id"] = rq_job_id
+            st.session_state[KEYNESS_PARTS_QUEUE_STATE_KEY] = queue_state
+        else:
+            rq_job_id = None
+
+    if control_plane_job_id is None:
+        _clear_keyness_parts_queue_state(user_session_id)
+        st.warning("Queued corpus-parts job state was incomplete. Please try again.")
+        return
+
+    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    if job_row is None:
+        _clear_keyness_parts_queue_state(user_session_id)
+        st.warning("Queued corpus-parts job could not be found. Please try again.")
+        return
+
+    if job_row.status == "pending":
+        if not isinstance(rq_job_id, str) or not rq_job_id:
+            registry_service.mark_job_failed(
+                control_plane_job_id,
+                "Queued corpus-parts job was pending without a queue job id.",
+            )
+            _clear_keyness_parts_queue_state(user_session_id)
+            st.error("Queued corpus-parts generation failed before execution. Please retry.")
+            return
+
+        try:
+            rq_job = get_queue().fetch_job(rq_job_id)
+        except Exception:
+            rq_job = None
+
+        if rq_job is None:
+            registry_service.mark_job_failed(
+                control_plane_job_id,
+                "Queue job record was missing while control-plane status was pending.",
+            )
+            _clear_keyness_parts_queue_state(user_session_id)
+            st.error("Queued corpus-parts generation failed before execution. Please retry.")
+            return
+
+        rq_status_raw = rq_job.get_status(refresh=True)
+        rq_status = str(getattr(rq_status_raw, "value", rq_status_raw)).strip().lower()
+        if rq_status == "failed":
+            failure_reason = "Queued corpus-parts job failed before completion."
+            if isinstance(rq_job.exc_info, str) and rq_job.exc_info.strip():
+                failure_reason = rq_job.exc_info.strip().splitlines()[-1]
+            registry_service.mark_job_failed(control_plane_job_id, failure_reason)
+            _clear_keyness_parts_queue_state(user_session_id)
+            st.error(f"Queued corpus-parts generation failed: {failure_reason}")
+            return
+
+    if job_row.status == "completed":
+        _clear_keyness_parts_queue_state(user_session_id)
+        if job_row.artifact_id is not None and attach_keyness_parts_artifact(
+            user_session_id,
+            job_row.artifact_id,
+        ):
+            st.rerun()
+        st.error("Queued corpus-parts artifact could not be attached. Please retry.")
+        return
+
+    if job_row.status == "failed":
+        _clear_keyness_parts_queue_state(user_session_id)
+        st.error(f"Queued corpus-parts generation failed: {job_row.failure_reason}")
+        return
+
+    st.info("Generating corpus-parts keyness tables in the background...")
 
 
 def render_results_interface(user_session_id: str, session: dict) -> None:
@@ -220,7 +380,7 @@ def render_tags_interface(
 
             # Plot with color customization
             fig = plot_compare_corpus_bar(df, color_dict=color_dict)
-            SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
+            SafeComponentRenderer.safe_plotly_chart(fig, width="stretch")
             plot_download_link(fig, filename="compare_corpus_parts_bar.png")
         else:
             st.info("No data available for plotting. Please adjust your filters.")
@@ -300,6 +460,7 @@ def render_sidebar_controls(
         label="Compare New Categories",
         icon=":material/refresh:"
     ):
+        _clear_keyness_parts_queue_state(user_session_id)
         # Clear only corpus parts comparison data using the corpus data manager
         clear_corpus_data(user_session_id, CorpusKeys.TARGET, [
             TargetKeys.KW_POS_CP, TargetKeys.KW_DS_CP,
@@ -506,6 +667,18 @@ def render_generation_controls(
             )
             return
 
+        target_source = _can_queue_keyness_parts(session)
+        if target_source is not None:
+            _submit_keyness_parts_job(
+                user_session_id,
+                target_source,
+                _normalize_category_selection(tar_selected),
+                _normalize_category_selection(ref_selected),
+                pval_selected,
+                swap_selected,
+            )
+            return
+
         # If all validation passes, generate the keyness table
         generate_keyness_parts(
             user_session_id,
@@ -527,6 +700,8 @@ def render_generation_controls(
         st.error(msg, icon=icon)
         # Clear the warning after displaying it
         safe_clear_widget_state(f"{user_session_id}_{WarningKeys.KEYNESS_PARTS}")
+
+    _render_keyness_parts_queue_status(user_session_id)
 
     st.sidebar.markdown("---")
 
