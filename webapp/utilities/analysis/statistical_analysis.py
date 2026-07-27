@@ -8,13 +8,403 @@ keyness analysis, and statistical comparisons between corpora.
 import polars as pl
 import streamlit as st
 import docuscospacy as ds
-from scipy.stats import pearsonr
+from time import perf_counter
 from webapp.utilities.core import app_core
-from webapp.utilities.state import (
-    CorpusKeys, TargetKeys, ReferenceKeys, WarningKeys
+from webapp.utilities.configuration.logging_config import get_logger
+from webapp.utilities.analysis.correlation import pearson_correlation
+from webapp.persistence import (
+    SharedArtifactWorkflow,
+    build_shared_keyness_identity,
+    build_shared_keyness_parts_identity,
+    registry_service,
 )
-from webapp.utilities.corpus import get_corpus_data, set_corpus_data
+from webapp.utilities.state import (
+    CorpusKeys, TargetKeys, ReferenceKeys, WarningKeys, SessionKeys
+)
+from webapp.utilities.corpus import (
+    get_corpus_data,
+    get_corpus_data_manager,
+    set_corpus_data,
+)
 from webapp.utilities.session import safe_session_get, get_or_init_user_session
+
+
+logger = get_logger()
+shared_artifact_workflow = SharedArtifactWorkflow(registry_service, logger)
+SLOW_GENERATION_TRIGGER_MS = 25
+FREQUENCY_RENDER_TRACE_KEY = "_frequency_render_trace"
+
+
+def _log_slow_generation_trigger(
+    operation: str,
+    start_time: float,
+    session_id: str,
+) -> None:
+    """Log slow pre-rerun generation trigger steps."""
+
+    elapsed_ms = (perf_counter() - start_time) * 1000
+    if elapsed_ms >= SLOW_GENERATION_TRIGGER_MS:
+        logger.warning(
+            "Slow generation trigger op={} session={} duration_ms={:.2f}",
+            operation,
+            session_id,
+            elapsed_ms,
+        )
+
+
+def _get_shared_keyness_identity(user_session_id: str, threshold: float, swap_target: bool):
+    """Return a shared keyness identity for built-in corpus comparisons."""
+
+    _, session = get_or_init_user_session()
+    target_db = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    reference_db = safe_session_get(session, SessionKeys.REFERENCE_DB, "")
+    if not target_db or not reference_db:
+        return None
+
+    return build_shared_keyness_identity(
+        target_source=target_db,
+        reference_source=reference_db,
+        threshold=threshold,
+        swap_target=swap_target,
+    )
+
+
+def _normalize_category_selection(categories: list) -> list[str]:
+    """Return a stable category selection for artifact identity matching."""
+
+    return sorted(str(category) for category in categories)
+
+
+def _get_keyness_parts_metadata(
+    tar_list: list[str],
+    ref_list: list[str],
+    tar_tokens_pos: int,
+    ref_tokens_pos: int,
+    tar_tokens_ds: int,
+    ref_tokens_ds: int,
+    tar_ndocs: int,
+    ref_ndocs: int,
+) -> dict[str, list[str]]:
+    """Build the metadata payload expected by the corpus-parts results page."""
+
+    return {
+        "keyness_parts": [
+            list(tar_list),
+            list(ref_list),
+            str(tar_tokens_pos),
+            str(ref_tokens_pos),
+            str(tar_tokens_ds),
+            str(ref_tokens_ds),
+            str(tar_ndocs),
+            str(ref_ndocs),
+        ]
+    }
+
+
+def _get_shared_keyness_parts_identity(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+):
+    """Return a shared keyness-parts identity for built-in target corpora."""
+
+    _, session = get_or_init_user_session()
+    target_db = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    if not target_db:
+        return None
+
+    tar_list = _normalize_category_selection(
+        list(st.session_state[user_session_id].get('tar', []))
+    )
+    ref_list = _normalize_category_selection(
+        list(st.session_state[user_session_id].get('ref', []))
+    )
+    if not tar_list or not ref_list:
+        return None
+
+    return build_shared_keyness_parts_identity(
+        target_source=target_db,
+        target_categories=tar_list,
+        reference_categories=ref_list,
+        threshold=threshold,
+        swap_target=swap_target,
+    )
+
+
+def _load_cached_keyness_tables(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+) -> bool:
+    """Load built-in keyness tables from the shared artifact registry if available."""
+
+    identity = _get_shared_keyness_identity(user_session_id, threshold, swap_target)
+    loaded = shared_artifact_workflow.load_ready(
+        identity,
+        registry_service.load_keyness_bundle,
+        cache_name="keyness",
+    )
+    if loaded is None:
+        return False
+
+    artifact, _ = loaded
+    try:
+        attach_keyness_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            artifact_type=artifact.artifact_type,
+        )
+        st.success('Keywords loaded from shared cache!')
+        st.rerun()
+    except Exception as exc:
+        logger.warning(f"Shared keyness cache load failed: {exc}")
+        return False
+
+    return True
+
+
+def attach_keyness_parts_artifact(
+    user_session_id: str,
+    artifact_id: int,
+    artifact_type: str | None = None,
+) -> bool:
+    """Attach a ready corpus-parts keyness artifact to the target corpus session."""
+
+    artifact = registry_service.get_artifact_by_id(artifact_id)
+    if artifact is None or artifact.status != "ready":
+        return False
+    if artifact_type is None:
+        artifact_type = artifact.artifact_type
+
+    payload = registry_service.load_keyness_parts_bundle(artifact)
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict) or "keyness_parts" not in metadata:
+        return False
+
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    manager.set_artifact_refs(
+        artifact_type,
+        artifact_id,
+        [
+            TargetKeys.KW_POS_CP,
+            TargetKeys.KW_DS_CP,
+            TargetKeys.KT_POS_CP,
+            TargetKeys.KT_DS_CP,
+        ],
+    )
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.KEYNESS_PARTS,
+        True,
+    )
+    app_core.session_manager.update_metadata(
+        user_session_id,
+        CorpusKeys.TARGET,
+        metadata,
+    )
+    st.session_state[user_session_id][WarningKeys.KEYNESS_PARTS] = None
+    return True
+
+
+def attach_keyness_artifact(
+    user_session_id: str,
+    artifact_id: int,
+    artifact_type: str | None = None,
+) -> bool:
+    """Attach a ready keyness artifact to the current target corpus session."""
+
+    if artifact_type is None:
+        artifact = registry_service.get_artifact_by_id(artifact_id)
+        if artifact is None or artifact.status != "ready":
+            return False
+        artifact_type = artifact.artifact_type
+
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    manager.set_artifact_refs(
+        artifact_type,
+        artifact_id,
+        [TargetKeys.KW_POS, TargetKeys.KW_DS, TargetKeys.KT_POS, TargetKeys.KT_DS],
+    )
+    app_core.session_manager.update_session_state(
+        user_session_id,
+        SessionKeys.KEYNESS_TABLE,
+        True,
+    )
+    st.session_state[user_session_id][WarningKeys.KEYNESS] = None
+    return True
+
+
+def _load_cached_keyness_parts(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+) -> bool:
+    """Load built-in corpus-parts keyness from the shared artifact registry."""
+
+    identity = _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target)
+    loaded = shared_artifact_workflow.load_ready(
+        identity,
+        registry_service.load_keyness_parts_bundle,
+        cache_name="keyness-parts",
+    )
+    if loaded is None:
+        return False
+
+    artifact, _ = loaded
+    try:
+        attach_keyness_parts_artifact(
+            user_session_id,
+            artifact.artifact_id,
+            artifact_type=artifact.artifact_type,
+        )
+        st.success('Keywords loaded from shared cache!')
+        st.rerun()
+    except Exception as exc:
+        logger.warning(f"Shared keyness-parts cache load failed: {exc}")
+        return False
+
+    return True
+
+
+def _store_cached_keyness_tables(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+    job_id: int | None,
+    kw_pos: pl.DataFrame,
+    kw_ds: pl.DataFrame,
+    kt_pos: pl.DataFrame,
+    kt_ds: pl.DataFrame,
+) -> None:
+    """Store built-in keyness tables in the shared artifact registry."""
+
+    identity = _get_shared_keyness_identity(user_session_id, threshold, swap_target)
+    artifact = shared_artifact_workflow.store(
+        identity,
+        job_id,
+        cache_name="keyness",
+        store_func=lambda artifact_identity: registry_service.store_keyness_bundle(
+            artifact_identity,
+            {
+                "kw_pos": kw_pos,
+                "kw_ds": kw_ds,
+                "kt_pos": kt_pos,
+                "kt_ds": kt_ds,
+            },
+        ),
+    )
+    if artifact is not None:
+        manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+        manager.set_artifact_refs(
+            artifact.artifact_type,
+            artifact.artifact_id,
+            [TargetKeys.KW_POS, TargetKeys.KW_DS, TargetKeys.KT_POS, TargetKeys.KT_DS],
+        )
+
+
+def _store_cached_keyness_parts(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+    job_id: int | None,
+    keyness_frames: dict[str, pl.DataFrame],
+    metadata: dict[str, list[str]],
+) -> None:
+    """Store built-in corpus-parts keyness in the shared artifact registry."""
+
+    identity = _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target)
+    artifact = shared_artifact_workflow.store(
+        identity,
+        job_id,
+        cache_name="keyness-parts",
+        store_func=lambda artifact_identity: registry_service.store_keyness_parts_bundle(
+            artifact_identity,
+            keyness_frames,
+            metadata,
+        ),
+    )
+    if artifact is not None:
+        manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+        manager.set_artifact_refs(
+            artifact.artifact_type,
+            artifact.artifact_id,
+            [
+                TargetKeys.KW_POS_CP,
+                TargetKeys.KW_DS_CP,
+                TargetKeys.KT_POS_CP,
+                TargetKeys.KT_DS_CP,
+            ],
+        )
+
+
+def _reserve_shared_keyness_artifact(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+) -> int | None:
+    """Reserve a built-in keyness artifact or defer to an in-flight computation."""
+
+    identity = _get_shared_keyness_identity(user_session_id, threshold, swap_target)
+    decision = shared_artifact_workflow.reserve(
+        identity,
+        cache_name="keyness",
+        ready_loader=lambda: (
+            registry_service.load_keyness_bundle(artifact)
+            if (artifact := registry_service.find_ready_artifact(identity)) is not None
+            else None
+        ),
+    )
+
+    if decision.state == "reserved":
+        return decision.job_id
+
+    if decision.state == "ready":
+        return _load_cached_keyness_tables(user_session_id, threshold, swap_target)
+
+    if decision.state == "pending":
+        st.session_state[user_session_id][WarningKeys.KEYNESS] = (
+            "This built-in keyness comparison is already being generated. "
+            "Please try again shortly.",
+            ":material/schedule:",
+        )
+        return None
+
+    return None
+
+
+def _reserve_shared_keyness_parts_artifact(
+    user_session_id: str,
+    threshold: float,
+    swap_target: bool,
+) -> int | None:
+    """Reserve a built-in corpus-parts keyness artifact or defer if in flight."""
+
+    identity = _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target)
+    decision = shared_artifact_workflow.reserve(
+        identity,
+        cache_name="keyness-parts",
+        ready_loader=lambda: (
+            registry_service.load_keyness_parts_bundle(artifact)
+            if (artifact := registry_service.find_ready_artifact(identity)) is not None
+            else None
+        ),
+    )
+
+    if decision.state == "reserved":
+        return decision.job_id
+
+    if decision.state == "ready":
+        return _load_cached_keyness_parts(user_session_id, threshold, swap_target)
+
+    if decision.state == "pending":
+        st.session_state[user_session_id][WarningKeys.KEYNESS_PARTS] = (
+            "This built-in corpus-parts comparison is already being generated. "
+            "Please try again shortly.",
+            ":material/schedule:",
+        )
+        return None
+
+    return None
 
 
 def generate_frequency_table(user_session_id: str) -> None:
@@ -30,25 +420,41 @@ def generate_frequency_table(user_session_id: str) -> None:
     -------
     None
     """
-    # --- Try to get the target tokens table ---
-    try:
-        tok_pl = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.DS_TOKENS)
-    except (KeyError, ValueError):
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    if not manager.is_ready():
         st.session_state[user_session_id][WarningKeys.FREQUENCY] = (
             "Frequency table cannot be generated: no tokens found in the target corpus.",
             ":material/sentiment_stressed:"
         )
         return
 
-    if tok_pl is None or getattr(tok_pl, "height", 0) == 0:
-        st.session_state[user_session_id][WarningKeys.FREQUENCY] = (
-            "Frequency table cannot be generated: no tokens found in the target corpus.",
-            ":material/sentiment_stressed:"
-        )
-        return
+    generation_start = perf_counter()
+    st.session_state[user_session_id][FREQUENCY_RENDER_TRACE_KEY] = {
+        "started_at": generation_start,
+        "logged": False,
+    }
 
-    app_core.session_manager.update_session_state(user_session_id, 'freq_table', True)
+    update_start = perf_counter()
+    st.session_state[user_session_id][SessionKeys.FREQ_TABLE_TRANSIENT] = True
+    update_elapsed_ms = (perf_counter() - update_start) * 1000
+    st.session_state[user_session_id][FREQUENCY_RENDER_TRACE_KEY][
+        "update_session_state_ms"
+    ] = update_elapsed_ms
+    _log_slow_generation_trigger(
+        "generate_frequency_table.update_session_state",
+        update_start,
+        user_session_id,
+    )
+
     st.session_state[user_session_id][WarningKeys.FREQUENCY] = None
+    st.session_state[user_session_id][FREQUENCY_RENDER_TRACE_KEY][
+        "pre_rerun_ms"
+    ] = (perf_counter() - generation_start) * 1000
+    _log_slow_generation_trigger(
+        "generate_frequency_table.pre_rerun_total",
+        generation_start,
+        user_session_id,
+    )
     st.rerun()
 
 
@@ -67,17 +473,8 @@ def generate_tags_table(
     -------
     None
     """
-    # --- Try to get the target tokens table ---
-    try:
-        tok_pl = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.DS_TOKENS)
-    except (KeyError, ValueError):
-        st.session_state[user_session_id][WarningKeys.TAGS] = (
-            "Tags table cannot be generated: no tokens found in the target corpus.",
-            ":material/info:"
-        )
-        return
-
-    if tok_pl is None or getattr(tok_pl, "height", 0) == 0:
+    manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
+    if not manager.is_ready():
         st.session_state[user_session_id][WarningKeys.TAGS] = (
             "Tags table cannot be generated: no tokens found in the target corpus.",
             ":material/info:"
@@ -110,6 +507,16 @@ def generate_keyness_tables(
     -------
     None
     """
+    if _load_cached_keyness_tables(user_session_id, threshold, swap_target):
+        return
+
+    job_id = _reserve_shared_keyness_artifact(user_session_id, threshold, swap_target)
+    if (
+        job_id is None and
+        _get_shared_keyness_identity(user_session_id, threshold, swap_target)
+    ):
+        return
+
     # --- Try to get all required frequency/tag tables ---
     try:
         wc_tar_pos = get_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.FT_POS)
@@ -149,10 +556,37 @@ def generate_keyness_tables(
         )
         return
 
-    kw_pos = ds.keyness_table(wc_tar_pos, wc_ref_pos, threshold=threshold, swap_target=swap_target)  # noqa: E501
-    kw_ds = ds.keyness_table(wc_tar_ds, wc_ref_ds, threshold=threshold, swap_target=swap_target)  # noqa: E501
-    kt_pos = ds.keyness_table(tc_tar_pos, tc_ref_pos, tags_only=True, threshold=threshold, swap_target=swap_target)  # noqa: E501
-    kt_ds = ds.keyness_table(tc_tar_ds, tc_ref_ds, tags_only=True, threshold=threshold, swap_target=swap_target)  # noqa: E501
+    try:
+        kw_pos = ds.keyness_table(
+            wc_tar_pos,
+            wc_ref_pos,
+            threshold=threshold,
+            swap_target=swap_target,
+        )
+        kw_ds = ds.keyness_table(
+            wc_tar_ds,
+            wc_ref_ds,
+            threshold=threshold,
+            swap_target=swap_target,
+        )
+        kt_pos = ds.keyness_table(
+            tc_tar_pos,
+            tc_ref_pos,
+            tags_only=True,
+            threshold=threshold,
+            swap_target=swap_target,
+        )
+        kt_ds = ds.keyness_table(
+            tc_tar_ds,
+            tc_ref_ds,
+            tags_only=True,
+            threshold=threshold,
+            swap_target=swap_target,
+        )
+    except Exception as exc:
+        if job_id is not None:
+            registry_service.mark_job_failed(job_id, str(exc))
+        raise
 
     keyness_tables = [kw_pos, kw_ds, kt_pos, kt_ds]
     if any(df is None or getattr(df, "height", 0) == 0 for df in keyness_tables):
@@ -163,10 +597,21 @@ def generate_keyness_tables(
         return
 
     # Store results using the corpus data manager
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_POS, kw_pos)
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_DS, kw_ds)
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_POS, kt_pos)
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_DS, kt_ds)
+    if _get_shared_keyness_identity(user_session_id, threshold, swap_target) is None:
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_POS, kw_pos)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_DS, kw_ds)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_POS, kt_pos)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_DS, kt_ds)
+    _store_cached_keyness_tables(
+        user_session_id,
+        threshold,
+        swap_target,
+        job_id,
+        kw_pos,
+        kw_ds,
+        kt_pos,
+        kt_ds,
+    )
 
     app_core.session_manager.update_session_state(user_session_id, 'keyness_table', True)
     st.session_state[user_session_id][WarningKeys.KEYNESS] = None
@@ -201,6 +646,20 @@ def generate_keyness_parts(
             "You must select at least one category for both target and reference parts.",
             ":material/info:"
         )
+        return
+
+    if _load_cached_keyness_parts(user_session_id, threshold, swap_target):
+        return
+
+    job_id = _reserve_shared_keyness_parts_artifact(
+        user_session_id,
+        threshold,
+        swap_target,
+    )
+    if (
+        job_id is None and
+        _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target)
+    ):
         return
 
     # --- Main logic ---
@@ -252,27 +711,43 @@ def generate_keyness_parts(
     tar_ndocs = tar_pl.get_column("doc_id").unique().len()
     ref_ndocs = ref_pl.get_column("doc_id").unique().len()
 
+    metadata = _get_keyness_parts_metadata(
+        tar_list,
+        ref_list,
+        tar_tokens_pos,
+        ref_tokens_pos,
+        tar_tokens_ds,
+        ref_tokens_ds,
+        tar_ndocs,
+        ref_ndocs,
+    )
+
     # --- Save results and clear warning ---
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_pos_cp", kw_pos_cp)
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_ds_cp", kw_ds_cp)
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_pos_cp", kt_pos_cp)
-    set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_ds_cp", kt_ds_cp)
+    if _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target) is None:
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_pos_cp", kw_pos_cp)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_ds_cp", kw_ds_cp)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_pos_cp", kt_pos_cp)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_ds_cp", kt_ds_cp)
+    _store_cached_keyness_parts(
+        user_session_id,
+        threshold,
+        swap_target,
+        job_id,
+        {
+            "kw_pos_cp": kw_pos_cp,
+            "kw_ds_cp": kw_ds_cp,
+            "kt_pos_cp": kt_pos_cp,
+            "kt_ds_cp": kt_ds_cp,
+        },
+        metadata,
+    )
 
     app_core.session_manager.update_session_state(user_session_id, 'keyness_parts', True)
 
     app_core.session_manager.update_metadata(
         user_session_id,
         'target',
-        {'keyness_parts': [
-            tar_list,
-            ref_list,
-            str(tar_tokens_pos),
-            str(ref_tokens_pos),
-            str(tar_tokens_ds),
-            str(ref_tokens_ds),
-            str(tar_ndocs),
-            str(ref_ndocs)
-        ]}
+        metadata
     )
 
     st.session_state[user_session_id]["keyness_parts_warning"] = None
@@ -405,7 +880,7 @@ def correlation_update(
     # Highlight group
     df_high = df[df[group_col].isin(highlight_groups)]
     if len(df_high) > 2:
-        cc_high = pearsonr(df_high[x], df_high[y])
+        cc_high = pearson_correlation(df_high[x], df_high[y])
         cc_dict['highlight'] = {
             'df': len(df_high.index) - 2,
             'r': round(cc_high.statistic, 3),
@@ -417,7 +892,7 @@ def correlation_update(
     # Non-highlight group
     df_non = df[~df[group_col].isin(highlight_groups)]
     if len(df_non) > 2:
-        cc_non = pearsonr(df_non[x], df_non[y])
+        cc_non = pearson_correlation(df_non[x], df_non[y])
         cc_dict['non_highlight'] = {
             'df': len(df_non.index) - 2,
             'r': round(cc_non.statistic, 3),
