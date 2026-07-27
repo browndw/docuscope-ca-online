@@ -18,11 +18,11 @@ from webapp.utilities.processing.corpus_loading import (
     load_corpus_new
 )
 from webapp.utilities.processing.corpus_processing import (
+    attach_queued_internal_target,
     process_external,
     process_internal,
     process_new,
     handle_uploaded_parquet,
-    handle_uploaded_tabular,
     handle_uploaded_text,
     sidebar_process_section,
     finalize_corpus_load
@@ -42,11 +42,11 @@ __all__ = [
     'generate_document_html',
     'load_corpus_internal',
     'load_corpus_new',
+    'attach_queued_internal_target',
     'process_external',
     'process_internal',
     'process_new',
     'handle_uploaded_parquet',
-    'handle_uploaded_tabular',
     'handle_uploaded_text',
     'sidebar_process_section',
     'finalize_corpus_load'
