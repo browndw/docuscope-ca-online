@@ -21,12 +21,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-from scipy.stats import pearsonr
 
 # Module-specific imports
 from webapp.utilities.core import app_core
 from webapp.utilities.state import ScatterplotKeys, SessionKeys
 from webapp.utilities.memory import optimize_dataframe_memory
+from webapp.utilities.analysis.correlation import pearson_correlation
 
 
 def plot_scatter(
@@ -410,7 +410,7 @@ def generate_scatterplot(
             df_pd = df_plot.to_pandas()
         else:
             df_pd = df_plot
-        cc = pearsonr(df_pd[xaxis], df_pd[yaxis])
+        cc = pearson_correlation(df_pd[xaxis], df_pd[yaxis])
         correlation_dict = {
             'all': {
                 'df': len(df_pd.index) - 2,
@@ -503,7 +503,7 @@ def generate_scatterplot_with_groups(
             df_pd = df_plot.to_pandas()
         else:
             df_pd = df_plot
-        cc = pearsonr(df_pd[xaxis], df_pd[yaxis])
+        cc = pearson_correlation(df_pd[xaxis], df_pd[yaxis])
         correlation_dict = {
             'all': {
                 'df': len(df_pd.index) - 2,
