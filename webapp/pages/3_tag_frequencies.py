@@ -11,9 +11,11 @@ Users can:
 import docuscospacy as ds
 import polars as pl
 import streamlit as st
+from time import perf_counter
 
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
+from webapp.utilities.configuration.logging_config import get_logger
 
 from webapp.utilities.analysis import (
     generate_tags_table, load_metadata
@@ -45,6 +47,31 @@ from webapp.menu import (
 
 TITLE = "Tag Frequencies"
 ICON = ":material/table_view:"
+SLOW_PAGE_OPERATION_MS = 100
+logger = get_logger()
+
+
+def _log_slow_tag_operation(
+    operation: str,
+    start_time: float,
+    session_id: str,
+    df=None,
+) -> None:
+    elapsed_ms = (perf_counter() - start_time) * 1000
+    if elapsed_ms < SLOW_PAGE_OPERATION_MS:
+        return
+
+    height = getattr(df, "height", 0) if df is not None else 0
+    width = getattr(df, "width", 0) if df is not None else 0
+    logger.warning(
+        "Slow tag frequency page step op={} session={} rows={} cols={} duration_ms={:.2f}",
+        operation,
+        session_id,
+        height,
+        width,
+        elapsed_ms,
+    )
+
 
 # Register persistent widgets for this page
 TAG_FREQUENCIES_PERSISTENT_WIDGETS = [
@@ -85,9 +112,13 @@ def render_tag_frequency_interface(
 ) -> None:
     """Render the tag frequency interface with tabs for table and plot."""
     try:
+        render_start = perf_counter()
         # Validate corpus data using the new manager
+        manager_start = perf_counter()
         manager = get_corpus_data_manager(user_session_id, CorpusKeys.TARGET)
-        if not manager.is_ready():
+        manager_ready = manager.is_ready()
+        _log_slow_tag_operation("manager_ready", manager_start, user_session_id)
+        if not manager_ready:
             st.error("Invalid session state. Please reload the page or reset your data.")
             return
 
@@ -97,13 +128,16 @@ def render_tag_frequency_interface(
             'tag_freq_filter_zero'
         ])
 
+        metadata_start = perf_counter()
         metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+        _log_slow_tag_operation("load_metadata", metadata_start, user_session_id)
 
         if not metadata_target:
             st.error("Could not load target corpus metadata.")
             return
 
         # Generate the tags table using the new system
+        tagset_start = perf_counter()
         df, tag_options, tag_radio, tag_type = tagset_selection(
             user_session_id=user_session_id,
             session_state=st.session_state,
@@ -113,6 +147,12 @@ def render_tag_frequency_interface(
             tag_filters=TAG_FILTERS_CONFIG,
             tag_radio_key="tt_radio",
             tag_type_key="tt_type_radio"
+        )
+        _log_slow_tag_operation(
+            f"tagset_selection tagset={tag_radio} subtype={tag_type or 'none'}",
+            tagset_start,
+            user_session_id,
+            df,
         )
 
         # Create tabs for table and plot display
@@ -132,7 +172,21 @@ def render_tag_frequency_interface(
 
         # Plot the tag frequencies in the second tab
         with tab2:
+            plot_start = perf_counter()
             render_tag_frequency_plot(df, metadata_target)
+            _log_slow_tag_operation(
+                "render_tag_frequency_plot",
+                plot_start,
+                user_session_id,
+                df,
+            )
+
+        _log_slow_tag_operation(
+            "render_tag_frequency_interface_total",
+            render_start,
+            user_session_id,
+            df,
+        )
 
     except Exception as e:
         st.error(f"Error loading tag frequency table: {str(e)}", icon=":material/error:")
@@ -162,7 +216,7 @@ def render_tag_frequency_plot(
 
     # Plot the tag frequencies bar chart
     fig = plot_tag_frequencies_bar(filtered_df, color=bar_color)
-    SafeComponentRenderer.safe_plotly_chart(fig, use_container_width=True)
+    SafeComponentRenderer.safe_plotly_chart(fig, width="stretch")
     plot_download_link(fig, filename="tag_frequency_plot.png")
 
 
