@@ -52,62 +52,52 @@ def get_quota_statistics():
     try:
         backend = get_session_backend()
 
+        if hasattr(backend, 'get_query_usage_stats_24h'):
+            usage_stats = backend.get_query_usage_stats_24h()
+            total_queries = usage_stats.get('total_queries_24h', 0)
+            total_users_with_queries = usage_stats.get('total_users_with_queries', 0)
+            avg_queries_per_user = (
+                round(total_queries / total_users_with_queries, 2)
+                if total_users_with_queries > 0 else 0
+            )
+            return {
+                'total_queries_24h': total_queries,
+                'total_users_with_queries': total_users_with_queries,
+                'avg_queries_per_user': avg_queries_per_user,
+                'community_api_load': total_queries,
+                'error': None
+            }
+
         # Get total usage across ALL users (not just authorized ones)
         # This gives us the true picture of community API key usage
         total_queries = 0
         unique_users = set()
 
-        # Query all shards to get complete usage data
-        if (
-            hasattr(backend, 'shard_manager') and
-            hasattr(backend.shard_manager, 'shard_count')
-        ):
-            # Sharded backend - check all shards
-            shard_count = backend.shard_manager.shard_count
-            for shard_id in range(shard_count):
-                try:
-                    # Use the shard manager to get connections
-                    session_pool = backend.shard_manager.session_pools[shard_id]
-                    with session_pool.get_connection() as conn:
-                        cursor = conn.cursor()
+        try:
+            with backend.get_analytics_connection() as conn:
+                cursor = conn.cursor()
 
-                        # Get total queries in last 24 hours from this shard
-                        cursor.execute("""
-                            SELECT COUNT(*), COUNT(DISTINCT user_id)
-                            FROM user_queries
-                            WHERE query_timestamp >= datetime('now', '-24 hours')
-                        """)
+                cursor.execute("""
+                    SELECT COUNT(*), COUNT(DISTINCT user_id)
+                    FROM user_queries
+                    WHERE query_timestamp >= datetime('now', '-24 hours')
+                """)
 
-                        result = cursor.fetchone()
-                        if result and result[0]:
-                            shard_queries = result[0]
+                result = cursor.fetchone()
+                if result:
+                    total_queries = result[0] or 0
 
-                            total_queries += shard_queries
+                cursor.execute("""
+                    SELECT DISTINCT user_id
+                    FROM user_queries
+                    WHERE query_timestamp >= datetime('now', '-24 hours')
+                """)
 
-                            # Get unique user IDs from this shard
-                            cursor.execute("""
-                                SELECT DISTINCT user_id
-                                FROM user_queries
-                                WHERE query_timestamp >= datetime('now', '-24 hours')
-                            """)
+                for row in cursor.fetchall():
+                    unique_users.add(row[0])
 
-                            for row in cursor.fetchall():
-                                unique_users.add(row[0])
-
-                except Exception as e:
-                    logger.error(f"Error reading shard {shard_id}: {e}")
-                    continue
-        else:
-            # Single database backend - use the session manager methods
-            try:
-                # For non-sharded backends, we need to access the database differently
-                # Let's use the backend's methods if available
-                logger.warning("Non-sharded backend detected - using fallback method")
-                # For now, return zero stats as this is primarily for enterprise mode
-                pass
-
-            except Exception as e:
-                logger.error(f"Error reading single database: {e}")
+        except Exception as e:
+            logger.error(f"Error reading quota statistics: {e}")
 
         # Calculate statistics
         total_users_with_queries = len(unique_users)
@@ -209,7 +199,7 @@ def render_user_management_tab():
     # Display table
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Email": st.column_config.TextColumn("Email", width="medium"),
@@ -624,7 +614,7 @@ def render_audit_log_tab():
 
         st.dataframe(
             audit_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Timestamp": st.column_config.TextColumn("Timestamp", width="medium"),
@@ -670,7 +660,7 @@ def render_system_info_tab():
             # Convert class name to readable format
             if backend_type == "InMemorySessionBackend":
                 backend_display = "MEMORY"
-            elif backend_type == "ShardedSQLiteSessionBackend":
+            elif backend_type == "SQLiteSessionBackend":
                 backend_display = "SQLITE"
             else:
                 backend_display = backend_type.upper()
@@ -834,7 +824,7 @@ def render_system_info_tab():
         backend_type = type(backend).__name__
         if backend_type == "InMemorySessionBackend":
             actual_backend = "memory"
-        elif backend_type == "ShardedSQLiteSessionBackend":
+        elif backend_type == "SQLiteSessionBackend":
             actual_backend = "sqlite"
         else:
             actual_backend = backend_type.lower()
@@ -870,7 +860,7 @@ def render_system_info_tab():
 
     st.dataframe(
         config_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Setting": st.column_config.TextColumn("Setting", width="medium"),
