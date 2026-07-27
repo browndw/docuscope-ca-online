@@ -6,12 +6,63 @@ generating formatted corpus information strings.
 """
 
 from collections import Counter
+from time import perf_counter
 import streamlit as st
+from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.session import validate_session_state, safe_session_get
 from webapp.utilities.session.metadata_handlers import load_metadata
 from webapp.utilities.ui.shared_utils import add_category_description
 from webapp.utilities.state import SessionKeys, MetadataKeys, CorpusKeys
 from webapp.utilities.common import get_doc_cats, safe_metadata_get
+
+
+SLOW_CORPUS_DISPLAY_MS = 50
+logger = get_logger()
+PROCESS_TARGET_PROBE_STAGE_KEY = "load_test_process_target_probe_stage"
+
+
+def _log_slow_corpus_display_step(
+    user_session_id: str,
+    step: str,
+    start_time: float,
+    has_reference: bool,
+) -> None:
+    """Log slow target/reference corpus display steps on the load page."""
+
+    elapsed_ms = (perf_counter() - start_time) * 1000
+    if elapsed_ms >= SLOW_CORPUS_DISPLAY_MS:
+        logger.warning(
+            (
+                "Slow corpus display session={} step={} has_reference={} "
+                "duration_ms={:.2f}"
+            ),
+            user_session_id,
+            step,
+            has_reference,
+            elapsed_ms,
+        )
+
+
+def _render_process_target_substep_marker(
+    user_session_id: str,
+    step: str,
+) -> None:
+    """Render test-only markers for split-ready load-target substep timing."""
+
+    probe_state = st.session_state.get(PROCESS_TARGET_PROBE_STAGE_KEY)
+    if not isinstance(probe_state, dict):
+        return
+
+    if probe_state.get("session_id") != user_session_id:
+        return
+
+    if probe_state.get("probe_mode") != "split_ready":
+        return
+
+    if probe_state.get("corpus_type") != CorpusKeys.TARGET:
+        return
+
+    st.caption(f"LOAD_TEST_PROCESS_TARGET_SUBSTEP:target:{step}")
 
 
 # Corpus information display functions
@@ -212,27 +263,51 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
 
     try:
         # Load target corpus metadata using the unified metadata handler
+        metadata_start = perf_counter()
         metadata_target = load_metadata(
             CorpusKeys.TARGET,
             user_session_id
         )
+        has_reference = safe_session_get(session, SessionKeys.HAS_REFERENCE, False) is True
+        _log_slow_corpus_display_step(
+            user_session_id,
+            "load_target_metadata",
+            metadata_start,
+            has_reference,
+        )
+        _render_process_target_substep_marker(user_session_id, "metadata_loaded")
 
         # Check if reference is loaded
-        has_reference = safe_session_get(session, SessionKeys.HAS_REFERENCE, False) is True
         if has_reference:
+            reference_start = perf_counter()
             metadata_reference = load_metadata(
                 CorpusKeys.REFERENCE,
                 user_session_id
             )
+            _log_slow_corpus_display_step(
+                user_session_id,
+                "load_reference_metadata",
+                reference_start,
+                has_reference,
+            )
 
         # Create tabs for Target and Reference
+        tabs_start = perf_counter()
         tab_labels = [":material/docs: Target corpus"]
         if has_reference:
             tab_labels.append(":material/text_compare: Reference corpus")
         tabs = st.tabs(tab_labels)
+        _log_slow_corpus_display_step(
+            user_session_id,
+            "create_tabs",
+            tabs_start,
+            has_reference,
+        )
+        _render_process_target_substep_marker(user_session_id, "tabs_created")
 
         # --- Target Tab ---
         with tabs[0]:
+            target_render_start = perf_counter()
             st.info(target_info(metadata_target))
             with st.expander(
                 label="Documents in target corpus:",
@@ -265,10 +340,27 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
                         session,
                         corpus_type="target")
                     st.data_editor(cat_df, hide_index=True, disabled=True)
+            _log_slow_corpus_display_step(
+                user_session_id,
+                "render_target_tab",
+                target_render_start,
+                has_reference,
+            )
+            _render_process_target_substep_marker(user_session_id, "target_tab_rendered")
 
         # --- Reference Tab (if loaded) ---
         if has_reference:
+            reference_render_start = perf_counter()
             display_reference_corpus_tab(tabs[1], metadata_reference, session)
+            _log_slow_corpus_display_step(
+                user_session_id,
+                "render_reference_tab",
+                reference_render_start,
+                has_reference,
+            )
+            _render_process_target_substep_marker(user_session_id, "reference_tab_rendered")
+
+        _render_process_target_substep_marker(user_session_id, "display_done")
 
     except Exception as e:
         st.error(f"Error loading corpus data: {str(e)}", icon=":material/error:")
