@@ -9,6 +9,7 @@ import sqlite3
 import pickle
 import threading
 import time
+import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -19,6 +20,33 @@ from webapp.config.unified import get_config
 from webapp.utilities.configuration.logging_config import get_logger
 
 logger = get_logger()
+SLOW_SQLITE_SESSION_SAVE_MS = 25
+
+
+def _sqlite_session_save_probe_enabled() -> bool:
+    """Return whether detailed SQLite session-save timing is enabled."""
+
+    return os.getenv("DOCUSCOPE_SQLITE_SESSION_SAVE_PROBE", "").strip() == "1"
+
+
+def _log_slow_sqlite_session_save(
+    session_id: str,
+    start_time: float,
+    detail: str,
+) -> None:
+    """Log slow SQLite session-save phases with a detailed timing breakdown."""
+
+    if not _sqlite_session_save_probe_enabled():
+        return
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    if elapsed_ms >= SLOW_SQLITE_SESSION_SAVE_MS:
+        logger.warning(
+            "Slow sqlite session save session={} {} duration_ms={:.2f}",
+            session_id,
+            detail,
+            elapsed_ms,
+        )
 
 
 class SQLiteConnectionPool:
@@ -191,6 +219,87 @@ class SQLiteSessionBackend:
 
             conn.commit()
 
+    def _session_artifact_root(self) -> Path:
+        """Return the root directory used for session-scoped corpus artifacts."""
+
+        return self.storage_path / "corpora"
+
+    def _collect_session_artifact_paths(self, data: Dict[str, Any]) -> list[Path]:
+        """Collect session-scoped file-backed artifact paths from persisted data."""
+
+        artifact_paths: list[Path] = []
+        artifact_root = self._session_artifact_root()
+
+        for corpus_key in ("target", "reference"):
+            corpus_state = data.get(corpus_key)
+            if not isinstance(corpus_state, dict):
+                continue
+
+            refs = corpus_state.get("_artifact_refs")
+            if not isinstance(refs, dict):
+                continue
+
+            for ref in refs.values():
+                if not isinstance(ref, dict):
+                    continue
+                if ref.get("storage_type") != "gzip_pickle":
+                    continue
+
+                path_value = ref.get("path")
+                if not path_value:
+                    continue
+
+                artifact_path = Path(path_value)
+                try:
+                    resolved_path = artifact_path.resolve(strict=False)
+                    resolved_root = artifact_root.resolve(strict=False)
+                    resolved_path.relative_to(resolved_root)
+                except Exception:
+                    continue
+
+                artifact_paths.append(artifact_path)
+
+        deduped_paths: list[Path] = []
+        seen_paths: set[Path] = set()
+        for path in artifact_paths:
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            deduped_paths.append(path)
+        return deduped_paths
+
+    def _cleanup_session_artifacts(self, artifact_paths: list[Path]) -> None:
+        """Remove session-scoped artifact files and empty parent directories."""
+
+        artifact_root = self._session_artifact_root()
+
+        for artifact_path in artifact_paths:
+            try:
+                if artifact_path.exists():
+                    artifact_path.unlink()
+
+                sidecar_path = artifact_path.with_name("metadata_descriptor.json")
+                if sidecar_path.exists():
+                    sidecar_path.unlink()
+
+                parent = artifact_path.parent
+                resolved_root = artifact_root.resolve(strict=False)
+                while parent.exists() and parent != artifact_root:
+                    try:
+                        parent.resolve(strict=False).relative_to(resolved_root)
+                    except Exception:
+                        break
+
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        break
+                    parent = parent.parent
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to clean session artifact {artifact_path}: {exc}"
+                )
+
     def save_session(self, session_id: str, data: Dict[str, Any],
                      user_id: str = None) -> bool:
         """
@@ -210,18 +319,33 @@ class SQLiteSessionBackend:
         bool
             True if saved successfully
         """
+        operation_start = time.perf_counter()
+        serialize_ms = 0.0
+        acquire_ms = 0.0
+        execute_ms = 0.0
+        commit_ms = 0.0
+        size_bytes = 0
         try:
+            from webapp.utilities.storage.cache_management import persistent_hash
+
             # Serialize data
+            serialize_start = time.perf_counter()
             serialized_data = pickle.dumps(data)
+            serialize_ms = (time.perf_counter() - serialize_start) * 1000
             size_bytes = len(serialized_data)
+
+            stored_user_id = persistent_hash(user_id) if user_id else None
 
             # Calculate expiration (24 hours from now)
             expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
+            acquire_start = time.perf_counter()
             with self.pool.get_connection() as conn:
+                acquire_ms = (time.perf_counter() - acquire_start) * 1000
                 cursor = conn.cursor()
 
                 # Upsert session data
+                execute_start = time.perf_counter()
                 cursor.execute("""
                     INSERT OR REPLACE INTO sessions
                     (session_id, user_id, data, expires_at, size_bytes, access_count)
@@ -229,14 +353,39 @@ class SQLiteSessionBackend:
                         COALESCE(
                             (SELECT access_count FROM sessions WHERE session_id = ?), 0
                         ) + 1)
-                """, (session_id, user_id, serialized_data, expires_at,
+                """, (session_id, stored_user_id, serialized_data, expires_at,
                       size_bytes, session_id))
+                execute_ms = (time.perf_counter() - execute_start) * 1000
 
+                commit_start = time.perf_counter()
                 conn.commit()
+                commit_ms = (time.perf_counter() - commit_start) * 1000
+                _log_slow_sqlite_session_save(
+                    session_id,
+                    operation_start,
+                    (
+                        f"serialize_ms={serialize_ms:.2f} "
+                        f"acquire_ms={acquire_ms:.2f} "
+                        f"execute_ms={execute_ms:.2f} "
+                        f"commit_ms={commit_ms:.2f} "
+                        f"size_bytes={size_bytes}"
+                    ),
+                )
                 return True
 
         except Exception as e:
             logger.error(f"Failed to save session {session_id}: {e}")
+            _log_slow_sqlite_session_save(
+                session_id,
+                operation_start,
+                (
+                    f"serialize_ms={serialize_ms:.2f} "
+                    f"acquire_ms={acquire_ms:.2f} "
+                    f"execute_ms={execute_ms:.2f} "
+                    f"commit_ms={commit_ms:.2f} "
+                    f"size_bytes={size_bytes}"
+                ),
+            )
             return False
 
     def load_session(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -286,8 +435,19 @@ class SQLiteSessionBackend:
     def delete_session(self, session_id: str) -> bool:
         """Delete session and associated data."""
         try:
+            artifact_paths: list[Path] = []
             with self.pool.get_connection() as conn:
                 cursor = conn.cursor()
+
+                cursor.execute(
+                    "SELECT data FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                )
+                stored_session = cursor.fetchone()
+                if stored_session:
+                    artifact_paths = self._collect_session_artifact_paths(
+                        pickle.loads(stored_session[0])
+                    )
 
                 # Delete associated query records first
                 cursor.execute(
@@ -300,6 +460,7 @@ class SQLiteSessionBackend:
                 )
 
                 conn.commit()
+                self._cleanup_session_artifacts(artifact_paths)
                 return True
 
         except Exception as e:
@@ -389,15 +550,23 @@ class SQLiteSessionBackend:
     def cleanup_expired_sessions(self) -> int:
         """Clean up expired sessions and old query logs."""
         try:
+            artifact_paths: list[Path] = []
             with self.pool.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Get expired session IDs first
                 cursor.execute(
-                    "SELECT session_id FROM sessions "
+                    "SELECT session_id, data FROM sessions "
                     "WHERE expires_at <= CURRENT_TIMESTAMP"
                 )
-                expired_sessions = [row[0] for row in cursor.fetchall()]
+                expired_rows = cursor.fetchall()
+                expired_sessions = [row[0] for row in expired_rows]
+                for _, serialized_data in expired_rows:
+                    artifact_paths.extend(
+                        self._collect_session_artifact_paths(
+                            pickle.loads(serialized_data)
+                        )
+                    )
 
                 # Delete expired session queries
                 if expired_sessions:
@@ -423,6 +592,7 @@ class SQLiteSessionBackend:
                 queries_deleted = cursor.rowcount
 
                 conn.commit()
+                self._cleanup_session_artifacts(artifact_paths)
 
                 if sessions_deleted > 0 or queries_deleted > 0:
                     logger.info(
@@ -435,6 +605,16 @@ class SQLiteSessionBackend:
         except Exception as e:
             logger.error(f"Failed to cleanup expired sessions: {e}")
             return 0
+
+    def get_health_connection(self):
+        """Return a shared connection context for runtime-config and health data."""
+
+        return self.pool.get_connection()
+
+    def get_analytics_connection(self):
+        """Return a shared connection context for analytics queries."""
+
+        return self.pool.get_connection()
 
     def get_session_stats(self) -> Dict[str, Any]:
         """Get database statistics for monitoring."""
@@ -482,6 +662,20 @@ class SQLiteSessionBackend:
         except Exception as e:
             logger.error(f"Failed to get session stats: {e}")
             return {}
+
+    def health_check(self) -> Dict[str, Any]:
+        """Perform a lightweight health check for the SQLite backend."""
+
+        stats = self.get_session_stats()
+        return {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'overall_healthy': bool(stats),
+            'backend_type': 'sqlite',
+            'database_size_bytes': stats.get('database_size_bytes', 0),
+            'active_sessions': stats.get('active_sessions', 0),
+            'pool_size': stats.get('pool_size', 0),
+            'pool_available': stats.get('pool_available', 0),
+        }
 
     def _start_cleanup_thread(self):
         """Start background thread for periodic cleanup."""
