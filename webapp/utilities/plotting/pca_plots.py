@@ -12,12 +12,32 @@ import numpy as np
 import streamlit as st
 import docuscospacy as ds
 import plotly.graph_objects as go
-from sklearn import decomposition
 
 # Import session utilities
 from webapp.utilities.core import app_core
 from webapp.utilities.state import PCAKeys, SessionKeys
 from webapp.utilities.memory import lazy_computation
+
+
+def _pca_scores_components_variance(values: np.ndarray, n_components: int) -> tuple:
+    centered = values - values.mean(axis=0, keepdims=True)
+    u_matrix, singular_values, components = np.linalg.svd(centered, full_matrices=False)
+    component_signs = np.sign(
+        components[np.arange(components.shape[0]), np.abs(components).argmax(axis=1)]
+    )
+    component_signs[component_signs == 0] = 1
+    components *= component_signs[:, np.newaxis]
+    u_matrix *= component_signs[np.newaxis, :]
+
+    scores = u_matrix[:, :n_components] * singular_values[:n_components]
+    components = components[:n_components]
+    variance = singular_values ** 2
+    total_variance = variance.sum()
+    if total_variance == 0:
+        explained_variance_ratio = np.zeros(n_components)
+    else:
+        explained_variance_ratio = variance[:n_components] / total_variance
+    return scores, components, explained_variance_ratio
 
 
 def plot_pca_scatter_highlight(
@@ -273,7 +293,7 @@ def generate_pca(
         )
         return
 
-    # --- Convert to pandas only if needed for scikit-learn and use caching ---
+    # --- Convert to pandas only if needed for PCA and use caching ---
     try:
         pca_df, contrib_df, ve = _compute_pca_with_caching(df, grouping, user_session_id)
     except Exception as e:
@@ -331,8 +351,10 @@ def pca_contributions(
     """
     df = dtm.set_index('doc_id')
     n = min(len(df.index), len(df.columns))
-    pca = decomposition.PCA(n_components=n)
-    pca_result = pca.fit_transform(df.values)
+    pca_result, components, explained_variance_ratio = _pca_scores_components_variance(
+        df.values,
+        n,
+    )
     pca_df = pd.DataFrame(pca_result)
     pca_df.columns = ['PC' + str(col + 1) for col in pca_df.columns]
 
@@ -340,7 +362,7 @@ def pca_contributions(
     contrib = []
 
     for i in range(0, len(sdev)):
-        coord = pca.components_[i] * sdev.iloc[i]
+        coord = components[i] * sdev.iloc[i]
         polarity = np.divide(coord, abs(coord))
         coord = np.square(coord)
         coord = np.divide(coord, sum(coord))*100
@@ -353,7 +375,7 @@ def pca_contributions(
     if len(doccats) > 0:
         pca_df['Group'] = doccats
     pca_df['doc_id'] = list(df.index)
-    ve = np.array(pca.explained_variance_ratio_).tolist()
+    ve = explained_variance_ratio.tolist()
 
     return pca_df, contrib_df, ve
 
