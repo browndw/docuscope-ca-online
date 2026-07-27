@@ -166,7 +166,7 @@ def render_table_generation_interface(
         label=button_label,
         icon=":material/manufacturing:",
         type="secondary",
-        use_container_width=False
+        width="content"
     ):
         with st.spinner(f"Generating {table_type}..."):
             generation_func(user_session_id)
