@@ -177,9 +177,9 @@ class SafeComponentRenderer:
         """Safely render plotly chart with fallback."""
         try:
             if fig is not None:
-                # Set default use_container_width if not specified
-                if 'use_container_width' not in kwargs:
-                    kwargs['use_container_width'] = True
+                # Set default width if not specified
+                if 'width' not in kwargs:
+                    kwargs['width'] = 'stretch'
                 st.plotly_chart(fig, **kwargs)
             else:
                 st.info(fallback_message)
