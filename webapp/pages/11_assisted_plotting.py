@@ -3,9 +3,7 @@ This app provides an interface for AI-assisted plotting
 from a loaded target corpus. Users can interact with Plotbot to create
 and refine plots based on their data.
 
-Users can:
-- Select a plotting library (Plotly, Matplotlib, Seaborn)
-- Interact with Plotbot to generate and refine plots
+Users can interact with Plotbot to generate and refine Plotly Express plots.
 """
 
 import base64
@@ -30,7 +28,15 @@ from webapp.utilities.ai import (
     render_data_selection_interface, render_data_preview_controls,
     render_quota_tracker, should_show_api_key_input,
     render_work_preservation_interface, should_show_work_preservation_interface,
-    export_conversation_history, clear_plotbot_table
+    export_conversation_history, clear_plotbot_table,
+    prune_message_thread
+)
+from webapp.utilities.ai.providers import get_openai_compatible_provider_config
+from webapp.persistence import registry_service
+from webapp.queue import (
+    enqueue_plotbot_generation,
+    get_queue,
+    get_redis_queue_config,
 )
 from webapp.utilities.analysis import (
     generate_tags_table
@@ -62,35 +68,185 @@ LLM_MODEL = AI_CONFIG['model']
 LLM_PARAMS = AI_CONFIG['parameters']
 QUOTA = AI_CONFIG['quota']
 
-# Register persistent widgets for this page
-app_core.register_page_widgets(["plot_radio"])
+PLOTBOT_QUEUE_STATE_KEY = "plotbot_queue_state"
+PLOTBOT_LIBRARY = "plotly.express"
 
 
-def render_plotting_library_selection(user_session_id: str) -> str:
-    """Render the plotting library selection interface."""
-    st.markdown(
-        body="### Plotting Library",
-        help=(
-            "To create plots, I can use the following libraries:\n\n"
-            "* [Plotly express](https://plotly.com/python/plotly-express/)\n"
-            "* [Matplotlib](https://matplotlib.org/)\n"
-            "* [Seaborn](https://seaborn.pydata.org/)\n\n"
-            "Each library has its own aesthetics and features. "
-            "If you're unfamiliar with them, you should check out their "
-            "documentation, as well as examples of their use."
+def _get_plotbot_queue_state(user_session_id: str) -> dict | None:
+    """Return pending Plotbot queue state for this Streamlit session."""
+    queue_state = st.session_state.get(PLOTBOT_QUEUE_STATE_KEY)
+    if not isinstance(queue_state, dict):
+        return None
+    if queue_state.get("session_id") != user_session_id:
+        return None
+    return queue_state
+
+
+def _clear_plotbot_queue_state(user_session_id: str) -> None:
+    """Clear pending Plotbot queue state for this Streamlit session."""
+    if _get_plotbot_queue_state(user_session_id) is not None:
+        st.session_state.pop(PLOTBOT_QUEUE_STATE_KEY, None)
+
+
+def _has_local_plotbot_provider() -> bool:
+    """Return True when Plotbot can use a configured local model provider."""
+    return get_openai_compatible_provider_config() is not None
+
+
+def _dataframe_to_plotbot_records(df) -> list[dict[str, object]]:
+    """Convert a selected Plotbot dataframe to JSON-friendly row records."""
+    if hasattr(df, "to_pandas"):
+        df = df.to_pandas()
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
+def _append_queued_plotbot_result(user_session_id: str, artifact_id: int) -> bool:
+    """Attach a completed queued Plotbot JSON result to the chat state."""
+    artifact = registry_service.get_artifact_by_id(artifact_id)
+    if artifact is None:
+        return False
+
+    payload = registry_service.load_json_artifact(artifact)
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if not isinstance(result, dict):
+        return False
+
+    if result.get("result_type") != "plot":
+        error_message = result.get("error") or "Plotbot did not generate a plot."
+        st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
+            {"role": "assistant", "type": "error", "value": error_message}
         )
+        st.session_state[user_session_id]["plotbot"].append(
+            {"role": "assistant", "type": "error", "value": error_message}
+        )
+        prune_message_thread(user_session_id, SessionKeys.AI_PLOTBOT_CHAT)
+        prune_message_thread(user_session_id, "plotbot")
+        return True
+
+    plot_code = result.get("code")
+    if isinstance(plot_code, str) and plot_code.strip():
+        code_message = {"role": "assistant", "type": "code", "value": plot_code}
+        st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT].append(code_message)
+        st.session_state[user_session_id]["plotbot"].append(code_message)
+
+    plot_svg = result.get("plot_svg")
+    if isinstance(plot_svg, str) and plot_svg.strip():
+        st.session_state[user_session_id]["plotbot_plot_svg"] = plot_svg
+        st.session_state[user_session_id]["plotbot"].append(
+            {"role": "assistant", "type": "plot_svg", "value": plot_svg}
+        )
+
+    prune_message_thread(user_session_id, SessionKeys.AI_PLOTBOT_CHAT)
+    prune_message_thread(user_session_id, "plotbot")
+    return True
+
+
+def _submit_plotbot_job(
+    user_session_id: str,
+    df,
+    plot_lib: str,
+    user_input: str,
+    api_key: str,
+    llm_params: dict,
+    code_chunk: str | None,
+    user_email: str,
+) -> None:
+    """Submit Plotbot generation to Redis/RQ and store pending state."""
+    if df is None:
+        error_message = "No plot was generated. Please select a table first."
+        st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
+            {"role": "assistant", "type": "error", "value": error_message}
+        )
+        st.session_state[user_session_id]["plotbot"].append(
+            {"role": "assistant", "type": "error", "value": error_message}
+        )
+        prune_message_thread(user_session_id, SessionKeys.AI_PLOTBOT_CHAT)
+        prune_message_thread(user_session_id, "plotbot")
+        return
+
+    dataframe_records = _dataframe_to_plotbot_records(df)
+    schema = df.dtypes.to_string() if hasattr(df, "dtypes") else str(type(df))
+    result = enqueue_plotbot_generation(
+        dataframe_records=dataframe_records,
+        plot_lib=plot_lib,
+        user_input=user_input,
+        llm_params=llm_params,
+        schema=schema,
+        code_chunk=code_chunk,
+        api_key=api_key,
+        requester_principal_id=user_email or "anonymous",
     )
 
-    plot_lib = st.radio(
-        "Select the plotting library:",
-        ("plotly.express", "matplotlib", "seaborn"),
-        key="plot_radio",
-        on_change=clear_plotbot,
-        args=(user_session_id, False,),
-        horizontal=True
-    )
+    if result.state == "ready" and result.artifact_id is not None:
+        _clear_plotbot_queue_state(user_session_id)
+        if _append_queued_plotbot_result(user_session_id, result.artifact_id):
+            st.rerun()
+        st.error("Ready Plotbot result could not be attached. Please retry.")
+        return
 
-    return plot_lib
+    st.session_state[PLOTBOT_QUEUE_STATE_KEY] = {
+        "session_id": user_session_id,
+        "control_plane_job_id": result.control_plane_job_id,
+        "rq_job_id": result.rq_job_id,
+        "artifact_id": result.artifact_id,
+    }
+    st.rerun()
+
+
+@st.fragment(run_every="2s")
+def _render_plotbot_queue_status(user_session_id: str) -> None:
+    """Poll queued Plotbot status and attach the serialized result."""
+    queue_state = _get_plotbot_queue_state(user_session_id)
+    if queue_state is None:
+        return
+
+    control_plane_job_id = queue_state.get("control_plane_job_id")
+    rq_job_id = queue_state.get("rq_job_id")
+    if not isinstance(rq_job_id, str) or not rq_job_id:
+        if isinstance(control_plane_job_id, int):
+            rq_job_id = f"plotbot-{control_plane_job_id}"
+            queue_state["rq_job_id"] = rq_job_id
+            st.session_state[PLOTBOT_QUEUE_STATE_KEY] = queue_state
+        else:
+            rq_job_id = None
+
+    if control_plane_job_id is None:
+        _clear_plotbot_queue_state(user_session_id)
+        st.warning("Queued Plotbot job state was incomplete. Please try again.")
+        return
+
+    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    if job_row is None:
+        _clear_plotbot_queue_state(user_session_id)
+        st.warning("Queued Plotbot job could not be found. Please try again.")
+        return
+
+    if job_row.status == "completed" and job_row.artifact_id is not None:
+        if _append_queued_plotbot_result(user_session_id, job_row.artifact_id):
+            _clear_plotbot_queue_state(user_session_id)
+            st.rerun()
+        _clear_plotbot_queue_state(user_session_id)
+        st.error("Completed Plotbot result could not be attached. Please retry.")
+        return
+
+    if job_row.status == "failed":
+        _clear_plotbot_queue_state(user_session_id)
+        st.error(f"Plotbot generation failed: {job_row.failure_reason}")
+        return
+
+    rq_status = "unknown"
+    if rq_job_id:
+        try:
+            rq_job = get_queue().fetch_job(rq_job_id)
+            if rq_job is not None:
+                rq_status = str(getattr(rq_job.get_status(), "value", rq_job.get_status()))
+        except Exception:
+            rq_status = "unavailable"
+
+    st.status(
+        f"Generating plot in the background... ({job_row.status}, queue: {rq_status})",
+        state="running",
+    )
 
 
 def render_plotbot_chat_interface(
@@ -115,6 +271,19 @@ def render_plotbot_chat_interface(
                 st.code(message["value"], language="python")
             elif message["type"] == "error":
                 st.error(message["value"], icon=":material/error:")
+            elif message["type"] == "plot_svg":
+                try:
+                    svg_value = message["value"]
+                    st.image(svg_value)
+                    b64 = base64.b64encode(svg_value.encode("utf-8")).decode()
+                    href = (f'<a href="data:image/svg+xml;base64,{b64}" '
+                            'download="plot.svg">Download SVG</a>')
+                    st.markdown(href, unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(
+                        f"Failed to render plot: {str(e)}",
+                        icon=":material/error:"
+                    )
             elif message["type"] == "plot":
                 # Handle different plot types with safe rendering
                 if plot_lib in ["matplotlib", "seaborn"]:
@@ -159,8 +328,18 @@ def render_plotbot_chat_interface(
                             icon=":material/error:"
                         )
 
+    if _get_plotbot_queue_state(user_session_id) is not None:
+        _render_plotbot_queue_status(user_session_id)
+        return
+
     # Get last code chunk
     last_code = previous_code_chunk(st.session_state[user_session_id]["plotbot"])
+    queue_enabled = get_redis_queue_config().enabled
+    try:
+        user_email = (st.user.email if hasattr(st, 'user') and st.user and
+                      hasattr(st.user, 'email') else 'anonymous')
+    except Exception:
+        user_email = 'anonymous'
 
     # Chat input
     if last_code is None or len(last_code) == 0:
@@ -180,18 +359,30 @@ def render_plotbot_chat_interface(
                 else:
                     st.session_state[user_session_id][prompt_count_key] += 1
 
-                # Generate response
-                plotbot_user_query(
-                    session_id=user_session_id,
-                    df=df_pandas,
-                    plot_lib=plot_lib,
-                    user_input=input_prompt,
-                    api_key=api_key,
-                    llm_params=LLM_PARAMS,
-                    code_chunk=last_code,
-                    prompt_position=st.session_state[user_session_id][prompt_count_key],
-                    cache_mode=get_runtime_setting('cache_mode', False, 'cache')
-                )
+                if queue_enabled:
+                    _submit_plotbot_job(
+                        user_session_id=user_session_id,
+                        df=df_pandas,
+                        plot_lib=plot_lib,
+                        user_input=input_prompt,
+                        api_key=api_key,
+                        llm_params=LLM_PARAMS,
+                        code_chunk=last_code,
+                        user_email=user_email,
+                    )
+                else:
+                    # Generate response
+                    plotbot_user_query(
+                        session_id=user_session_id,
+                        df=df_pandas,
+                        plot_lib=plot_lib,
+                        user_input=input_prompt,
+                        api_key=api_key,
+                        llm_params=LLM_PARAMS,
+                        code_chunk=last_code,
+                        prompt_position=st.session_state[user_session_id][prompt_count_key],
+                        cache_mode=get_runtime_setting('cache_mode', False, 'cache')
+                    )
                 st.rerun()
     else:
         # Show refinement input
@@ -204,20 +395,32 @@ def render_plotbot_chat_interface(
                 )
                 st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_PROMPT_COUNT] += 1
 
-                # Generate refined response
-                plotbot_user_query(
-                    session_id=user_session_id,
-                    df=df_pandas,
-                    plot_lib=plot_lib,
-                    user_input=input_refine,
-                    api_key=api_key,
-                    llm_params=LLM_PARAMS,
-                    code_chunk=last_code,
-                    prompt_position=st.session_state[user_session_id][
-                        SessionKeys.AI_PLOTBOT_PROMPT_COUNT
-                    ],
-                    cache_mode=get_runtime_setting('cache_mode', False, 'cache')
-                )
+                if queue_enabled:
+                    _submit_plotbot_job(
+                        user_session_id=user_session_id,
+                        df=df_pandas,
+                        plot_lib=plot_lib,
+                        user_input=input_refine,
+                        api_key=api_key,
+                        llm_params=LLM_PARAMS,
+                        code_chunk=last_code,
+                        user_email=user_email,
+                    )
+                else:
+                    # Generate refined response
+                    plotbot_user_query(
+                        session_id=user_session_id,
+                        df=df_pandas,
+                        plot_lib=plot_lib,
+                        user_input=input_refine,
+                        api_key=api_key,
+                        llm_params=LLM_PARAMS,
+                        code_chunk=last_code,
+                        prompt_position=st.session_state[user_session_id][
+                            SessionKeys.AI_PLOTBOT_PROMPT_COUNT
+                        ],
+                        cache_mode=get_runtime_setting('cache_mode', False, 'cache')
+                    )
                 st.rerun()
 
 
@@ -235,27 +438,36 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
         except Exception:
             user_email = session.get('user_email', 'anonymous')
 
-        # Get API key first
-        api_key = get_api_key(user_session_id, DESKTOP, CACHE, QUOTA)
+        local_provider_available = _has_local_plotbot_provider()
+        api_key = "" if local_provider_available else get_api_key(
+            user_session_id, DESKTOP, CACHE, QUOTA
+        )
+        model_available = local_provider_available or bool(api_key)
 
         # Check if we should show API key input based on quota and current key status
         has_user_key = (
+            not local_provider_available and
             api_key is not None and
             st.session_state[user_session_id].get(SessionKeys.AI_USER_KEY) is not None
         )
 
-        # Render quota tracker in sidebar (for online mode)
-        if not has_user_key:
+        # Render quota tracker only for hosted/community API-key mode.
+        if not local_provider_available and not has_user_key:
             render_quota_tracker(user_email)
 
         # Check if we should show work preservation interface first
-        show_work_preservation = should_show_work_preservation_interface(
-            user_email, user_session_id, has_user_key, "plotbot"
+        show_work_preservation = (
+            not local_provider_available and
+            should_show_work_preservation_interface(
+                user_email, user_session_id, has_user_key, "plotbot"
+            )
         )
 
         # Only show API key input if work preservation is not needed
         show_api_input = (
+            not local_provider_available and
             should_show_api_key_input(user_email, has_user_key) and
+            not model_available and
             not show_work_preservation
         )
 
@@ -275,10 +487,13 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
         if show_work_preservation:
             # Show work preservation interface when quota is exhausted but user has work
             render_work_preservation_interface(user_session_id, user_email, "plotbot")
-        elif show_api_input:
+        elif show_api_input and not safe_session_get(session, SessionKeys.TAGS_TABLE, False):
             # Show API key input when no work preservation needed
             render_api_key_input(user_session_id)
-        elif api_key:
+        else:
+            if show_api_input:
+                render_api_key_input(user_session_id)
+
             # Add chat controls to sidebar
             st.sidebar.markdown(
                 body="### Chat Controls",
@@ -378,17 +593,12 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                     st.session_state[user_session_id].pop('plotbot_df', None)
                     st.session_state[user_session_id].pop('plotbot_query', None)
 
-                # Plotting library selection
-                plot_lib = render_plotting_library_selection(user_session_id)
-
-                st.session_state[user_session_id]['plotbot_library'] = plot_lib
+                st.session_state[user_session_id]['plotbot_library'] = PLOTBOT_LIBRARY
 
             # Chat interface
             df = st.session_state[user_session_id].get('plotbot_df', None)
             selected_query = st.session_state[user_session_id].get('plotbot_query', None)
-            plot_lib = st.session_state[user_session_id].get(
-                'plotbot_library', 'plotly.express'
-                )
+            plot_lib = PLOTBOT_LIBRARY
 
             if last_code is not None and len(last_code) > 0:
                 st.markdown(
@@ -411,9 +621,15 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
                     icon=":material/info:"
                 )
 
-            render_plotbot_chat_interface(
-                user_session_id, api_key, df, selected_query, plot_lib
-            )
+            if model_available:
+                render_plotbot_chat_interface(
+                    user_session_id, api_key or "", df, selected_query, plot_lib
+                )
+            elif selected_query:
+                st.info(
+                    "Enter an OpenAI API key or configure a local model provider to generate plots.",  # noqa: E501
+                    icon=":material/info:"
+                )
 
     except Exception as e:
         st.error(f"Error loading Plotbot interface: {str(e)}", icon=":material/error:")
@@ -443,9 +659,6 @@ def main():
 
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
-
-    # Register persistent widgets for this page
-    app_core.register_page_widgets(["plot_radio"])
 
     # Add help link
     sidebar_help_link("assisted-plotting.html")
