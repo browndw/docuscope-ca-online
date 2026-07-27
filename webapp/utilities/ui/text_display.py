@@ -430,7 +430,7 @@ def render_document_interface(
         if error_message:
             st.error(error_message)
         elif should_show_plot and fig:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             plot_download_link(fig, filename="tag_density_plot.png")
         else:
             st.info("Click 'Tag Density Plot' in the sidebar to generate the plot.")
