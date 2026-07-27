@@ -6,10 +6,54 @@ session state across the application.
 """
 
 import streamlit as st
+from time import perf_counter
+
+from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.session.session_persistence import (
     load_persistent_session,
     auto_persist_session
 )
+
+
+SLOW_GET_OR_INIT_SESSION_MS = 50
+_SESSION_DICT_CACHE: dict[str, tuple[int, dict]] = {}
+logger = get_logger()
+
+
+def _log_slow_get_or_init_session(
+    session_id: str,
+    source: str,
+    start_time: float,
+) -> None:
+    """Log slow user-session bootstrap on page entry."""
+
+    elapsed_ms = (perf_counter() - start_time) * 1000
+    if elapsed_ms >= SLOW_GET_OR_INIT_SESSION_MS:
+        logger.warning(
+            "Slow get_or_init_user_session session={} source={} duration_ms={:.2f}",
+            session_id,
+            source,
+            elapsed_ms,
+        )
+
+
+def _normalize_session_payload(session_id: str, session_raw: object) -> dict:
+    """Return a normalized session dict while avoiding repeated frame conversion."""
+
+    if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
+        session_raw_id = id(session_raw)
+        cached = _SESSION_DICT_CACHE.get(session_id)
+        if cached and cached[0] == session_raw_id:
+            return cached[1].copy()
+
+        session_data = session_raw.to_dict(as_series=False)
+        _SESSION_DICT_CACHE[session_id] = (session_raw_id, session_data)
+        return session_data.copy()
+
+    _SESSION_DICT_CACHE.pop(session_id, None)
+    if isinstance(session_raw, dict):
+        return session_raw
+    return {}
 
 
 def ensure_session_loaded(session_id: str) -> bool:
@@ -250,28 +294,24 @@ def get_or_init_user_session() -> tuple[str, dict]:
     tuple[str, dict]
         The user session ID and the session dictionary.
     """
+    start_time = perf_counter()
     user_session = st.runtime.scriptrunner_utils.script_run_context.get_script_run_ctx()
     user_session_id = user_session.session_id
+    source = "existing"
 
     if user_session_id not in st.session_state:
         st.session_state[user_session_id] = {}
+        source = "new_state_bucket"
 
     try:
         session_raw = st.session_state[user_session_id]["session"]
-        # Handle both DataFrame and dict cases (unified session management)
-        if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
-            # It's a Polars DataFrame (has both to_dict and columns attributes)
-            session = session_raw.to_dict(as_series=False)
-        else:
-            # It's already a dictionary or other object
-            session = session_raw if isinstance(session_raw, dict) else {}
+        session = _normalize_session_payload(user_session_id, session_raw)
     except KeyError:
         from webapp.utilities.session.session_core import init_session
         init_session(user_session_id)
+        source = "init_session"
         session_raw = st.session_state[user_session_id]["session"]
-        if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
-            session = session_raw.to_dict(as_series=False)
-        else:
-            session = session_raw if isinstance(session_raw, dict) else {}
+        session = _normalize_session_payload(user_session_id, session_raw)
 
+    _log_slow_get_or_init_session(user_session_id, source, start_time)
     return user_session_id, session
