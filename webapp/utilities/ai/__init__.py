@@ -7,7 +7,6 @@ safe code execution, and AI-assisted plotting functionality.
 The module is organized as follows:
 - llm_core: Shared utilities for all AI assistants
 - plotbot: Iterative plotting assistant
-- pandabot: PandasAI-based analysis and plotting assistant
 - code_execution: Safe code execution utilities
 """
 
@@ -49,6 +48,12 @@ from webapp.utilities.ai.enterprise_integration import (
     get_circuit_breaker_status,
     reset_circuit_breakers
 )
+from webapp.utilities.ai.providers import (
+    ChatCompletionProvider,
+    OpenAICompatibleChatProvider,
+    ProtectedOpenAIChatProvider,
+    get_default_chat_provider
+)
 
 # Import core LLM utilities (non-circular)
 from webapp.utilities.ai.llm_core import (
@@ -68,18 +73,28 @@ from webapp.utilities.ai.llm_core import (
 from webapp.utilities.ai.plotbot import (
     clear_plotbot,
     clear_plotbot_table,
+    PlotbotServiceResult,
+    PlotbotSerializedResult,
     make_plotbot_cache_key,
     plotbot_code_generate_or_update,
     plotbot_code_execute,
+    run_plotbot_service,
+    run_plotbot_serialized_service,
+    generate_plotbot_code_and_result,
     generate_plotbot_code_and_plot,
     plotbot_user_query
 )
 
-# Import pandabot-specific functions
-from webapp.utilities.ai.pandabot import (
-    clear_pandasai,
-    clear_pandasai_table,
-    pandabot_user_query
+# Import interpretation assistant functions
+from webapp.utilities.ai.interpretation import (
+    DEFAULT_TEACHING_LENS,
+    InterpretationEvidence,
+    InterpretationServiceResult,
+    build_interpretation_evidence,
+    build_interpretation_prompt,
+    get_teaching_lens_label,
+    get_teaching_lens_options,
+    run_interpretation_service
 )
 
 # Import code execution utilities
@@ -136,19 +151,35 @@ __all__ = [
     'get_circuit_breaker_status',
     'reset_circuit_breakers',
 
+    # Model provider boundary
+    'ChatCompletionProvider',
+    'OpenAICompatibleChatProvider',
+    'ProtectedOpenAIChatProvider',
+    'get_default_chat_provider',
+
     # Plotbot functions
     'clear_plotbot',
     'clear_plotbot_table',
+    'PlotbotServiceResult',
+    'PlotbotSerializedResult',
     'plotbot_user_query',
     'make_plotbot_cache_key',
     'plotbot_code_generate_or_update',
     'plotbot_code_execute',
+    'run_plotbot_service',
+    'run_plotbot_serialized_service',
+    'generate_plotbot_code_and_result',
     'generate_plotbot_code_and_plot',
 
-    # Pandabot functions
-    'clear_pandasai',
-    'clear_pandasai_table',
-    'pandabot_user_query',
+    # Interpretation assistant functions
+    'DEFAULT_TEACHING_LENS',
+    'InterpretationEvidence',
+    'InterpretationServiceResult',
+    'build_interpretation_evidence',
+    'build_interpretation_prompt',
+    'get_teaching_lens_label',
+    'get_teaching_lens_options',
+    'run_interpretation_service',
 
     # Code execution utilities
     'is_code_safe',
