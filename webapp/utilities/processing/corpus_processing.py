@@ -5,8 +5,12 @@ This module provides functions for processing internal corpora, external corpora
 newly uploaded text, and corpus finalization.
 """
 
+import gzip
+import hashlib
 import os
-import io
+import pickle
+from pathlib import Path
+from time import perf_counter
 import unidecode
 import polars as pl
 import streamlit as st
@@ -15,12 +19,28 @@ import docuscospacy as ds
 # Module-specific imports
 from webapp.utilities.processing.corpus_loading import load_corpus_internal, load_corpus_new
 from webapp.utilities.session import (
-    init_metadata_target, init_metadata_reference
+    build_corpus_metadata_descriptor,
+    init_metadata_target,
+    init_metadata_reference,
+    set_session_persistence_policy,
+    write_metadata_descriptor_sidecar,
 )
-from webapp.utilities.analysis.data_validation import check_language, check_corpus_external, check_corpus_new  # noqa: E501
-from webapp.utilities.state import LoadCorpusKeys, SessionKeys
+from webapp.utilities.session.session_persistence import (
+    auto_persist_session,
+    mark_session_dirty,
+)
+from webapp.utilities.analysis.data_validation import check_corpus_external, check_corpus_new  # noqa: E501
+from webapp.utilities.state import (
+    CorpusPersistencePolicy,
+    LoadCorpusKeys,
+    SessionKeys,
+)
 from webapp.utilities.corpus import get_corpus_manager
 from webapp.utilities.core import app_core
+from webapp.utilities.configuration.logging_config import get_logger
+from webapp.config.unified import get_config
+from webapp.persistence import registry_service
+from webapp.persistence.registry import FREQUENCY_ARTIFACT_TYPE
 
 # Warning constants for corpus processing
 WARNING_CORRUPT_TARGET = 10
@@ -28,11 +48,227 @@ WARNING_CORRUPT_REFERENCE = 11
 WARNING_DUPLICATE_REFERENCE = 21
 WARNING_EXCLUDED_TARGET = 40
 WARNING_EXCLUDED_REFERENCE = 41
+TEST_MODE = get_config('test_mode', 'global', False)
+PROCESS_TARGET_PROBE_ENV = "DOCUSCOPE_PROCESS_TARGET_PROBE"
+PROCESS_TARGET_PROBE_NONE = "full"
+PROCESS_TARGET_PROBE_NO_METADATA = "no_metadata"
+PROCESS_TARGET_PROBE_METADATA_NO_PERSIST = "metadata_no_persist"
+PROCESS_TARGET_PROBE_NO_RERUN = "no_rerun"
+PROCESS_TARGET_PROBE_SPLIT_READY = "split_ready"
+SLOW_INTERNAL_PROCESS_STAGE_MS = 50
+SESSION_CORPUS_ARTIFACTS_DIRNAME = "corpora"
+SESSION_CORE_DATA_FILENAME = "ds_tokens.gz"
+PROCESS_TARGET_PROBE_STAGE_KEY = "load_test_process_target_probe_stage"
+PROCESS_TARGET_PROBE_TIMINGS_KEY = "load_test_process_target_probe_stage_timings_ms"
+PROCESS_TARGET_PROBE_FLAT_TIMINGS_KEY = "load_test_process_target_probe_stage_timings_flat"
+PROCESS_TARGET_PROBE_SUMMARY_KEY = "load_test_process_target_probe_stage_summary"
+logger = get_logger()
 
 
-def finalize_corpus_load(ds_tokens, user_session_id: str, corpus_type: str) -> None:
+def _log_slow_process_internal_stage(
+    user_session_id: str,
+    corpus_type: str,
+    stage: str,
+    start_time: float,
+    probe_mode: str,
+) -> None:
+    """Log slow internal corpus-load stages for benchmark profiling."""
+
+    elapsed_ms = (perf_counter() - start_time) * 1000
+    if elapsed_ms >= SLOW_INTERNAL_PROCESS_STAGE_MS:
+        logger.warning(
+            (
+                "Slow internal corpus process session={} corpus_type={} stage={} "
+                "probe_mode={} duration_ms={:.2f}"
+            ),
+            user_session_id,
+            corpus_type,
+            stage,
+            probe_mode,
+            elapsed_ms,
+        )
+
+
+def _get_process_target_probe_mode() -> str:
+    """Return the active test-only probe mode for internal target loading."""
+
+    if not TEST_MODE:
+        return PROCESS_TARGET_PROBE_NONE
+
+    mode = os.getenv(PROCESS_TARGET_PROBE_ENV, PROCESS_TARGET_PROBE_NONE).strip().lower()
+    supported_modes = {
+        PROCESS_TARGET_PROBE_NONE,
+        PROCESS_TARGET_PROBE_NO_METADATA,
+        PROCESS_TARGET_PROBE_METADATA_NO_PERSIST,
+        PROCESS_TARGET_PROBE_NO_RERUN,
+        PROCESS_TARGET_PROBE_SPLIT_READY,
+    }
+    return mode if mode in supported_modes else PROCESS_TARGET_PROBE_NONE
+
+
+def _update_session_state_without_persistence(
+    user_session_id: str, key: str, value: object
+) -> None:
+    """Update the in-memory session frame without triggering persistence."""
+
+    session_raw = st.session_state[user_session_id]["session"]
+
+    if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
+        session_data = session_raw.to_dict(as_series=False)
+        session_data[key] = value
+        st.session_state[user_session_id]["session"] = pl.from_dict(session_data)
+        return
+
+    if isinstance(session_raw, dict):
+        session_data = session_raw.copy()
+        session_data[key] = value
+        st.session_state[user_session_id]["session"] = session_data
+        return
+
+    st.session_state[user_session_id]["session"] = {key: value}
+
+
+def _mark_process_target_probe_ready(probe_mode: str, corpus_type: str) -> None:
+    """Expose a small, test-only UI signal so load tests can stop at the probe boundary."""
+
+    if TEST_MODE:
+        st.caption(f"LOAD_TEST_PROCESS_TARGET_READY:{corpus_type}:{probe_mode}")
+
+
+def _get_process_target_probe_ready_marker(
+    probe_mode: str,
+    corpus_type: str,
+) -> str | None:
+    """Return a test-only probe marker when the current run should expose one inline."""
+
+    if not TEST_MODE:
+        return None
+
+    return f"LOAD_TEST_PROCESS_TARGET_READY:{corpus_type}:{probe_mode}"
+
+
+def _record_process_target_probe_stage_duration(
+    user_session_id: str,
+    corpus_type: str,
+    probe_mode: str,
+    stage: str,
+    elapsed_ms: float,
+) -> None:
+    """Persist split-ready callback-stage timings for the next rerun."""
+
+    if probe_mode != PROCESS_TARGET_PROBE_SPLIT_READY:
+        return
+
+    probe_state = st.session_state.get(PROCESS_TARGET_PROBE_STAGE_KEY)
+    if not isinstance(probe_state, dict):
+        probe_state = {
+            "corpus_type": corpus_type,
+            "probe_mode": probe_mode,
+            "session_id": user_session_id,
+            "stage": "callback_running",
+        }
+
+    stage_timings = probe_state.get("stage_timings_ms")
+    if not isinstance(stage_timings, dict):
+        stage_timings = {}
+
+    stage_timings[stage] = elapsed_ms
+    probe_state["stage_timings_ms"] = stage_timings
+    probe_state["stage_summary"] = ";".join(
+        f"{stage_name}={stage_value:.2f}"
+        for stage_name, stage_value in stage_timings.items()
+    )
+    probe_state["corpus_type"] = corpus_type
+    probe_state["probe_mode"] = probe_mode
+    probe_state["session_id"] = user_session_id
+    st.session_state[PROCESS_TARGET_PROBE_STAGE_KEY] = probe_state
+    st.session_state[PROCESS_TARGET_PROBE_FLAT_TIMINGS_KEY] = stage_timings.copy()
+    st.session_state[PROCESS_TARGET_PROBE_SUMMARY_KEY] = probe_state["stage_summary"]
+
+    user_bucket = st.session_state.setdefault(user_session_id, {})
+    user_stage_timings = user_bucket.get(PROCESS_TARGET_PROBE_TIMINGS_KEY)
+    if not isinstance(user_stage_timings, dict):
+        user_stage_timings = {}
+    user_stage_timings[stage] = elapsed_ms
+    user_bucket[PROCESS_TARGET_PROBE_TIMINGS_KEY] = user_stage_timings
+
+
+def _persist_session_updates(
+    user_session_id: str,
+    updates: dict[str, object],
+    persist_immediately: bool = True,
+) -> None:
+    """Apply multiple session-flag updates and optionally persist them."""
+
+    session_raw = st.session_state[user_session_id]["session"]
+
+    if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
+        session_data = session_raw.to_dict(as_series=False)
+        session_data.update(updates)
+        st.session_state[user_session_id]["session"] = pl.from_dict(session_data)
+    elif isinstance(session_raw, dict):
+        session_data = session_raw.copy()
+        session_data.update(updates)
+        st.session_state[user_session_id]["session"] = session_data
+    else:
+        st.session_state[user_session_id]["session"] = dict(updates)
+
+    mark_session_dirty(user_session_id)
+    if persist_immediately:
+        auto_persist_session(user_session_id)
+
+
+def _build_session_corpus_artifact_path(
+    user_session_id: str,
+    corpus_type: str,
+) -> Path:
+    """Return the session-scoped on-disk artifact path for durable core data."""
+
+    storage_root = Path(get_config('storage_path', 'session', 'webapp/_session'))
+    session_slug = hashlib.sha256(user_session_id.encode('utf-8')).hexdigest()[:16]
+    return (
+        storage_root /
+        SESSION_CORPUS_ARTIFACTS_DIRNAME /
+        session_slug /
+        corpus_type /
+        SESSION_CORE_DATA_FILENAME
+    )
+
+
+def _store_session_corpus_artifact(
+    manager,
+    ds_tokens: pl.DataFrame,
+    user_session_id: str,
+    corpus_type: str,
+    metadata_descriptor: dict,
+) -> Path:
+    """Persist ds_tokens for one session-backed corpus and register a file ref."""
+
+    artifact_path = _build_session_corpus_artifact_path(user_session_id, corpus_type)
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = Path(f"{artifact_path}.tmp")
+
+    with gzip.open(temp_path, 'wb') as file_handle:
+        pickle.dump(ds_tokens, file_handle, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(temp_path, artifact_path)
+
+    write_metadata_descriptor_sidecar(
+        artifact_path.parent,
+        metadata=metadata_descriptor,
+    )
+    manager.set_file_refs({'ds_tokens': str(artifact_path)})
+    manager.session_corpus_data['ds_tokens'] = ds_tokens
+    return artifact_path
+
+
+def finalize_corpus_load(
+    ds_tokens,
+    user_session_id: str,
+    corpus_type: str,
+    persistence_policy: str = CorpusPersistencePolicy.SERVER_SAVED,
+) -> None:
     """
-    Finalize corpus loading by generating frequency tables, tags tables, and DTMs.
+    Finalize corpus loading through the lightweight core-data path.
 
     Parameters
     ----------
@@ -47,40 +283,19 @@ def finalize_corpus_load(ds_tokens, user_session_id: str, corpus_type: str) -> N
     -------
     None
     """
-    # Generate all the required tables and matrices
-    ft_pos, ft_ds = ds.frequency_table(ds_tokens, count_by="both")
-    tt_pos, tt_ds = ds.tags_table(ds_tokens, count_by="both")
-    dtm_pos, dtm_ds = ds.tags_dtm(ds_tokens, count_by="both")
-
-    # Load the processed corpus into session state
-    load_corpus_new(
+    finalize_corpus_load_optimized(
         ds_tokens,
-        dtm_ds, dtm_pos,
-        ft_ds, ft_pos,
-        tt_ds, tt_pos,
-        user_session_id, corpus_type
+        user_session_id,
+        corpus_type,
+        persistence_policy,
     )
-
-    # Initialize metadata and update session flags
-    if corpus_type == 'target':
-        init_metadata_target(user_session_id)
-        app_core.session_manager.update_session_state(
-            user_session_id, SessionKeys.HAS_TARGET, True
-        )
-    else:
-        init_metadata_reference(user_session_id)
-        app_core.session_manager.update_session_state(
-            user_session_id, SessionKeys.HAS_REFERENCE, True
-        )
-
-    # Clean up the original corpus DataFrame to free memory
-    cleanup_original_corpus_data(user_session_id, corpus_type)
-
-    st.rerun()
 
 
 def finalize_corpus_load_optimized(
-    ds_tokens, user_session_id: str, corpus_type: str
+    ds_tokens,
+    user_session_id: str,
+    corpus_type: str,
+    persistence_policy: str = CorpusPersistencePolicy.SERVER_SAVED,
 ) -> None:
     """
     Finalize corpus loading using memory-efficient lazy loading approach.
@@ -103,18 +318,34 @@ def finalize_corpus_load_optimized(
     """
     # Use corpus manager for optimized loading
     manager = get_corpus_manager(user_session_id, corpus_type)
+    set_session_persistence_policy(
+        user_session_id,
+        persistence_policy,
+        corpus_type=corpus_type,
+    )
+    metadata_descriptor = build_corpus_metadata_descriptor(ds_tokens)
 
-    # Only set core data - derived data will be generated on-demand
-    manager.set_core_data(ds_tokens)
+    # Only set core data - derived data will be generated on-demand.
+    # Delay persistence until any durable file ref is registered.
+    manager.set_core_data(ds_tokens, persist=False)
+
+    if persistence_policy == CorpusPersistencePolicy.SERVER_SAVED:
+        _store_session_corpus_artifact(
+            manager,
+            ds_tokens,
+            user_session_id,
+            corpus_type,
+            metadata_descriptor,
+        )
 
     # Initialize metadata and update session flags
     if corpus_type == 'target':
-        init_metadata_target(user_session_id)
+        init_metadata_target(user_session_id, metadata_descriptor)
         app_core.session_manager.update_session_state(
             user_session_id, SessionKeys.HAS_TARGET, True
         )
     else:
-        init_metadata_reference(user_session_id)
+        init_metadata_reference(user_session_id, metadata_descriptor)
         app_core.session_manager.update_session_state(
             user_session_id, SessionKeys.HAS_REFERENCE, True
         )
@@ -127,12 +358,13 @@ def finalize_corpus_load_optimized(
 
 
 def process_new(
-        corp_df,
-        nlp,
-        user_session_id: str,
-        corpus_type: str,
-        exceptions=None
-        ) -> None:
+    corp_df,
+    nlp,
+    user_session_id: str,
+    corpus_type: str,
+    exceptions=None,
+    persistence_policy: str = CorpusPersistencePolicy.SERVER_SAVED,
+) -> None:
     """
     Process a new corpus dataframe using DocuScope parsing.
 
@@ -192,12 +424,22 @@ def process_new(
                 else WARNING_EXCLUDED_REFERENCE
             )
             st.session_state[user_session_id]['exceptions'] = exceptions
-            finalize_corpus_load(ds_tokens, user_session_id, corpus_type)
+            finalize_corpus_load(
+                ds_tokens,
+                user_session_id,
+                corpus_type,
+                persistence_policy,
+            )
         else:
             # Processing completed successfully
             st.success('Processing complete!')
             st.session_state[user_session_id]['warning'] = 0
-            finalize_corpus_load(ds_tokens, user_session_id, corpus_type)
+            finalize_corpus_load(
+                ds_tokens,
+                user_session_id,
+                corpus_type,
+                persistence_policy,
+            )
 
     except Exception as e:
         corpus_name = "reference" if corpus_type == "reference" else "target"
@@ -206,10 +448,11 @@ def process_new(
 
 
 def process_external(
-        df,
-        user_session_id: str,
-        corpus_type: str
-        ) -> None:
+    df,
+    user_session_id: str,
+    corpus_type: str,
+    persistence_policy: str = CorpusPersistencePolicy.SERVER_SAVED,
+) -> None:
     """
     Process an external (preprocessed) corpus dataframe.
 
@@ -228,14 +471,20 @@ def process_external(
     """
     # For external (preprocessed) corpora, no parsing/model needed
     ds_tokens = df
-    finalize_corpus_load(ds_tokens, user_session_id, corpus_type)
+    finalize_corpus_load(
+        ds_tokens,
+        user_session_id,
+        corpus_type,
+        persistence_policy,
+    )
 
 
 def process_internal(
-        corp_path: str,
-        user_session_id: str,
-        corpus_type: str
-        ) -> None:
+    corp_path: str,
+    user_session_id: str,
+    corpus_type: str,
+    persistence_policy: str = CorpusPersistencePolicy.SERVER_SAVED,
+) -> None:
     """
     Process an internal corpus from a database path.
 
@@ -253,41 +502,248 @@ def process_internal(
     None
     """
     try:
+        probe_mode = _get_process_target_probe_mode()
+
         # Load the internal corpus
+        load_start = perf_counter()
         load_corpus_internal(
             corp_path,
             user_session_id,
             corpus_type=corpus_type
         )
+        load_elapsed_ms = (perf_counter() - load_start) * 1000
+        _log_slow_process_internal_stage(
+            user_session_id,
+            corpus_type,
+            "load_corpus_internal",
+            load_start,
+            probe_mode,
+        )
+        _record_process_target_probe_stage_duration(
+            user_session_id,
+            corpus_type,
+            probe_mode,
+            "load_corpus_internal",
+            load_elapsed_ms,
+        )
 
-        # Verify the corpus was loaded successfully
-        if (corpus_type not in st.session_state[user_session_id] or
-                'ds_tokens' not in st.session_state[user_session_id][corpus_type]):
+        # Verify the corpus was loaded successfully through the manager layer.
+        manager_ready_start = perf_counter()
+        manager = get_corpus_manager(user_session_id, corpus_type)
+        if not manager.is_ready():
             st.error(f"Failed to load {corpus_type} corpus data.")
+            return
+        manager_ready_elapsed_ms = (perf_counter() - manager_ready_start) * 1000
+        _log_slow_process_internal_stage(
+            user_session_id,
+            corpus_type,
+            "manager_ready_check",
+            manager_ready_start,
+            probe_mode,
+        )
+        _record_process_target_probe_stage_duration(
+            user_session_id,
+            corpus_type,
+            probe_mode,
+            "manager_ready_check",
+            manager_ready_elapsed_ms,
+        )
+
+        set_session_persistence_policy(
+            user_session_id,
+            persistence_policy,
+            corpus_type=corpus_type,
+        )
+
+        session_key_db = (
+            SessionKeys.TARGET_DB if corpus_type == "target"
+            else SessionKeys.REFERENCE_DB
+        )
+        session_key_has_corpus = (
+            SessionKeys.HAS_TARGET if corpus_type == "target"
+            else SessionKeys.HAS_REFERENCE
+        )
+
+        if probe_mode == PROCESS_TARGET_PROBE_NO_METADATA:
+            _update_session_state_without_persistence(
+                user_session_id, session_key_db, str(corp_path)
+            )
+            _update_session_state_without_persistence(
+                user_session_id, session_key_has_corpus, True
+            )
+            _mark_process_target_probe_ready(probe_mode, corpus_type)
             return
 
         # Update session state based on corpus type
+        metadata_start = perf_counter()
         if corpus_type == "target":
             init_metadata_target(user_session_id)
-            app_core.session_manager.update_session_state(
-                user_session_id, SessionKeys.TARGET_DB, str(corp_path)
-            )
-            app_core.session_manager.update_session_state(
-                user_session_id, SessionKeys.HAS_TARGET, True
-            )
         else:
             init_metadata_reference(user_session_id)
-            app_core.session_manager.update_session_state(
-                user_session_id, SessionKeys.REFERENCE_DB, str(corp_path)
+        metadata_elapsed_ms = (perf_counter() - metadata_start) * 1000
+        _log_slow_process_internal_stage(
+            user_session_id,
+            corpus_type,
+            "init_metadata",
+            metadata_start,
+            probe_mode,
+        )
+        _record_process_target_probe_stage_duration(
+            user_session_id,
+            corpus_type,
+            probe_mode,
+            "init_metadata",
+            metadata_elapsed_ms,
+        )
+
+        if probe_mode == PROCESS_TARGET_PROBE_METADATA_NO_PERSIST:
+            _update_session_state_without_persistence(
+                user_session_id, session_key_db, str(corp_path)
             )
-            app_core.session_manager.update_session_state(
-                user_session_id, SessionKeys.HAS_REFERENCE, True
+            _update_session_state_without_persistence(
+                user_session_id, session_key_has_corpus, True
             )
+            _mark_process_target_probe_ready(probe_mode, corpus_type)
+            return
+
+        if corpus_type == "target":
+            persist_start = perf_counter()
+            _persist_session_updates(
+                user_session_id,
+                {
+                    SessionKeys.TARGET_DB: str(corp_path),
+                    SessionKeys.HAS_TARGET: True,
+                },
+                persist_immediately=False,
+            )
+        else:
+            persist_start = perf_counter()
+            _persist_session_updates(
+                user_session_id,
+                {
+                    SessionKeys.REFERENCE_DB: str(corp_path),
+                    SessionKeys.HAS_REFERENCE: True,
+                },
+                persist_immediately=False,
+            )
+        persist_elapsed_ms = (perf_counter() - persist_start) * 1000
+        _log_slow_process_internal_stage(
+            user_session_id,
+            corpus_type,
+            "persist_session_updates",
+            persist_start,
+            probe_mode,
+        )
+        _record_process_target_probe_stage_duration(
+            user_session_id,
+            corpus_type,
+            probe_mode,
+            "persist_session_updates",
+            persist_elapsed_ms,
+        )
+
+        if corpus_type == "target":
+            warm_start = perf_counter()
+            manager.warm_shared_frequency_data()
+            warm_elapsed_ms = (perf_counter() - warm_start) * 1000
+            _log_slow_process_internal_stage(
+                user_session_id,
+                corpus_type,
+                "warm_shared_frequency_data",
+                warm_start,
+                probe_mode,
+            )
+            _record_process_target_probe_stage_duration(
+                user_session_id,
+                corpus_type,
+                probe_mode,
+                "warm_shared_frequency_data",
+                warm_elapsed_ms,
+            )
+
+        if probe_mode == PROCESS_TARGET_PROBE_NO_RERUN:
+            return _get_process_target_probe_ready_marker(probe_mode, corpus_type)
+
+        if probe_mode == PROCESS_TARGET_PROBE_SPLIT_READY:
+            probe_state = st.session_state.get(PROCESS_TARGET_PROBE_STAGE_KEY)
+            stage_timings = {}
+            if isinstance(probe_state, dict):
+                existing_stage_timings = probe_state.get("stage_timings_ms")
+                if isinstance(existing_stage_timings, dict):
+                    stage_timings = existing_stage_timings.copy()
+            if stage_timings:
+                stage_summary = " ".join(
+                    f"{stage_name}={stage_value:.2f}"
+                    for stage_name, stage_value in stage_timings.items()
+                )
+                logger.warning(
+                    "LOAD_TEST_PROCESS_TARGET_CALLBACK_STAGE_LOG session={} corpus_type={} {}",
+                    user_session_id,
+                    corpus_type,
+                    stage_summary,
+                )
+            st.session_state[PROCESS_TARGET_PROBE_STAGE_KEY] = {
+                "corpus_type": corpus_type,
+                "stage": "callback_finished",
+                "probe_mode": probe_mode,
+                "session_id": user_session_id,
+                "stage_timings_ms": stage_timings,
+            }
+
         st.rerun()
 
     except Exception as e:
         st.error(f"Error processing {corpus_type} corpus: {str(e)}")
         # Don't call st.rerun() if there was an error
+
+
+def attach_queued_internal_target(
+    corp_path: str,
+    user_session_id: str,
+    persistence_policy: str = CorpusPersistencePolicy.SERVER_SAVED,
+    queue_artifact_id: int | None = None,
+) -> None:
+    """Attach a queue-prepared built-in target corpus to the current session."""
+
+    try:
+        load_corpus_internal(
+            corp_path,
+            user_session_id,
+            corpus_type="target",
+        )
+        manager = get_corpus_manager(user_session_id, "target")
+        if not manager.is_ready():
+            st.error("Failed to load target corpus data.")
+            return
+
+        set_session_persistence_policy(
+            user_session_id,
+            persistence_policy,
+            corpus_type="target",
+        )
+        init_metadata_target(user_session_id)
+        if queue_artifact_id is not None:
+            queue_artifact = registry_service.get_artifact_by_id(queue_artifact_id)
+            if queue_artifact is not None and queue_artifact.status == "ready":
+                queue_payload = registry_service.load_json_artifact(queue_artifact)
+                frequency_artifact_id = queue_payload.get("frequency_artifact_id")
+                if isinstance(frequency_artifact_id, int):
+                    manager.set_artifact_refs(
+                        FREQUENCY_ARTIFACT_TYPE,
+                        frequency_artifact_id,
+                        ["ft_pos", "ft_ds"],
+                    )
+        _persist_session_updates(
+            user_session_id,
+            {
+                SessionKeys.TARGET_DB: str(corp_path),
+                SessionKeys.HAS_TARGET: True,
+            },
+            persist_immediately=False,
+        )
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Error attaching queued target corpus: {str(exc)}")
 
 
 def handle_uploaded_parquet(
@@ -564,195 +1020,6 @@ def handle_uploaded_text(
     return df, ready, exceptions
 
 
-def handle_uploaded_tabular(
-        uploaded_file,
-        check_size: bool,
-        max_size: int,
-        check_language_flag=False,
-        check_ref=False,
-        target_docs=None
-        ) -> tuple[pl.DataFrame | None, bool, list]:
-    """
-    Handle a single tabular corpus upload with doc_id and text columns.
-
-    Parameters
-    ----------
-    uploaded_file : UploadedFile or None
-        Uploaded Parquet, CSV, or TSV file containing corpus rows.
-    check_size : bool
-        Whether to check corpus size.
-    max_size : int
-        Maximum allowed corpus size.
-    check_language_flag : bool, optional
-        Whether to check language of documents.
-    check_ref : bool, optional
-        Whether to check for reference documents.
-    target_docs : list, optional
-        Target documents for duplicate checking.
-
-    Returns
-    -------
-    tuple[pl.DataFrame | None, bool, list]
-        Tuple of (dataframe, ready_to_process, exceptions).
-    """
-    if uploaded_file is None:
-        return None, False, []
-
-    file_name = uploaded_file.name
-    file_ext = os.path.splitext(file_name)[1].lower().lstrip(".")
-    file_bytes = uploaded_file.getvalue()
-
-    if file_ext not in {"parquet", "csv", "tsv"}:
-        st.error(
-            "Tabular corpora must be uploaded as Parquet, CSV, or TSV files.",
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    try:
-        file_buffer = io.BytesIO(file_bytes)
-        if file_ext == "parquet":
-            df = pl.read_parquet(file_buffer)
-        elif file_ext == "tsv":
-            df = pl.read_csv(file_buffer, separator="\t", infer_schema=False)
-        else:
-            df = pl.read_csv(file_buffer, infer_schema=False)
-    except Exception as e:
-        st.error(f"Error processing tabular corpus file: {e}")
-        return None, False, []
-
-    required_cols = ["doc_id", "text"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        st.error(
-            f"Your table must include these columns: {', '.join(missing_cols)}.",
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    if df.is_empty():
-        st.error(
-            "Your tabular corpus does not contain any rows.",
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    df = df.select(required_cols).with_columns(
-        pl.col("doc_id").cast(pl.String),
-        pl.col("text").cast(pl.String)
-    )
-
-    null_doc_ids = df.select(pl.col("doc_id").is_null().sum()).item()
-    null_texts = df.select(pl.col("text").is_null().sum()).item()
-    if null_doc_ids > 0 or null_texts > 0:
-        st.error(
-            "Your table contains empty values in the doc_id or text columns.",
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    df = df.with_columns(
-        pl.col("doc_id").str.strip_chars().str.replace_all(" ", ""),
-        pl.col("text").str.strip_chars()
-    )
-
-    empty_doc_ids = df.filter(pl.col("doc_id") == "").height
-    empty_texts = df.filter(pl.col("text") == "").height
-    if empty_doc_ids > 0 or empty_texts > 0:
-        st.error(
-            "Your table contains blank values in the doc_id or text columns.",
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    duplicate_ids = (
-        df.group_by("doc_id")
-        .len()
-        .filter(pl.col("len") > 1)
-        .get_column("doc_id")
-        .to_list()
-    )
-    if len(duplicate_ids) > 0:
-        st.error(
-            f"""
-            Your table contains these duplicate doc_id values:
-            ```
-            {sorted(duplicate_ids)}
-            ```
-            Please remove duplicates before processing.
-            """,
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    if check_ref and target_docs is not None:
-        dup_docs = list(set(target_docs).intersection(df.get_column("doc_id")))
-    else:
-        dup_docs = []
-    if check_ref and len(dup_docs) > 0:
-        st.error(
-            f"""
-            The table you selected could not be processed.
-            Documents with these IDs were also submitted
-            as part of your target corpus:
-            ```
-            {sorted(dup_docs)}
-            ```
-            Please remove documents from your reference corpus before processing.
-            """,
-            icon=":material/block:"
-        )
-        return None, False, []
-
-    if check_language_flag:
-        corpus_text = " ".join(df.get_column("text").to_list())
-        if not check_language(corpus_text):
-            st.error(
-                """
-                The table you selected could not be processed.
-                The text column is either not in English or
-                are incompatible with the requirement of the model:
-                """,
-                icon=":material/warning:"
-            )
-            return None, False, []
-
-    corpus_size = sum(
-        len(text.encode("utf-8"))
-        for text in df.get_column("text").to_list()
-    )
-    if check_size and corpus_size > max_size:
-        st.error(
-            """
-            Your corpus is too large for online processing.
-            The online version of DocuScope Corpus Analysis & Concordancer
-            accepts data up to roughly 3 million words.
-            If you'd like to process more data, try
-            [the desktop version of the tool](https://github.com/browndw/docuscope-ca-desktop)
-            which available for free.
-            """,  # noqa: E501
-            icon=":material/warning:"
-        )
-        return None, False, []
-
-    df = (
-        df.with_columns(
-            pl.col("text").map_elements(unidecode.unidecode, return_dtype=pl.String)
-        )
-        .sort("doc_id")
-    )
-
-    st.success(
-        f"""Success!
-        **{df.height}** corpus documents ready!
-        Use the **Process** button in the sidebar to continue.
-        """,
-        icon=":material/celebration:"
-    )
-
-    return df, True, []
-
-
 def sidebar_process_section(
     section_title: str,
     button_label: str,
@@ -788,7 +1055,9 @@ def sidebar_process_section(
         """)
     if st.sidebar.button(button_label, icon=button_icon):
         with st.sidebar.status(spinner_text, expanded=True):
-            process_fn()
+            probe_marker = process_fn()
+            if probe_marker:
+                st.caption(probe_marker)
             st.success("Processing complete!",
                        icon=":material/celebration:")
     st.sidebar.markdown("---")
