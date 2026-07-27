@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 import sys
+from time import perf_counter
 
 import streamlit as st
 
@@ -32,8 +33,11 @@ else:
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from webapp.menu import menu   # noqa: E402
+from webapp.menu import (   # noqa: E402
+    menu,
+)
 from webapp.utilities.configuration.config_manager import config_manager   # noqa: E402
+from webapp.utilities.configuration.logging_config import get_logger   # noqa: E402
 
 # Initialize session backend early to ensure database is created
 try:
@@ -48,8 +52,17 @@ PL_LOGO = config_manager.porpoise_badge_path
 UG_LOGO = config_manager.user_guide_badge_path
 SPACY_META = config_manager.spacy_model_meta_path
 DESKTOP = config_manager.desktop_mode
+TEST_MODE = config_manager.test_mode
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
 VERSION = config_manager.version
+SLOW_INDEX_STEP_MS = 100
+logger = get_logger()
+
+
+def _load_test_minimal_landing_enabled() -> bool:
+    """Return whether load-test-only minimal landing content should be used."""
+
+    return os.environ.get("DOCUSCOPE_LOAD_TEST_MINIMAL_LANDING", "").strip() == "1"
 
 
 st.set_page_config(
@@ -115,6 +128,19 @@ def version_info(ds_version: str,
     return version_info
 
 
+def _log_slow_index_step(session_id: str, step: str, start_time: float) -> None:
+    """Log slow landing-page entry phases for load-test profiling."""
+
+    elapsed_ms = (perf_counter() - start_time) * 1000
+    if elapsed_ms >= SLOW_INDEX_STEP_MS:
+        logger.warning(
+            "Slow index page step session={} step={} duration_ms={:.2f}",
+            session_id,
+            step,
+            elapsed_ms,
+        )
+
+
 def main() -> None:
     """
     index.py: Streamlit entry point for DocuScope CA.
@@ -123,13 +149,18 @@ def main() -> None:
     -------
     None
     """
+    page_start = perf_counter()
+    menu_start = perf_counter()
     menu()
+    _log_slow_index_step("pre-session", "menu", menu_start)
 
     user_session = st.runtime.scriptrunner_utils.script_run_context.get_script_run_ctx()  # noqa: E501
     user_session_id = user_session.session_id
 
     if user_session_id not in st.session_state:
         st.session_state[user_session_id] = {}
+
+    _log_slow_index_step(user_session_id, "page_entry_after_menu", page_start)
 
     st.markdown("""
         <style>
@@ -144,27 +175,55 @@ def main() -> None:
         </style>
         """, unsafe_allow_html=True)
 
+    minimal_landing = _load_test_minimal_landing_enabled()
+
+    if minimal_landing:
+        minimal_start = perf_counter()
+        st.title("DocuScope")
+        if DESKTOP or TEST_MODE or (hasattr(st, "user") and getattr(st.user, "is_logged_in", False)):
+            st.markdown(
+                "Use the navigation sidebar or go directly to corpus loading to start the workflow."
+            )
+            st.page_link(
+                page="pages/1_load_corpus.py",
+                label="Manage Corpus Data",
+                icon=":material/database:"
+            )
+        else:
+            st.info(
+                body="**Please log in to access the tool.** ",
+                icon=":material/lock:"
+            )
+        _log_slow_index_step(user_session_id, "minimal_landing", minimal_start)
+        _log_slow_index_step(user_session_id, "index_main_total", page_start)
+        return
+
     try:
+        footer_start = perf_counter()
         pl_logo_text = get_file_contents(PL_LOGO)
         b64 = get_base64_encoded(pl_logo_text)
         pl_html = r"""
             <a href="https://github.com/browndw/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2025 David Brown, Suguru Ishizaki, David Kaufer
                 """ % b64  # noqa: E501
         st.markdown(pl_html, unsafe_allow_html=True)
+        _log_slow_index_step(user_session_id, "footer_logo", footer_start)
     except Exception as e:
         st.error(f"Could not load porpoise badge logo: {e}")
 
     # Title logo (use your existing cached get_img_with_header if available)
     try:
+        title_start = perf_counter()
         st.markdown(
             get_img_with_header(TITLE_LOGO),
             unsafe_allow_html=True
         )
+        _log_slow_index_step(user_session_id, "title_logo", title_start)
     except Exception as e:
         st.error(f"Could not load title logo: {e}")
 
     # Model info
     try:
+        model_info_start = perf_counter()
         json_data = get_json_contents(SPACY_META)
         model_name = json_data["name"]
         model_version = json_data["version"]
@@ -175,6 +234,7 @@ def main() -> None:
                 model_version),
             unsafe_allow_html=True
         )
+        _log_slow_index_step(user_session_id, "model_info", model_info_start)
     except Exception as e:
         st.error(f"Could not load model information: {e}")
 
@@ -203,7 +263,8 @@ def main() -> None:
         icon=":material/help:"
     )
 
-    if DESKTOP or (hasattr(st, "user") and getattr(st.user, "is_logged_in", False)):
+    if DESKTOP or TEST_MODE or (hasattr(st, "user") and getattr(st.user, "is_logged_in", False)):  # noqa: E501
+        intro_start = perf_counter()
         st.markdown(
             """
             All apps in the tools can be accessed by using the
@@ -216,6 +277,7 @@ def main() -> None:
             label="Manage Corpus Data",
             icon=":material/database:"
             )
+        _log_slow_index_step(user_session_id, "landing_intro_and_link", intro_start)
     else:
         st.info(
             body=(
@@ -237,6 +299,14 @@ def main() -> None:
             icon=":material/info:"
             )
 
+    _log_slow_index_step(user_session_id, "index_main_total", page_start)
+
+
+def run_app() -> None:
+    """Run the main Streamlit landing entrypoint."""
+
+    main()
+
 
 if __name__ == "__main__":
-    main()
+    run_app()
