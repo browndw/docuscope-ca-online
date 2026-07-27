@@ -768,7 +768,7 @@ def render_health_dashboard():
                     'Queries (24h)': shard_info.get('queries_24h', 0)
                 })
 
-            st.dataframe(shard_data, use_container_width=True)
+            st.dataframe(shard_data, width="stretch")
 
     # System details
     with st.expander(
