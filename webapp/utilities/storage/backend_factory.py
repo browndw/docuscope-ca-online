@@ -6,11 +6,14 @@ direct imports, helping to avoid circular dependencies.
 
 The factory automatically selects the appropriate backend based on deployment mode:
 - desktop_mode = true: In-memory storage (no database bloat for desktop users)
-- desktop_mode = false: Sharded SQLite databases (enterprise scale)
+- desktop_mode = false: Postgres control-plane storage
 """
 
 from typing import Optional
 from webapp.config.unified import get_config
+from webapp.utilities.storage.postgres_session_backend import (
+    PostgresSessionBackend
+)
 from webapp.utilities.storage.sqlite_session_backend import (
     SQLiteSessionBackend
 )
@@ -33,7 +36,7 @@ class SessionBackendFactory:
 
         Automatically selects appropriate backend based on deployment mode:
         - desktop_mode = true: In-memory storage (no database files)
-        - desktop_mode = false: Sharded SQLite (enterprise scale)
+        - desktop_mode = false: Postgres control-plane storage
 
         Parameters
         ----------
@@ -45,18 +48,16 @@ class SessionBackendFactory:
         Backend instance
         """
         if backend_type is None:
-            backend_type = get_config('backend', 'session', 'sqlite')
+            backend_type = get_config('backend', 'session', 'postgres')
 
         # Auto-select backend based on desktop_mode
         desktop_mode = get_config('desktop_mode', 'global', True)
 
         # Use appropriate backend for deployment mode:
         # - desktop_mode = true: In-memory backend (no database bloat)
-        # - desktop_mode = false: Sharded SQLite backend (enterprise scale)
-        if desktop_mode and backend_type == 'sqlite':
+        # - desktop_mode = false: Postgres backend by default
+        if desktop_mode and backend_type in {'sqlite', 'postgres'}:
             backend_type = 'memory'
-        elif not desktop_mode and backend_type == 'sqlite':
-            backend_type = 'sharded_sqlite'
         # Log startup mode information (one-time only)
         if not hasattr(self, '_startup_logged'):
             from webapp.utilities.configuration.logging_config import get_logger
@@ -81,29 +82,18 @@ class SessionBackendFactory:
             self._backend_cache[backend_type] = backend
             return backend
         elif backend_type == 'sqlite':
-            # Standard SQLite backend for legacy/testing use
+            # Transitional SQLite backend for local tests and migration support
             backend = SQLiteSessionBackend()
             self._backend_cache[backend_type] = backend
             return backend
-        elif backend_type == 'sharded_sqlite':
-            # Enterprise sharded SQLite backend
-            try:
-                from webapp.utilities.storage.sharded_session_backend import (
-                    ShardedSQLiteSessionBackend
-                )
-                backend = ShardedSQLiteSessionBackend()
-                self._backend_cache[backend_type] = backend
-                return backend
-            except ImportError as e:
-                # Fallback to single SQLite if sharded backend unavailable
-                from webapp.utilities.configuration.logging_config import get_logger
-                logger = get_logger()
-                logger.warning(f"Sharded backend unavailable, falling back to SQLite: {e}")
-                return self.get_backend('sqlite')
+        elif backend_type == 'postgres':
+            backend = PostgresSessionBackend()
+            self._backend_cache[backend_type] = backend
+            return backend
         else:
             raise ValueError(
                 f"Unknown backend type: {backend_type}. "
-                "Supported types: 'memory', 'sqlite', 'sharded_sqlite'"
+                "Supported types: 'memory', 'sqlite', 'postgres'"
             )
 
     def clear_cache(self):
