@@ -25,8 +25,10 @@ from webapp.utilities.ui import (
 )
 from webapp.utilities.analysis import (
     has_target_corpus, render_corpus_not_loaded_error,
-    generate_clusters, generate_ngrams
+    generate_clusters, generate_ngrams, attach_ngram_artifact
 )
+from webapp.persistence import registry_service
+from webapp.queue import enqueue_ngram_preparation, get_queue, get_redis_queue_config
 from webapp.menu import (
     menu, require_login
     )
@@ -53,11 +55,167 @@ SEARCH_MODE_CONFIG = {
     "Contains": "contains"
 }
 SPAN_OPTIONS = (2, 3, 4)
+NGRAM_QUEUE_STATE_KEY = "ngram_queue_state"
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
     layout="wide"
     )
+
+
+def _get_ngram_queue_state(user_session_id: str) -> dict | None:
+    """Return queued n-gram/cluster state for the current session, if any."""
+
+    queue_state = st.session_state.get(NGRAM_QUEUE_STATE_KEY)
+    if not isinstance(queue_state, dict):
+        return None
+    if queue_state.get("session_id") != user_session_id:
+        return None
+    return queue_state
+
+
+def _clear_ngram_queue_state(user_session_id: str) -> None:
+    """Clear queued n-gram/cluster state for this session."""
+
+    if _get_ngram_queue_state(user_session_id) is not None:
+        st.session_state.pop(NGRAM_QUEUE_STATE_KEY, None)
+
+
+def _can_queue_ngrams(session: dict) -> str | None:
+    """Return built-in target path when n-gram/cluster generation can be queued."""
+
+    if not get_redis_queue_config().enabled:
+        return None
+
+    target_source = safe_session_get(session, SessionKeys.TARGET_DB, "")
+    if not target_source:
+        return None
+    return str(target_source)
+
+
+def _submit_ngram_job(
+    user_session_id: str,
+    target_source: str,
+    analysis_type: str,
+    ngram_span: int,
+    count_by: str,
+    from_anchor: str | None = None,
+    node_word: str | None = None,
+    tag: str | None = None,
+    position: int | None = None,
+    search_type: str | None = None,
+) -> None:
+    """Submit built-in n-gram/cluster generation through Redis/RQ."""
+
+    result = enqueue_ngram_preparation(
+        target_source=target_source,
+        analysis_type=analysis_type,
+        ngram_span=ngram_span,
+        count_by=count_by,
+        from_anchor=from_anchor,
+        node_word=node_word,
+        tag=tag,
+        position=position,
+        search_type=search_type,
+    )
+    if result.state == "ready" and result.artifact_id is not None:
+        _clear_ngram_queue_state(user_session_id)
+        if attach_ngram_artifact(user_session_id, result.artifact_id):
+            st.rerun()
+        st.error("Ready n-gram artifact could not be attached. Please retry.")
+        return
+
+    st.session_state[NGRAM_QUEUE_STATE_KEY] = {
+        "session_id": user_session_id,
+        "analysis_type": analysis_type,
+        "control_plane_job_id": result.control_plane_job_id,
+        "rq_job_id": result.rq_job_id,
+        "artifact_id": result.artifact_id,
+    }
+    st.rerun()
+
+
+@st.fragment(run_every="2s")
+def _render_ngram_queue_status(user_session_id: str) -> None:
+    """Poll queued n-gram/cluster status and attach it once complete."""
+
+    queue_state = _get_ngram_queue_state(user_session_id)
+    if queue_state is None:
+        return
+
+    control_plane_job_id = queue_state.get("control_plane_job_id")
+    rq_job_id = queue_state.get("rq_job_id")
+    if not isinstance(rq_job_id, str) or not rq_job_id:
+        if isinstance(control_plane_job_id, int):
+            rq_job_id = f"ngram-{control_plane_job_id}"
+            queue_state["rq_job_id"] = rq_job_id
+            st.session_state[NGRAM_QUEUE_STATE_KEY] = queue_state
+        else:
+            rq_job_id = None
+
+    if control_plane_job_id is None:
+        _clear_ngram_queue_state(user_session_id)
+        st.warning("Queued n-gram job state was incomplete. Please try again.")
+        return
+
+    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    if job_row is None:
+        _clear_ngram_queue_state(user_session_id)
+        st.warning("Queued n-gram job could not be found. Please try again.")
+        return
+
+    if job_row.status == "pending":
+        if not isinstance(rq_job_id, str) or not rq_job_id:
+            registry_service.mark_job_failed(
+                control_plane_job_id,
+                "Queued n-gram job was pending without a queue job id.",
+            )
+            _clear_ngram_queue_state(user_session_id)
+            st.error("Queued n-gram generation failed before execution. Please retry.")
+            return
+
+        try:
+            rq_job = get_queue().fetch_job(rq_job_id)
+        except Exception:
+            rq_job = None
+
+        if rq_job is None:
+            registry_service.mark_job_failed(
+                control_plane_job_id,
+                "Queue job record was missing while control-plane status was pending.",
+            )
+            _clear_ngram_queue_state(user_session_id)
+            st.error("Queued n-gram generation failed before execution. Please retry.")
+            return
+
+        rq_status_raw = rq_job.get_status(refresh=True)
+        rq_status = str(getattr(rq_status_raw, "value", rq_status_raw)).strip().lower()
+        if rq_status == "failed":
+            failure_reason = "Queued n-gram job failed before completion."
+            if isinstance(rq_job.exc_info, str) and rq_job.exc_info.strip():
+                failure_reason = rq_job.exc_info.strip().splitlines()[-1]
+            registry_service.mark_job_failed(control_plane_job_id, failure_reason)
+            _clear_ngram_queue_state(user_session_id)
+            st.error(f"Queued n-gram generation failed: {failure_reason}")
+            return
+
+    if job_row.status == "completed":
+        _clear_ngram_queue_state(user_session_id)
+        if job_row.artifact_id is not None and attach_ngram_artifact(
+            user_session_id,
+            job_row.artifact_id,
+        ):
+            st.rerun()
+        st.error("Queued n-gram artifact could not be attached. Please retry.")
+        return
+
+    if job_row.status == "failed":
+        _clear_ngram_queue_state(user_session_id)
+        st.error(f"Queued n-gram generation failed: {job_row.failure_reason}")
+        return
+
+    label = "cluster" if queue_state.get("analysis_type") == "clusters" else "n-gram"
+    st.info(f"Generating {label} table in the background...")
 
 
 def render_ngrams_display_interface(user_session_id: str, session: dict) -> None:
@@ -118,6 +276,7 @@ def render_ngrams_display_interface(user_session_id: str, session: dict) -> None
             label="Create a New Table",
             icon=":material/refresh:",
         ):
+            _clear_ngram_queue_state(user_session_id)
             # Clear only ngrams data using the corpus data manager
             clear_corpus_data(user_session_id, CorpusKeys.TARGET, [TargetKeys.NGRAMS])
 
@@ -232,6 +391,17 @@ def render_ngrams_config(
             render_corpus_not_loaded_error()
             return
 
+        target_source = _can_queue_ngrams(session)
+        if target_source is not None:
+            _submit_ngram_job(
+                user_session_id,
+                target_source,
+                "ngrams",
+                ngram_span,
+                ts,
+            )
+            return
+
         # If validation passes, generate the n-grams
         generate_ngrams(user_session_id, ngram_span, ts)
 
@@ -249,6 +419,8 @@ def render_ngrams_config(
     if st.session_state[user_session_id].get(WarningKeys.NGRAM):
         msg, icon = st.session_state[user_session_id][WarningKeys.NGRAM]
         st.error(msg, icon=icon)
+
+    _render_ngram_queue_status(user_session_id)
 
 
 def render_clusters_config(
@@ -395,6 +567,22 @@ def render_clusters_config(
             return
 
         # If all validations pass, generate the clusters
+        target_source = _can_queue_ngrams(session)
+        if target_source is not None:
+            _submit_ngram_job(
+                user_session_id,
+                target_source,
+                "clusters",
+                ngram_span,
+                ts,
+                from_anchor=from_anchor,
+                node_word=node_word,
+                tag=tag,
+                position=position,
+                search_type=search,
+            )
+            return
+
         generate_clusters(
             user_session_id, from_anchor, node_word,
             tag, position, ngram_span, search, ts
@@ -414,6 +602,8 @@ def render_clusters_config(
     if st.session_state[user_session_id].get(WarningKeys.NGRAM):
         msg, icon = st.session_state[user_session_id][WarningKeys.NGRAM]
         st.error(msg, icon=icon)
+
+    _render_ngram_queue_status(user_session_id)
 
 
 def main():
