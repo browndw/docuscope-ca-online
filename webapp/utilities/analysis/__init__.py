@@ -10,6 +10,8 @@ from webapp.utilities.analysis.statistical_analysis import (
     generate_tags_table,
     generate_keyness_tables,
     generate_keyness_parts,
+    attach_keyness_artifact,
+    attach_keyness_parts_artifact,
     freq_simplify_pl,
     correlation_update,
     update_pca_plot
@@ -18,7 +20,9 @@ from webapp.utilities.analysis.corpus_generators import (
     generate_ngrams,
     generate_clusters,
     generate_kwic,
-    generate_collocations
+    generate_collocations,
+    attach_collocation_artifact,
+    attach_ngram_artifact
 )
 from webapp.utilities.analysis.corpus_loading import (
     load_detector
@@ -58,12 +62,24 @@ from webapp.utilities.analysis.grouped_analysis import (
     dtm_simplify_grouped,
     tags_table_grouped
 )
+from webapp.utilities.analysis.dfm_statistics import (
+    available_dfm_features,
+    compute_dfm_statistics,
+    get_dfm_statistic_note,
+    get_dfm_statistic_options
+)
+from webapp.utilities.analysis.correlation import (
+    PearsonResult,
+    pearson_correlation
+)
 
 __all__ = [
     'generate_frequency_table',
     'generate_tags_table',
     'generate_keyness_tables',
     'generate_keyness_parts',
+    'attach_keyness_artifact',
+    'attach_keyness_parts_artifact',
     'freq_simplify_pl',
     'correlation_update',
     'update_pca_plot',
@@ -71,6 +87,8 @@ __all__ = [
     'generate_clusters',
     'generate_kwic',
     'generate_collocations',
+    'attach_collocation_artifact',
+    'attach_ngram_artifact',
     'load_detector',
     'load_corpus_internal',
     'load_corpus_new',
@@ -91,6 +109,12 @@ __all__ = [
     'is_valid_df',
     'dtm_simplify_grouped',
     'tags_table_grouped',
+    'available_dfm_features',
+    'compute_dfm_statistics',
+    'get_dfm_statistic_note',
+    'get_dfm_statistic_options',
+    'PearsonResult',
+    'pearson_correlation',
     'generate_pca',
     'generate_scatterplot',
     'generate_scatterplot_with_groups'
