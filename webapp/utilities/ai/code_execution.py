@@ -7,8 +7,6 @@ using RestrictedPython to prevent malicious code execution.
 
 import re
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 from RestrictedPython import compile_restricted
 from RestrictedPython.Guards import safe_builtins
@@ -90,7 +88,7 @@ def plotbot_code_execute(
     df : pd.DataFrame
         The dataframe to plot.
     plot_lib : str
-        The plotting library to use ('matplotlib', 'seaborn', 'plotly.express').
+        The plotting library to use ('plotly.express').
 
     Returns
     -------
@@ -122,13 +120,13 @@ def plotbot_code_execute(
     }
 
     # Add plotting library to allowed globals
-    if plot_lib == "matplotlib":
-        allowed_globals["plt"] = plt
-    elif plot_lib == "seaborn":
-        allowed_globals["sns"] = sns
-        allowed_globals["plt"] = plt
-    elif plot_lib == "plotly.express":
+    if plot_lib == "plotly.express":
         allowed_globals["px"] = px
+    else:
+        return {
+            "type": "error",
+            "value": f"Unsupported plotting library: {plot_lib}"
+        }
 
     try:
         byte_code = compile_restricted(plot_code, '<string>', 'exec')
