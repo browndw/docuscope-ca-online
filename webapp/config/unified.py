@@ -27,6 +27,14 @@ class ConfigManager:
 
         Returns (found, value) tuple. Uses lazy import to avoid circular deps.
         """
+        if not static_config.has_key(key, section):
+            self._runtime_config_available = False
+            return False, None
+
+        if static_config.get_value('test_mode', 'global', False):
+            self._runtime_config_available = False
+            return False, None
+
         try:
             # Lazy import to avoid circular dependency
             from webapp.config.runtime_config import runtime_config
@@ -97,6 +105,9 @@ class ConfigManager:
         """
         # Start with static configuration
         config = static_config.get_section(section).copy()
+
+        if not config or static_config.get_value('test_mode', 'global', False):
+            return config
 
         # Apply any runtime overrides for this section
         try:
