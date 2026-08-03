@@ -122,9 +122,8 @@ class LoggingConfig:
             raise ValueError(f"Unknown module_type: {module_type}")
 
     def setup_ai_logging(self) -> None:
-        """Set up logging for AI modules (plotbot and pandabot)."""
+        """Set up logging for AI modules."""
         self.setup_module_logging("ai", "plotbot")
-        self.setup_module_logging("ai", "pandabot")
 
     def setup_page_logging(self, page_name: str) -> None:
         """
