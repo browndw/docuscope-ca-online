@@ -89,7 +89,7 @@ PROCESS_TARGET_PROBE_SUMMARY_KEY = "load_test_process_target_probe_stage_summary
 INTERNAL_TARGET_QUEUE_STATE_KEY = "internal_target_queue_state"
 
 # Define labels and options for the app
-CORPUS_SOURCES = ["Internal", "External", "New"]
+CORPUS_SOURCES = ["Internal", "External", "New", "Tabular"]
 
 # Button and form labels
 LABEL_PROCESS_TARGET = "Process Target"
@@ -492,6 +492,9 @@ def main() -> None:
                         """,
                         """:material/library_books:
                         Process a new corpus from plain text files.
+                        """,
+                        """:material/table:
+                        Process a corpus from a Parquet, CSV, or TSV file.
                         """
                         ],
                     horizontal=False,
@@ -816,6 +819,9 @@ def main() -> None:
                 """,
                 """:material/library_books:
                 Process a new corpus from plain text files.
+                """,
+                """:material/table:
+                Process a corpus from a Parquet, CSV, or TSV file.
                 """
                 ],
             horizontal=False,
@@ -1026,6 +1032,94 @@ def main() -> None:
                         CorpusKeys.TARGET,
                         stored_exceptions,
                         target_persistence_policy,
+                    ))
+
+        # Option 4: Process new target corpus from a tabular file
+        if corpus_source == 'Tabular':
+            st.markdown("---")
+            st.markdown(
+                """
+                :material/priority:
+                Upload a single **Parquet**, **CSV**, or **TSV** file
+                with columns named **doc_id** and **text**.
+
+                :material/priority:
+                Extra columns are allowed, but only **doc_id** and **text**
+                will be used for corpus processing.
+
+                :material/priority:
+                Once you've selected your file, click the **UPLOAD** button
+                and a processing button will appear in the sidebar.
+
+                :material/priority:
+                Select **a model** from the sidebar.
+
+                :material/priority:
+                After processing, you will have the option
+                to save your corpus to use for future analysis.
+
+                :material/priority:
+                Be sure that all document IDs are unique.
+                """
+                )
+
+            corp_df, ready, exceptions = None, False, []
+
+            with st.form("tabular-corpus-form", clear_on_submit=True):
+                corp_file = st.file_uploader(
+                    "Upload your target corpus",
+                    type=["parquet", "csv", "tsv"],
+                    accept_multiple_files=False
+                )
+                submitted = st.form_submit_button(LABEL_UPLOAD_TARGET)
+
+                if submitted:
+                    st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
+                if submitted and corp_file is None:
+                    st.warning(
+                        "Please select a file to upload.",
+                        icon=":material/warning:")
+
+                if submitted:
+                    corp_df, ready, exceptions = handle_uploaded_tabular(
+                        corp_file,
+                        CHECK_SIZE,
+                        MAX_TEXT,
+                        check_language_flag=ENABLE_DETECT
+                    )
+
+                    if ready and corp_df is not None:
+                        st.session_state[user_session_id][LoadCorpusKeys.CORPUS_DF] = corp_df  # noqa: E501
+                        st.session_state[user_session_id][LoadCorpusKeys.EXCEPTIONS] = exceptions  # noqa: E501
+
+            if ready:
+                st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = True
+
+            st.sidebar.markdown("### Models")
+            models = load_models()
+            selected_dict = st.sidebar.selectbox(
+                "Select a DocuScope model:",
+                options=MODEL_OPTIONS,
+                help="The Large Dictionary model has a more eleaborated tagset than the Common Dictionary model. Click 'About the models' (on the right) to learn more.",  # noqa: E501
+                )
+            nlp = models[selected_dict]
+            st.session_state[user_session_id][LoadCorpusKeys.MODEL] = selected_dict
+
+            st.sidebar.markdown("---")
+
+            if st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS]:
+                stored_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.CORPUS_DF)  # noqa: E501
+                stored_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.EXCEPTIONS)  # noqa: E501
+
+                sidebar_process_section(
+                    section_title=LABEL_PROCESS_TARGET,
+                    button_label=LABEL_PROCESS_TARGET,
+                    process_fn=lambda: process_new(
+                        stored_corp_df,
+                        nlp,
+                        user_session_id,
+                        CorpusKeys.TARGET,
+                        stored_exceptions
                     ))
 
 
