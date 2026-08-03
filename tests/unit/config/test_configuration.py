@@ -76,6 +76,22 @@ class TestConfigurationManagement:
         assert found is False
         assert value is None
 
+    def test_missing_static_key_skips_runtime_config_probe(self):
+        """Default-only lookups should not import DB runtime config."""
+        manager = ConfigManager()
+
+        with patch(
+            'webapp.config.unified.static_config.has_key',
+            return_value=False,
+        ), patch.dict(sys.modules, {'webapp.config.runtime_config': None}):
+            found, value = manager._try_get_runtime_override(
+                'nonexistent_key',
+                'global',
+            )
+
+        assert found is False
+        assert value is None
+
     @patch.dict(os.environ, {'TEST_ENV_VAR': 'test_value'})
     def test_environment_variable_override(self):
         """Test that environment variables can override config."""
