@@ -7,6 +7,7 @@ newly uploaded text, and corpus finalization.
 
 import gzip
 import hashlib
+import io
 import os
 import pickle
 from pathlib import Path
@@ -17,7 +18,7 @@ import streamlit as st
 import docuscospacy as ds
 
 # Module-specific imports
-from webapp.utilities.processing.corpus_loading import load_corpus_internal, load_corpus_new
+from webapp.utilities.processing.corpus_loading import load_corpus_internal
 from webapp.utilities.session import (
     build_corpus_metadata_descriptor,
     init_metadata_target,
@@ -29,7 +30,11 @@ from webapp.utilities.session.session_persistence import (
     auto_persist_session,
     mark_session_dirty,
 )
-from webapp.utilities.analysis.data_validation import check_corpus_external, check_corpus_new  # noqa: E501
+from webapp.utilities.analysis.data_validation import (
+    check_corpus_external,
+    check_corpus_new,
+    check_language,
+)
 from webapp.utilities.state import (
     CorpusPersistencePolicy,
     LoadCorpusKeys,
@@ -677,7 +682,10 @@ def process_internal(
                     for stage_name, stage_value in stage_timings.items()
                 )
                 logger.warning(
-                    "LOAD_TEST_PROCESS_TARGET_CALLBACK_STAGE_LOG session={} corpus_type={} {}",
+                    (
+                        "LOAD_TEST_PROCESS_TARGET_CALLBACK_STAGE_LOG session={} "
+                        "corpus_type={} {}"
+                    ),
                     user_session_id,
                     corpus_type,
                     stage_summary,
@@ -1018,6 +1026,195 @@ def handle_uploaded_text(
         df, exceptions = None, []
 
     return df, ready, exceptions
+
+
+def handle_uploaded_tabular(
+        uploaded_file,
+        check_size: bool,
+        max_size: int,
+        check_language_flag=False,
+        check_ref=False,
+        target_docs=None
+        ) -> tuple[pl.DataFrame | None, bool, list]:
+    """
+    Handle a single tabular corpus upload with doc_id and text columns.
+
+    Parameters
+    ----------
+    uploaded_file : UploadedFile or None
+        Uploaded Parquet, CSV, or TSV file containing corpus rows.
+    check_size : bool
+        Whether to check corpus size.
+    max_size : int
+        Maximum allowed corpus size.
+    check_language_flag : bool, optional
+        Whether to check language of documents.
+    check_ref : bool, optional
+        Whether to check for reference documents.
+    target_docs : list, optional
+        Target documents for duplicate checking.
+
+    Returns
+    -------
+    tuple[pl.DataFrame | None, bool, list]
+        Tuple of (dataframe, ready_to_process, exceptions).
+    """
+    if uploaded_file is None:
+        return None, False, []
+
+    file_name = uploaded_file.name
+    file_ext = os.path.splitext(file_name)[1].lower().lstrip(".")
+    file_bytes = uploaded_file.getvalue()
+
+    if file_ext not in {"parquet", "csv", "tsv"}:
+        st.error(
+            "Tabular corpora must be uploaded as Parquet, CSV, or TSV files.",
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    try:
+        file_buffer = io.BytesIO(file_bytes)
+        if file_ext == "parquet":
+            df = pl.read_parquet(file_buffer)
+        elif file_ext == "tsv":
+            df = pl.read_csv(file_buffer, separator="\t", infer_schema=False)
+        else:
+            df = pl.read_csv(file_buffer, infer_schema=False)
+    except Exception as e:
+        st.error(f"Error processing tabular corpus file: {e}")
+        return None, False, []
+
+    required_cols = ["doc_id", "text"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        st.error(
+            f"Your table must include these columns: {', '.join(missing_cols)}.",
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    if df.is_empty():
+        st.error(
+            "Your tabular corpus does not contain any rows.",
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    df = df.select(required_cols).with_columns(
+        pl.col("doc_id").cast(pl.String),
+        pl.col("text").cast(pl.String)
+    )
+
+    null_doc_ids = df.select(pl.col("doc_id").is_null().sum()).item()
+    null_texts = df.select(pl.col("text").is_null().sum()).item()
+    if null_doc_ids > 0 or null_texts > 0:
+        st.error(
+            "Your table contains empty values in the doc_id or text columns.",
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    df = df.with_columns(
+        pl.col("doc_id").str.strip_chars().str.replace_all(" ", ""),
+        pl.col("text").str.strip_chars()
+    )
+
+    empty_doc_ids = df.filter(pl.col("doc_id") == "").height
+    empty_texts = df.filter(pl.col("text") == "").height
+    if empty_doc_ids > 0 or empty_texts > 0:
+        st.error(
+            "Your table contains blank values in the doc_id or text columns.",
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    duplicate_ids = (
+        df.group_by("doc_id")
+        .len()
+        .filter(pl.col("len") > 1)
+        .get_column("doc_id")
+        .to_list()
+    )
+    if len(duplicate_ids) > 0:
+        st.error(
+            f"""
+            Your table contains these duplicate doc_id values:
+            ```
+            {sorted(duplicate_ids)}
+            ```
+            Please remove duplicates before processing.
+            """,
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    if check_ref and target_docs is not None:
+        dup_docs = list(set(target_docs).intersection(df.get_column("doc_id")))
+    else:
+        dup_docs = []
+    if check_ref and len(dup_docs) > 0:
+        st.error(
+            f"""
+            The table you selected could not be processed.
+            Documents with these IDs were also submitted
+            as part of your target corpus:
+            ```
+            {sorted(dup_docs)}
+            ```
+            Please remove documents from your reference corpus before processing.
+            """,
+            icon=":material/block:"
+        )
+        return None, False, []
+
+    if check_language_flag:
+        corpus_text = " ".join(df.get_column("text").to_list())
+        if not check_language(corpus_text):
+            st.error(
+                """
+                The table you selected could not be processed.
+                The text column is either not in English or
+                are incompatible with the requirement of the model:
+                """,
+                icon=":material/warning:"
+            )
+            return None, False, []
+
+    corpus_size = sum(
+        len(text.encode("utf-8"))
+        for text in df.get_column("text").to_list()
+    )
+    if check_size and corpus_size > max_size:
+        st.error(
+            """
+            Your corpus is too large for online processing.
+            The online version of DocuScope Corpus Analysis & Concordancer
+            accepts data up to roughly 3 million words.
+            If you'd like to process more data, try
+            [the desktop version of the tool](https://github.com/browndw/docuscope-ca-desktop)
+            which available for free.
+            """,  # noqa: E501
+            icon=":material/warning:"
+        )
+        return None, False, []
+
+    df = (
+        df.with_columns(
+            pl.col("text").map_elements(unidecode.unidecode, return_dtype=pl.String)
+        )
+        .sort("doc_id")
+    )
+
+    st.success(
+        f"""Success!
+        **{df.height}** corpus documents ready!
+        Use the **Process** button in the sidebar to continue.
+        """,
+        icon=":material/celebration:"
+    )
+
+    return df, True, []
 
 
 def sidebar_process_section(
