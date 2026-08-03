@@ -11,9 +11,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 import polars as pl
-import matplotlib.pyplot as plt
 import streamlit as st
-import seaborn as sns
 import plotly.express as px
 from RestrictedPython import compile_restricted
 from RestrictedPython.Guards import safe_builtins, guarded_unpack_sequence
@@ -284,7 +282,7 @@ def plotbot_code_generate_or_update(
     user_request : str
         User's plotting request.
     plot_lib : str
-        The plotting library to use ('matplotlib', 'seaborn', 'plotly.express').
+        The plotting library to use ('plotly.express').
     schema : str
         String representation of the dataframe schema.
     api_key : str
@@ -304,45 +302,17 @@ def plotbot_code_generate_or_update(
     non_numeric_columns = df.select_dtypes(exclude=['number']).columns.tolist()
 
     if code_chunk is None:
-        # Library-specific instructions and examples
-        if plot_lib == "matplotlib":
-            lib_instructions = """
-    - Use the format 'fig, ax = plt.subplots()' to create the figure.
-    - Do not call 'fig.show()' or 'plt.show()'.
-    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc.
-
-    Example:
-    fig, ax = plt.subplots()
-    ax.plot(df['col1'], df['col2'])
-    ax.set_xlabel('Column 1')
-    ax.set_ylabel('Column 2')"""
-        elif plot_lib == "seaborn":
-            lib_instructions = """
-    - Use seaborn functions like sns.barplot(), sns.scatterplot(), sns.lineplot(), etc.
-    - Always create a figure first with 'fig, ax = plt.subplots()'.
-    - Pass the 'ax' parameter to seaborn functions.
-    - Do not call 'plt.show()'.
-
-    Example:
-    fig, ax = plt.subplots()
-    sns.barplot(data=df, x='col1', y='col2', ax=ax)
-    ax.set_title('My Plot')"""
-        elif plot_lib == "plotly.express":
-            lib_instructions = """
+        lib_instructions = """
     - Use plotly.express functions like px.bar(), px.scatter(), px.line(), etc.
     - Assign the result to a variable called 'fig'.
     - Do not call 'fig.show()'.
-    - For gridlines, use fig.update_xaxes(showgrid=True) and fig.update_yaxes(showgrid=True). Do not use fig.update_layout(grid_xaxis=...) or fig.update_layout(grid_yaxis=...).
+        - For gridlines, use fig.update_xaxes(showgrid=True) and
+            fig.update_yaxes(showgrid=True). Do not use
+            fig.update_layout(grid_xaxis=...) or fig.update_layout(grid_yaxis=...).
 
     Example:
     fig = px.bar(df, x='col1', y='col2')
     fig.update_layout(title='My Plot')"""
-        else:
-            # Default to matplotlib
-            lib_instructions = """
-    - Use the format 'fig, ax = plt.subplots()' to create the figure.
-    - Do not call 'fig.show()' or 'plt.show()'.
-    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc."""
 
         prompt = f"""
     You are a Python plotting assistant.
@@ -378,45 +348,17 @@ def plotbot_code_generate_or_update(
     """  # noqa: E501
 
     else:
-        # Library-specific instructions for updates
-        if plot_lib == "matplotlib":
-            lib_instructions = """
-    - Use the format 'fig, ax = plt.subplots()' to create the figure.
-    - Do not call 'fig.show()' or 'plt.show()'.
-    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc.
-
-    Example:
-    fig, ax = plt.subplots()
-    ax.plot(df['col1'], df['col2'])
-    ax.set_xlabel('Column 1')
-    ax.set_ylabel('Column 2')"""
-        elif plot_lib == "seaborn":
-            lib_instructions = """
-    - Use seaborn functions like sns.barplot(), sns.scatterplot(), sns.lineplot(), etc.
-    - Always create a figure first with 'fig, ax = plt.subplots()'.
-    - Pass the 'ax' parameter to seaborn functions.
-    - Do not call 'plt.show()'.
-
-    Example:
-    fig, ax = plt.subplots()
-    sns.barplot(data=df, x='col1', y='col2', ax=ax)
-    ax.set_title('My Plot')"""
-        elif plot_lib == "plotly.express":
-            lib_instructions = """
+        lib_instructions = """
     - Use plotly.express functions like px.bar(), px.scatter(), px.line(), etc.
     - Assign the result to a variable called 'fig'.
     - Do not call 'fig.show()'.
-    - For gridlines, use fig.update_xaxes(showgrid=True) and fig.update_yaxes(showgrid=True). Do not use fig.update_layout(grid_xaxis=...) or fig.update_layout(grid_yaxis=...).
+        - For gridlines, use fig.update_xaxes(showgrid=True) and
+            fig.update_yaxes(showgrid=True). Do not use
+            fig.update_layout(grid_xaxis=...) or fig.update_layout(grid_yaxis=...).
 
     Example:
     fig = px.bar(df, x='col1', y='col2')
     fig.update_layout(title='My Plot')"""
-        else:
-            # Default to matplotlib
-            lib_instructions = """
-    - Use the format 'fig, ax = plt.subplots()' to create the figure.
-    - Do not call 'fig.show()' or 'plt.show()'.
-    - Use matplotlib functions like ax.plot(), ax.bar(), ax.scatter(), etc."""
 
         prompt = f"""
     You are a Python plotting assistant.
@@ -566,12 +508,15 @@ def plotbot_code_execute(plot_code: str,
     dict
         Result dictionary with 'type' and 'value' keys.
         Type can be 'plot' (success) or 'error' (failure).
-        For plots, value contains the matplotlib figure.
+        For plots, value contains the Plotly figure.
     """
     if not isinstance(plot_code, str) or not plot_code.strip():
         return {
             "type": "error",
-            "value": "Sorry, I couldn't generate your plot. Please try rephrasing your request."  # noqa: E501
+            "value": (
+                "Sorry, I couldn't generate your plot. "
+                "Please try rephrasing your request."
+            )
         }
 
     # Strip import statements before safety check
@@ -598,8 +543,6 @@ def plotbot_code_execute(plot_code: str,
         "_unpack_sequence_": guarded_unpack_sequence,
         "_getiter_": guarded_getiter,
         "_getattr_": safe_getattr,
-        # Always include matplotlib as it's needed for figure creation
-        "plt": plt,
         # Add pandas functionality for DataFrame operations
         "pd": pd,
         # Add common Python functions needed for data manipulation
@@ -619,14 +562,7 @@ def plotbot_code_execute(plot_code: str,
         "zip": zip,
     }
 
-    # Add library-specific globals
-    if plot_lib == "matplotlib":
-        # plt already added above
-        pass
-    elif plot_lib == "seaborn":
-        allowed_globals["sns"] = sns
-        # plt already added above
-    elif plot_lib == "plotly.express":
+    if plot_lib == "plotly.express":
         allowed_globals["px"] = px
     else:
         return {
@@ -699,7 +635,8 @@ def run_plotbot_service(
                 "type": "error",
                 "value": (
                     plot_code.get("value") if isinstance(plot_code, dict) else
-                    "Sorry, I couldn't generate your plot. Please try rephrasing your request."
+                    "Sorry, I couldn't generate your plot. "
+                    "Please try rephrasing your request."
                 )
             },
             used_cached_code=used_cached_code
@@ -761,7 +698,9 @@ def run_plotbot_serialized_service(
         return PlotbotSerializedResult(
             code=service_result.code,
             result_type="error",
-            error=str(service_result.result.get("value", "Plotbot did not generate a plot.")),
+            error=str(service_result.result.get(
+                "value", "Plotbot did not generate a plot."
+            )),
             used_cached_code=service_result.used_cached_code
         )
 
@@ -906,7 +845,8 @@ def plotbot_user_query(session_id: str,
             if plot_code is None or (isinstance(plot_code, dict) and plot_code.get("type") == "error"):  # noqa: E501
                 error_message = (
                     plot_code.get("value") if isinstance(plot_code, dict) else
-                    "Sorry, I couldn't generate your plot. Please try rephrasing your request."
+                    "Sorry, I couldn't generate your plot. "
+                    "Please try rephrasing your request."
                 )
 
                 # Add specific messaging for enterprise circuit breaker events
