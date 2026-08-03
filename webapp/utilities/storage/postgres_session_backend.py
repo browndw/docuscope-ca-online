@@ -12,6 +12,7 @@ from sqlalchemy import delete, func, select
 from webapp.persistence.database import create_session_factory, initialize_database_schema
 from webapp.persistence.models import SessionRecord, UserQuery
 from webapp.utilities.configuration.logging_config import get_logger
+from webapp.utilities.storage.session_artifacts import get_session_artifact_root
 
 
 logger = get_logger()
@@ -27,7 +28,7 @@ class PostgresSessionBackend:
     def _session_artifact_root(self) -> Path:
         """Return the root directory used for session-scoped corpus artifacts."""
 
-        return Path("webapp/_session") / "corpora"
+        return get_session_artifact_root(Path("webapp/_session") / "corpora")
 
     def _collect_session_artifact_paths(self, data: Dict[str, Any]) -> list[Path]:
         """Collect session-scoped file-backed artifact paths from persisted data."""

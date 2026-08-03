@@ -18,6 +18,7 @@ import queue
 
 from webapp.config.unified import get_config
 from webapp.utilities.configuration.logging_config import get_logger
+from webapp.utilities.storage.session_artifacts import get_session_artifact_root
 
 logger = get_logger()
 SLOW_SQLITE_SESSION_SAVE_MS = 25
@@ -222,7 +223,7 @@ class SQLiteSessionBackend:
     def _session_artifact_root(self) -> Path:
         """Return the root directory used for session-scoped corpus artifacts."""
 
-        return self.storage_path / "corpora"
+        return get_session_artifact_root(self.storage_path / "corpora")
 
     def _collect_session_artifact_paths(self, data: Dict[str, Any]) -> list[Path]:
         """Collect session-scoped file-backed artifact paths from persisted data."""
