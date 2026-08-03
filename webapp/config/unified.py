@@ -6,6 +6,7 @@ across the entire application. It combines static TOML configuration with
 runtime overrides while maintaining clean dependency management.
 """
 
+import os
 from typing import Any, Dict
 from webapp.config.static_config import static_config
 
@@ -27,6 +28,10 @@ class ConfigManager:
 
         Returns (found, value) tuple. Uses lazy import to avoid circular deps.
         """
+        if os.getenv("DOCUSCOPE_DISABLE_RUNTIME_CONFIG", "").strip() == "1":
+            self._runtime_config_available = False
+            return False, None
+
         if not static_config.has_key(key, section):
             self._runtime_config_available = False
             return False, None
@@ -106,7 +111,11 @@ class ConfigManager:
         # Start with static configuration
         config = static_config.get_section(section).copy()
 
-        if not config or static_config.get_value('test_mode', 'global', False):
+        if (
+            not config or
+            os.getenv("DOCUSCOPE_DISABLE_RUNTIME_CONFIG", "").strip() == "1" or
+            static_config.get_value('test_mode', 'global', False)
+        ):
             return config
 
         # Apply any runtime overrides for this section
