@@ -5,14 +5,11 @@ This module contains common functionality used by both plotbot and pandabot,
 avoiding circular imports by separating shared utilities from bot-specific implementations.
 """
 
-import io
 import re
 import json
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import streamlit as st
 
 from webapp.config.unified import get_config
@@ -209,51 +206,9 @@ def get_current_plot_as_png(user_session_id: str, bot_type: str = "plotbot") -> 
                 if msg.get("type") == "plot":
                     plot_obj = msg.get("value")
                     if plot_obj:
-                        # Handle matplotlib/seaborn figures
-                        if hasattr(plot_obj, 'savefig'):
-                            buffer = io.BytesIO()
-                            plot_obj.savefig(
-                                buffer, format='png', bbox_inches='tight', dpi=150
-                            )
-                            buffer.seek(0)
-                            png_bytes = buffer.getvalue()
-                            buffer.close()
-                            return png_bytes
-                        # Handle plotly figures
-                        elif hasattr(plot_obj, 'to_image'):
+                        if hasattr(plot_obj, 'to_image'):
                             png_bytes = plot_obj.to_image(format="png", scale=2)
                             return png_bytes
-
-            # Fallback: if plot objects aren't available but SVG is stored
-            svg_str = st.session_state[user_session_id].get("plotbot_plot_svg", "")
-            if svg_str:
-                # Create a simple PNG with text indicating plot is available
-                try:
-                    fig, ax = plt.subplots(figsize=(6, 4))
-                    ax.text(0.5, 0.6, 'Plot Available', ha='center', va='center',
-                            fontsize=16, transform=ax.transAxes)
-                    ax.text(0.5, 0.4, 'View in workflow export', ha='center', va='center',
-                            fontsize=12, transform=ax.transAxes, style='italic')
-
-                    # Add a simple border
-                    rect = patches.Rectangle((0.1, 0.1), 0.8, 0.8, linewidth=2,
-                                             edgecolor='gray', facecolor='lightgray',
-                                             alpha=0.3, transform=ax.transAxes)
-                    ax.add_patch(rect)
-
-                    ax.set_xlim(0, 1)
-                    ax.set_ylim(0, 1)
-                    ax.axis('off')
-
-                    buffer = io.BytesIO()
-                    fig.savefig(buffer, format='png', bbox_inches='tight', dpi=150)
-                    plt.close(fig)
-                    buffer.seek(0)
-                    png_bytes = buffer.getvalue()
-                    buffer.close()
-                    return png_bytes
-                except Exception:
-                    pass
         elif bot_type == "pandabot":
             # Check for pandabot plot storage
             img_key = f"pandabot_img_bytes_{user_session_id}"
@@ -572,23 +527,23 @@ def detect_intent(user_input: str) -> str:
 
 
 def fig_to_svg(
-        figure, plot_lib: str = "matplotlib",
+        figure, plot_lib: str = "plotly.express",
         width: int = 6,
         height: int = 4
 ) -> str:
     """
-    Convert a matplotlib or plotly figure to SVG string.
+    Convert a Plotly figure to SVG string.
 
     Parameters
     ----------
-    figure : matplotlib.figure.Figure or plotly figure
+    figure : plotly figure
         The figure to convert
-    plot_lib : str, default "matplotlib"
-        The plotting library used ("matplotlib", "seaborn", "plotly.express")
+    plot_lib : str, default "plotly.express"
+        The plotting library used.
     width : int, default 6
-        Figure width in inches (for matplotlib)
+        Unused compatibility parameter.
     height : int, default 4
-        Figure height in inches (for matplotlib)
+        Unused compatibility parameter.
 
     Returns
     -------
@@ -596,56 +551,13 @@ def fig_to_svg(
         SVG representation of the figure
     """
     try:
-        # Auto-detect figure type for better reliability
-        figure_type = str(type(figure))
-
-        if "matplotlib" in figure_type.lower() or hasattr(figure, 'savefig'):
-            # This is a matplotlib figure
-            figure.set_size_inches(width, height)
-            figure.patch.set_facecolor('white')
-
-            buffer = io.StringIO()
-            figure.savefig(buffer, format='svg', bbox_inches='tight')
-            buffer.seek(0)
-            svg_string = buffer.getvalue()
-            buffer.close()
-
-            # Close the Matplotlib figure to free memory
-            plt.close(figure)
-            return svg_string
-
-        elif "plotly" in figure_type.lower() or hasattr(figure, 'update_layout'):
-            # This is a plotly figure
+        if hasattr(figure, 'update_layout') and hasattr(figure, 'to_image'):
             figure.update_layout(template="plotly_white")
             img_bytes = figure.to_image(format="svg")
-            svg_string = img_bytes.decode('utf-8')
-            return svg_string
-
-        else:
-            # Fallback: try matplotlib approach first
-            logger.warning(f"Unknown figure type: {figure_type}, trying matplotlib")
-            if hasattr(figure, 'savefig'):
-                figure.set_size_inches(width, height)
-                figure.patch.set_facecolor('white')
-
-                buffer = io.StringIO()
-                figure.savefig(buffer, format='svg', bbox_inches='tight')
-                buffer.seek(0)
-                svg_string = buffer.getvalue()
-                buffer.close()
-
-                plt.close(figure)
-                return svg_string
-            else:
-                return ""
+            return img_bytes.decode('utf-8')
+        return ""
 
     except Exception:
-        # Try to close matplotlib figures if possible
-        try:
-            if hasattr(figure, 'savefig'):
-                plt.close(figure)
-        except Exception:
-            pass
         return ""
 
 
