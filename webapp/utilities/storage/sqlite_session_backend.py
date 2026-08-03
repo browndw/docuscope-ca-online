@@ -518,7 +518,7 @@ class SQLiteSessionBackend:
         session_id : str
             Session identifier
         assistant_type : str, optional
-            Type of assistant ('plotbot', 'pandasai', etc.)
+            Type of assistant, such as 'plotbot'.
         message_content : str, optional
             Query content (for research if enabled)
 
