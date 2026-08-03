@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from webapp.persistence.models import ArtifactJob, ArtifactRecord
 
 
 ARTIFACT_STORE_ROOT = Path("webapp/_artifacts")
+ARTIFACT_STORE_ROOT_ENV = "DOCUSCOPE_ARTIFACT_STORE_ROOT"
 KEYNESS_ARTIFACT_TYPE = "keyness_bundle"
 KEYNESS_PARTS_ARTIFACT_TYPE = "keyness_parts_bundle"
 FREQUENCY_ARTIFACT_TYPE = "frequency_bundle"
@@ -73,6 +75,26 @@ def get_pipeline_version() -> str:
         return version("docuscope-ca-online")
     except Exception:
         return "0.0.0+local"
+
+
+def get_artifact_store_root() -> Path:
+    """Return the configured root for persisted artifact payload files."""
+
+    configured_root = os.getenv(ARTIFACT_STORE_ROOT_ENV, "").strip()
+    if configured_root:
+        return Path(configured_root)
+    return ARTIFACT_STORE_ROOT
+
+
+def _build_artifact_dir(identity: ArtifactIdentity) -> Path:
+    """Return the payload directory for an artifact identity."""
+
+    return (
+        get_artifact_store_root() /
+        identity.artifact_type /
+        identity.selector_hash /
+        identity.parameter_hash
+    )
 
 
 @lru_cache(maxsize=64)
@@ -553,8 +575,7 @@ class ArtifactRegistryService:
     ) -> ArtifactRecord:
         """Persist a small JSON payload in the artifact store and registry."""
 
-        artifact_dir = ARTIFACT_STORE_ROOT / identity.artifact_type / identity.selector_hash
-        artifact_dir = artifact_dir / identity.parameter_hash
+        artifact_dir = _build_artifact_dir(identity)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         payload_path = artifact_dir / JSON_ARTIFACT_FILENAME
@@ -618,8 +639,7 @@ class ArtifactRegistryService:
     ) -> ArtifactRecord:
         """Persist a keyness bundle in the artifact store and register it."""
 
-        artifact_dir = ARTIFACT_STORE_ROOT / identity.artifact_type / identity.selector_hash
-        artifact_dir = artifact_dir / identity.parameter_hash
+        artifact_dir = _build_artifact_dir(identity)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         file_map = {
@@ -693,8 +713,7 @@ class ArtifactRegistryService:
     ) -> ArtifactRecord:
         """Persist a corpus-parts keyness bundle and metadata in the artifact store."""
 
-        artifact_dir = ARTIFACT_STORE_ROOT / identity.artifact_type / identity.selector_hash
-        artifact_dir = artifact_dir / identity.parameter_hash
+        artifact_dir = _build_artifact_dir(identity)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         file_map = {
@@ -776,8 +795,7 @@ class ArtifactRegistryService:
     ) -> ArtifactRecord:
         """Persist a frequency bundle in the artifact store and register it."""
 
-        artifact_dir = ARTIFACT_STORE_ROOT / identity.artifact_type / identity.selector_hash
-        artifact_dir = artifact_dir / identity.parameter_hash
+        artifact_dir = _build_artifact_dir(identity)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         file_map = {
@@ -846,8 +864,7 @@ class ArtifactRegistryService:
     ) -> ArtifactRecord:
         """Persist a collocation bundle in the artifact store and register it."""
 
-        artifact_dir = ARTIFACT_STORE_ROOT / identity.artifact_type / identity.selector_hash
-        artifact_dir = artifact_dir / identity.parameter_hash
+        artifact_dir = _build_artifact_dir(identity)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         collocations.write_parquet(artifact_dir / "collocations.parquet")
@@ -898,7 +915,8 @@ class ArtifactRegistryService:
     def load_collocation_bundle(self, artifact: ArtifactRecord) -> dict[str, pl.DataFrame]:
         """Load a collocation bundle from parquet files in the artifact store."""
 
-        return {"collocations": _load_cached_collocation_bundle(artifact.storage_uri).clone()}
+        collocations = _load_cached_collocation_bundle(artifact.storage_uri).clone()
+        return {"collocations": collocations}
 
     def store_ngram_bundle(
         self,
@@ -907,8 +925,7 @@ class ArtifactRegistryService:
     ) -> ArtifactRecord:
         """Persist an n-gram/cluster bundle in the artifact store and register it."""
 
-        artifact_dir = ARTIFACT_STORE_ROOT / identity.artifact_type / identity.selector_hash
-        artifact_dir = artifact_dir / identity.parameter_hash
+        artifact_dir = _build_artifact_dir(identity)
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         ngrams.write_parquet(artifact_dir / "ngrams.parquet")
