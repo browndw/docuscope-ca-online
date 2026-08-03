@@ -23,7 +23,7 @@ dependencies = [
     "Authlib==1.5.2",
     "docuscospacy==0.3.7",
     "google-cloud-firestore==2.20.2",
-    "lingua-language-detector==2.0.2",
+    "lingua-language-detector==2.1.1",
     "loguru==0.7.3",
     "kaleido==0.2.1",
     "numpy==1.26.4",
