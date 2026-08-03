@@ -248,7 +248,7 @@ jobs:
     
     - name: Run desktop mode tests
       run: |
-        pytest tests/unit/config/ tests/unit/auth/ -v
+        python -m pytest tests/unit/config/ tests/unit/auth/ -v --tb=short -ra
     
     - name: Test application startup (Unix)
       if: matrix.os != 'windows-latest'
