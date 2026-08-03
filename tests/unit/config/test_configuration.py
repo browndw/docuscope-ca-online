@@ -92,6 +92,20 @@ class TestConfigurationManagement:
         assert found is False
         assert value is None
 
+    @patch.dict(os.environ, {'DOCUSCOPE_DISABLE_RUNTIME_CONFIG': '1'})
+    def test_runtime_config_disable_env_skips_probe(self):
+        """Desktop CI can disable runtime config without importing DB services."""
+        manager = ConfigManager()
+
+        with patch.dict(sys.modules, {'webapp.config.runtime_config': None}):
+            found, value = manager._try_get_runtime_override(
+                'enable_user_authorization',
+                'authorization',
+            )
+
+        assert found is False
+        assert value is None
+
     @patch.dict(os.environ, {'TEST_ENV_VAR': 'test_value'})
     def test_environment_variable_override(self):
         """Test that environment variables can override config."""
