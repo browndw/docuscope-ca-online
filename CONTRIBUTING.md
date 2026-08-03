@@ -28,7 +28,7 @@ This project adheres to a code of conduct that promotes a welcoming and inclusiv
 
 ### Prerequisites
 
-- Python 3.11
+- Python 3.11, 3.12, or 3.13
 - Virtual environment (recommended)
 - Git
 
@@ -44,7 +44,7 @@ This project adheres to a code of conduct that promotes a welcoming and inclusiv
 2. Create and activate a virtual environment:
 
     ```bash
-    python3.11 -m venv venv
+    python3.13 -m venv venv
     source venv/bin/activate  # On Windows: venv\Scripts\activate
     ```
 
