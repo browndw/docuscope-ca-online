@@ -60,6 +60,22 @@ class TestConfigurationManagement:
             # we'll skip this test
             pytest.skip(f"ConfigManager not available: {e}")
 
+    def test_test_mode_skips_runtime_config_probe(self):
+        """Test mode should keep config access independent from DB runtime config."""
+        manager = ConfigManager()
+
+        with patch(
+            'webapp.config.unified.static_config.get_value',
+            return_value=True,
+        ), patch.dict(sys.modules, {'webapp.config.runtime_config': None}):
+            found, value = manager._try_get_runtime_override(
+                'enable_user_authorization',
+                'authorization',
+            )
+
+        assert found is False
+        assert value is None
+
     @patch.dict(os.environ, {'TEST_ENV_VAR': 'test_value'})
     def test_environment_variable_override(self):
         """Test that environment variables can override config."""
