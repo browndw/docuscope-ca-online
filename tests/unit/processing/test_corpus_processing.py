@@ -4,6 +4,7 @@ Tests for webapp.utilities.processing.corpus_processing module.
 Tests corpus processing workflows, memory management, and data handling.
 """
 
+import io
 import polars as pl
 from pathlib import Path
 import sys
@@ -23,11 +24,191 @@ from webapp.utilities.processing.corpus_processing import (
     finalize_corpus_load_optimized,
     process_new,
     process_internal,
+    handle_uploaded_tabular,
     attach_queued_internal_target,
     PROCESS_TARGET_PROBE_METADATA_NO_PERSIST,
     PROCESS_TARGET_PROBE_NO_METADATA,
 )
 from webapp.utilities.state import CorpusPersistencePolicy, SessionKeys
+
+
+class MockUploadedFile:
+    """Minimal uploaded file stand-in for Streamlit upload handlers."""
+
+    def __init__(self, name: str, data: bytes):
+        self.name = name
+        self._data = data
+
+    def getvalue(self):
+        return self._data
+
+
+def tabular_upload(df: pl.DataFrame, name: str) -> MockUploadedFile:
+    """Build a mock uploaded file from a Polars DataFrame."""
+    extension = name.rsplit(".", 1)[-1]
+    if extension == "parquet":
+        buffer = io.BytesIO()
+        df.write_parquet(buffer)
+        data = buffer.getvalue()
+    elif extension == "tsv":
+        data = df.write_csv(separator="\t").encode("utf-8")
+    else:
+        data = df.write_csv().encode("utf-8")
+    return MockUploadedFile(name, data)
+
+
+class TestHandleUploadedTabular:
+    """Test tabular raw-corpus upload handling."""
+
+    def setup_method(self):
+        self.df = pl.DataFrame({
+            "doc_id": ["doc 2", "doc1"],
+            "text": [" Second document ", "First document"],
+            "group": ["B", "A"]
+        })
+
+    @patch('streamlit.success')
+    def test_handle_uploaded_tabular_parquet(self, mock_success):
+        uploaded = tabular_upload(self.df, "corpus.parquet")
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=True, max_size=10_000
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.columns == ["doc_id", "text"]
+        assert result_df.get_column("doc_id").to_list() == ["doc1", "doc2"]
+        assert result_df.get_column("text").to_list() == [
+            "First document", "Second document"
+        ]
+        mock_success.assert_called_once()
+
+    @patch('streamlit.success')
+    def test_handle_uploaded_tabular_csv(self, mock_success):
+        uploaded = tabular_upload(self.df, "corpus.csv")
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=False, max_size=0
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.height == 2
+        mock_success.assert_called_once()
+
+    @patch('streamlit.success')
+    def test_handle_uploaded_tabular_tsv(self, mock_success):
+        uploaded = tabular_upload(self.df, "corpus.tsv")
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=False, max_size=0
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.height == 2
+        mock_success.assert_called_once()
+
+    @patch('streamlit.success')
+    def test_handle_uploaded_tabular_tsv_numeric_doc_ids(self, mock_success):
+        uploaded = tabular_upload(
+            pl.DataFrame({
+                "doc_id": [0, 1, 10],
+                "text": ["First document", "Second document", "Third document"]
+            }),
+            "corpus.tsv"
+        )
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=False, max_size=0
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.get_column("doc_id").to_list() == ["0", "1", "10"]
+        mock_success.assert_called_once()
+
+    @patch('streamlit.success')
+    @patch('webapp.utilities.processing.corpus_processing.check_language')
+    def test_handle_uploaded_tabular_checks_language_once_for_corpus(
+        self, mock_check_language, mock_success
+    ):
+        mock_check_language.return_value = True
+        uploaded = tabular_upload(
+            pl.DataFrame({
+                "doc_id": [0, 1],
+                "text": ["First document", "Second document"]
+            }),
+            "corpus.csv"
+        )
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded,
+            check_size=False,
+            max_size=0,
+            check_language_flag=True
+        )
+
+        assert ready is True
+        assert exceptions == []
+        assert result_df.get_column("doc_id").to_list() == ["0", "1"]
+        mock_check_language.assert_called_once_with(
+            "First document Second document"
+        )
+        mock_success.assert_called_once()
+
+    @patch('streamlit.error')
+    def test_handle_uploaded_tabular_requires_doc_id_and_text(self, mock_error):
+        uploaded = tabular_upload(
+            pl.DataFrame({"doc_id": ["doc1"], "body": ["Text"]}),
+            "corpus.csv"
+        )
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=False, max_size=0
+        )
+
+        assert result_df is None
+        assert ready is False
+        assert exceptions == []
+        mock_error.assert_called_once()
+
+    @patch('streamlit.error')
+    def test_handle_uploaded_tabular_rejects_duplicate_doc_ids(self, mock_error):
+        uploaded = tabular_upload(
+            pl.DataFrame({
+                "doc_id": ["doc 1", "doc1"],
+                "text": ["First", "Second"]
+            }),
+            "corpus.csv"
+        )
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded, check_size=False, max_size=0
+        )
+
+        assert result_df is None
+        assert ready is False
+        assert exceptions == []
+        mock_error.assert_called_once()
+
+    @patch('streamlit.error')
+    def test_handle_uploaded_tabular_rejects_reference_overlap(self, mock_error):
+        uploaded = tabular_upload(self.df, "corpus.csv")
+
+        result_df, ready, exceptions = handle_uploaded_tabular(
+            uploaded,
+            check_size=False,
+            max_size=0,
+            check_ref=True,
+            target_docs=["doc1"]
+        )
+
+        assert result_df is None
+        assert ready is False
+        assert exceptions == []
+        mock_error.assert_called_once()
 
 
 class TestFinalizeCorpusLoad:
