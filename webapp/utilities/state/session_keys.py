@@ -34,13 +34,11 @@ class SessionKeys:
 
     # AI Assistant State Keys
     AI_PLOTBOT_CHAT = "plotbot"
-    AI_PANDABOT_CHAT = "pandasai"
     AI_USER_KEY = "user_key"
     AI_PLOT_INTENT = "plot_intent"
 
     # AI Counter Keys
     AI_PLOTBOT_PROMPT_COUNT = "plotbot_user_prompt_count"
-    AI_PANDABOT_PROMPT_COUNT = "pandabot_user_prompt_count"
 
     # AI Cache Keys
     AI_PLOTBOT_CACHE = "plotbot_cache"
@@ -52,8 +50,6 @@ class SessionKeys:
     # AI Widget Persistence Keys
     AI_PLOTBOT_QUERY = "plotbot_query"
     AI_PLOTBOT_CORPUS = "plotbot_corpus"
-    AI_PANDABOT_QUERY = "pandasai_query"
-    AI_PANDABOT_CORPUS = "pandasai_corpus"
     AI_PLOTBOT_PERSIST = "assisted_plotting_PERSIST"
     AI_PLOTBOT_PIVOT_TABLE = "pivot_table"
     AI_PLOTBOT_MAKE_PERCENT = "make_percent"
@@ -74,8 +70,6 @@ class SessionKeys:
         """Generate corpus selection key for a given bot type."""
         if bot_type == "plotbot":
             return cls.AI_PLOTBOT_CORPUS
-        elif bot_type == "pandasai":
-            return cls.AI_PANDABOT_CORPUS
         else:
             return f"{bot_type}_corpus"
 
@@ -84,15 +78,8 @@ class SessionKeys:
         """Generate query selection key for a given bot type."""
         if bot_type == "plotbot":
             return cls.AI_PLOTBOT_QUERY
-        elif bot_type == "pandasai":
-            return cls.AI_PANDABOT_QUERY
         else:
             return f"{bot_type}_query"
-
-    @classmethod
-    def get_pandabot_img_key(cls, session_id: str) -> str:
-        """Generate pandabot image storage key for a given session."""
-        return f"pandabot_img_bytes_{session_id}"
 
 
 class MetadataKeys:
