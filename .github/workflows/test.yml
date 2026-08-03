@@ -247,6 +247,8 @@ jobs:
         EOF
     
     - name: Run desktop mode tests
+      env:
+        DOCUSCOPE_DISABLE_RUNTIME_CONFIG: "1"
       run: |
         python -m pytest tests/unit/config/ tests/unit/auth/ -v --tb=short -ra
     
