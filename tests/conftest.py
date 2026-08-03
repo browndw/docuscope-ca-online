@@ -7,8 +7,6 @@ the DocuScope Corpus Analysis application.
 
 import pytest
 import tempfile
-import polars as pl
-import spacy
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -20,6 +18,8 @@ from unittest.mock import MagicMock
 @pytest.fixture
 def corpus_factory():
     """Factory for generating test corpus DataFrames with various content types."""
+    import polars as pl
+
     def _make_corpus(doc_count: int = 2, content_type: str = "simple") -> pl.DataFrame:
         if content_type == "simple":
             texts = [f"This is test document {i}." for i in range(doc_count)]
@@ -64,6 +64,8 @@ def corpus_factory():
 @pytest.fixture
 def tagged_corpus_factory():
     """Factory for generating test corpus DataFrames with pre-tagged content."""
+    import polars as pl
+
     def _make_tagged_corpus(doc_count: int = 2) -> pl.DataFrame:
         # Simulate realistic tagged output structure with actual DocuScope tags
         data = []
@@ -101,6 +103,8 @@ def tagged_corpus_factory():
 @pytest.fixture(scope="session")
 def docuscope_models():
     """Load actual DocuScope models for testing."""
+    import spacy
+
     models_dir = Path("webapp/_models/")
 
     if not models_dir.exists():
