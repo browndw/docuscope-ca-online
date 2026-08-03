@@ -3,7 +3,7 @@ Core LLM utilities for AI-powered corpus analysis.
 
 This module provides shared functionality for integrating large language models
 into the corpus analysis workflow, including API validation, settings management,
-and common utilities used by both plotbot and pandabot assistants.
+and common utilities used by AI assistants.
 """
 
 import openai
@@ -372,7 +372,7 @@ def setup_ai_session_state(user_session_id: str, bot_type: str) -> None:
     user_session_id : str
         User session identifier
     bot_type : str
-        Type of bot ('plotbot' or 'pandasai')
+        Type of assistant, such as 'plotbot'.
     """
     # Initialize chat history
     if bot_type not in st.session_state[user_session_id]:
@@ -381,8 +381,6 @@ def setup_ai_session_state(user_session_id: str, bot_type: str) -> None:
     # Initialize user prompt count using centralized keys
     if bot_type == "plotbot":
         prompt_count_key = SessionKeys.AI_PLOTBOT_PROMPT_COUNT
-    elif bot_type == "pandasai":
-        prompt_count_key = SessionKeys.AI_PANDABOT_PROMPT_COUNT
     else:
         # Fallback for unknown bot types - keep the same pattern for consistency
         prompt_count_key = f"{bot_type}_user_prompt_count"
@@ -517,12 +515,8 @@ def render_api_key_input(user_session_id: str) -> None:
                     # Clear existing chat histories when switching to personal API key
                     if SessionKeys.AI_PLOTBOT_CHAT in st.session_state[user_session_id]:
                         st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT] = []
-                    if SessionKeys.AI_PANDABOT_CHAT in st.session_state[user_session_id]:
-                        st.session_state[user_session_id][SessionKeys.AI_PANDABOT_CHAT] = []
                     if "plotbot" in st.session_state[user_session_id]:
                         st.session_state[user_session_id]["plotbot"] = []
-                    if "pandasai" in st.session_state[user_session_id]:
-                        st.session_state[user_session_id]["pandasai"] = []
 
                     # Clear any cached plots/SVGs
                     if "plotbot_plot_svg" in st.session_state[user_session_id]:
@@ -530,7 +524,6 @@ def render_api_key_input(user_session_id: str) -> None:
 
                     # Reset prompt counters for fresh start
                     st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_PROMPT_COUNT] = 0  # noqa: E501
-                    st.session_state[user_session_id][SessionKeys.AI_PANDABOT_PROMPT_COUNT] = 0  # noqa: E501
                     st.rerun()
                 else:
                     st.error(
@@ -562,7 +555,7 @@ def render_data_selection_interface(
     session : dict
         Session state dictionary
     bot_prefix : str
-        Prefix for session keys (e.g., 'plotbot', 'pandasai')
+        Prefix for session keys (e.g., 'plotbot')
     clear_function : callable
         Function to clear bot state
     metadata_target : dict, optional
@@ -616,8 +609,7 @@ def render_data_selection_interface(
         # Query selection
         query_key = SessionKeys.get_bot_query_key(bot_prefix)
         app_core.widget_manager.register_persistent_key(query_key)  # Register dynamic key
-        data_label = ("Select data to analyze:" if bot_prefix == 'pandasai'
-                      else "Select data to plot:")
+        data_label = "Select data to plot:"
         selected_query = st.selectbox(
             data_label,
             tables_to_list(

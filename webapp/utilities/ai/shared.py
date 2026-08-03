@@ -1,8 +1,5 @@
 """
-Shared AI utilities for corpus analysis bots.
-
-This module contains common functionality used by both plotbot and pandabot,
-avoiding circular imports by separating shared utilities from bot-specific implementations.
+Shared AI utilities for corpus analysis assistants.
 """
 
 import re
@@ -60,7 +57,7 @@ def export_conversation_history(
     user_session_id : str
         User session identifier
     bot_type : str, default "plotbot"
-        Type of bot ("plotbot" or "pandabot")
+        Type of assistant.
 
     Returns
     -------
@@ -75,9 +72,6 @@ def export_conversation_history(
             plotbot_messages = st.session_state[user_session_id].get(
                 SessionKeys.AI_PLOTBOT_CHAT, []
             )
-        elif bot_type == "pandabot":
-            messages_key = SessionKeys.AI_PANDABOT_CHAT
-            plotbot_messages = []
         else:
             messages_key = f"{bot_type}_messages"
             plotbot_messages = []
@@ -186,7 +180,7 @@ def get_current_plot_as_png(user_session_id: str, bot_type: str = "plotbot") -> 
     user_session_id : str
         User session identifier
     bot_type : str, default "plotbot"
-        Type of bot ("plotbot" or "pandabot")
+        Type of assistant.
 
     Returns
     -------
@@ -209,19 +203,6 @@ def get_current_plot_as_png(user_session_id: str, bot_type: str = "plotbot") -> 
                         if hasattr(plot_obj, 'to_image'):
                             png_bytes = plot_obj.to_image(format="png", scale=2)
                             return png_bytes
-        elif bot_type == "pandabot":
-            # Check for pandabot plot storage
-            img_key = f"pandabot_img_bytes_{user_session_id}"
-            if img_key in st.session_state:
-                plots = st.session_state[img_key]
-                if plots:
-                    # Get the most recent plot
-                    latest_key = max(plots.keys()) if plots else None
-                    if latest_key:
-                        img_bytes = plots[latest_key]
-                        if isinstance(img_bytes, bytes):
-                            return img_bytes
-
         return b""
 
     except Exception:
@@ -237,7 +218,7 @@ def get_current_plot_as_svg(user_session_id: str, bot_type: str = "plotbot") -> 
     user_session_id : str
         User session identifier
     bot_type : str, default "plotbot"
-        Type of bot ("plotbot" or "pandabot")
+        Type of assistant.
 
     Returns
     -------
@@ -249,23 +230,6 @@ def get_current_plot_as_svg(user_session_id: str, bot_type: str = "plotbot") -> 
             # Check for plotbot plot
             plot_key = "plotbot_plot_svg"
             return st.session_state[user_session_id].get(plot_key, "")
-        elif bot_type == "pandabot":
-            # Check for pandabot plot storage
-            session_id = user_session_id
-            img_key = f"pandabot_img_bytes_{session_id}"
-            if img_key in st.session_state:
-                plots = st.session_state[img_key]
-                if plots:
-                    # Get the most recent plot
-                    latest_key = max(plots.keys()) if plots else None
-                    if latest_key:
-                        img_bytes = plots[latest_key]
-                        if isinstance(img_bytes, bytes):
-                            # Convert bytes to base64 for embedding in SVG
-                            import base64
-                            b64_img = base64.b64encode(img_bytes).decode()
-                            return f'<image href="data:image/png;base64,{b64_img}"/>'
-
         return ""
 
     except Exception:
@@ -287,7 +251,7 @@ def render_work_preservation_interface(
     user_email : str
         User email for quota tracking
     bot_type : str, default "plotbot"
-        Type of bot ("plotbot" or "pandabot")
+        Type of assistant.
 
     Returns
     -------
@@ -441,7 +405,7 @@ def should_show_work_preservation_interface(
     has_user_key : bool
         Whether the user has already provided their own API key
     bot_type : str, default "plotbot"
-        Type of bot ("plotbot" or "pandabot")
+        Type of assistant.
 
     Returns
     -------
@@ -479,8 +443,6 @@ def should_show_work_preservation_interface(
 
         if bot_type == "plotbot":
             messages_key = SessionKeys.AI_PLOTBOT_CHAT
-        elif bot_type == "pandabot":
-            messages_key = SessionKeys.AI_PANDABOT_CHAT
         else:
             messages_key = f"{bot_type}_messages"
 
@@ -494,9 +456,6 @@ def should_show_work_preservation_interface(
     if bot_type == "plotbot":
         plot_key = "plotbot_plot_svg"
         has_plot = bool(st.session_state[user_session_id].get(plot_key, ""))
-    elif bot_type == "pandabot":
-        img_key = f"pandabot_img_bytes_{user_session_id}"
-        has_plot = bool(st.session_state.get(img_key, {}))
 
     # Show preservation interface if there's work to save
     return has_conversation or has_plot
