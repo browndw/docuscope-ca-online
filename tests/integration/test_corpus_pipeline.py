@@ -23,7 +23,7 @@ except ImportError:
 from webapp.utilities.processing.corpus_processing import process_new
 from webapp.utilities.session.session_core import init_session, update_session
 from webapp.utilities.corpus.data_manager import CorpusDataManager
-from webapp.utilities.state import SessionKeys
+from webapp.utilities.state import CorpusPersistencePolicy, SessionKeys
 
 
 class TestCorpusProcessingPipeline:
@@ -103,7 +103,10 @@ class TestCorpusProcessingPipeline:
             corp=test_corpus, nlp_model=mock_nlp
         )
         mock_finalize.assert_called_once_with(
-            mock_processed_tokens, self.user_session_id, 'target'
+            mock_processed_tokens,
+            self.user_session_id,
+            'target',
+            CorpusPersistencePolicy.SERVER_SAVED,
         )
         mock_success.assert_called_once_with('Processing complete!')
 
@@ -383,6 +386,9 @@ class TestSpacyModelIntegration:
             corp=test_corpus, nlp_model=mock_nlp
         )
         mock_finalize.assert_called_once_with(
-            mock_processed_tokens, self.user_session_id, 'target'
+            mock_processed_tokens,
+            self.user_session_id,
+            'target',
+            CorpusPersistencePolicy.SERVER_SAVED,
         )
         mock_success.assert_called_once_with('Processing complete!')

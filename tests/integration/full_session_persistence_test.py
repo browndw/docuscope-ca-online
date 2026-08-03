@@ -87,15 +87,17 @@ st.session_state = MockSessionState()
 
 from webapp.utilities.storage.sqlite_session_backend import SQLiteSessionBackend  # noqa: E402, E501
 from webapp.utilities.session.session_persistence import (  # noqa: E402
-    load_persistent_session
+    load_persistent_session,
+    save_persistent_session,
 )
 from webapp.utilities.session.session_core import (  # noqa: E402
     init_session, update_session
 )
 from webapp.utilities.session.session_management import (  # noqa: E402
-    init_ai_assist, generate_temp, ensure_session_loaded, persist_session_changes
+    init_ai_assist, generate_temp, ensure_session_loaded
 )
 from webapp.utilities.corpus.data_manager import CorpusDataManager  # noqa: E402
+from webapp.utilities.state import SessionKeys  # noqa: E402
 
 
 class TestFullSessionPersistence:
@@ -210,6 +212,7 @@ class TestFullSessionPersistence:
 
         # Initialize a new session
         init_session(self.session_id)
+        save_persistent_session(self.session_id, force=True)
 
         # Verify session was created in memory
         assert self.session_id in st.session_state
@@ -230,8 +233,8 @@ class TestFullSessionPersistence:
         init_session(self.session_id)
 
         # Update session
-        update_session("HAS_TARGET", True, self.session_id)
-        update_session("TARGET_DB", "test_corpus", self.session_id)
+        update_session(SessionKeys.HAS_TARGET, True, self.session_id)
+        update_session(SessionKeys.TARGET_DB, "test_corpus", self.session_id)
 
         # Verify updates in memory
         session_df = st.session_state[self.session_id]["session"]
@@ -239,8 +242,8 @@ class TestFullSessionPersistence:
                         if hasattr(session_df, 'to_dict')
                         else session_df)
 
-        assert session_dict.get("HAS_TARGET") == [True] or session_dict.get("HAS_TARGET") is True  # noqa: E501
-        assert session_dict.get("TARGET_DB") == ["test_corpus"] or session_dict.get("TARGET_DB") == "test_corpus"  # noqa: E501
+        assert session_dict.get(SessionKeys.HAS_TARGET) == [True] or session_dict.get(SessionKeys.HAS_TARGET) is True  # noqa: E501
+        assert session_dict.get(SessionKeys.TARGET_DB) == ["test_corpus"] or session_dict.get(SessionKeys.TARGET_DB) == "test_corpus"  # noqa: E501
 
         # Verify updates were persisted
         session_data = self.backend.load_session(self.session_id)
@@ -297,12 +300,14 @@ class TestFullSessionPersistence:
         })
 
         # Trigger persistence
-        persist_session_changes(self.session_id)
+        save_persistent_session(self.session_id, force=True)
 
-        # Verify persistence
+        # Verify only the lightweight durable session contract is persisted.
         session_data = self.backend.load_session(self.session_id)
         assert session_data is not None
-        assert "messages" in session_data
+        assert "session" in session_data
+        assert "messages" not in session_data
+        assert "plot_intent" not in session_data
 
         print("✓ AI assistant persistence works")
 
@@ -312,8 +317,9 @@ class TestFullSessionPersistence:
 
         # Create and persist initial session
         init_session(self.session_id)
-        update_session("HAS_TARGET", True, self.session_id)
-        update_session("TARGET_DB", "persisted_corpus", self.session_id)
+        update_session(SessionKeys.HAS_TARGET, True, self.session_id)
+        update_session(SessionKeys.TARGET_DB, "persisted_corpus", self.session_id)
+        save_persistent_session(self.session_id, force=True)
 
         # Clear memory
         st.session_state.clear()
@@ -327,13 +333,13 @@ class TestFullSessionPersistence:
         session_df = st.session_state[self.session_id]["session"]
         session_dict = session_df.to_dict(as_series=False) if hasattr(session_df, 'to_dict') else session_df  # noqa: E501
 
-        target_value = session_dict.get("HAS_TARGET")
+        target_value = session_dict.get(SessionKeys.HAS_TARGET)
         if isinstance(target_value, list):
             assert target_value[0] is True
         else:
             assert target_value is True
 
-        db_value = session_dict.get("TARGET_DB")
+        db_value = session_dict.get(SessionKeys.TARGET_DB)
         if isinstance(db_value, list):
             assert db_value[0] == "persisted_corpus"
         else:
@@ -350,20 +356,18 @@ class TestFullSessionPersistence:
         init_ai_assist(self.session_id)
 
         # Add some data
-        update_session("HAS_TARGET", True, self.session_id)
-        update_session("TARGET_DB", "continuity_test", self.session_id)
+        update_session(SessionKeys.HAS_TARGET, True, self.session_id)
+        update_session(SessionKeys.TARGET_DB, "continuity_test", self.session_id)
 
         # Add AI messages
         st.session_state[self.session_id]["messages"].append({
             "role": "user",
             "content": "Session continuity test"
         })
-        persist_session_changes(self.session_id)
+        save_persistent_session(self.session_id, force=True)
 
         # Simulate app restart by clearing memory and creating new backend
         st.session_state.clear()
-        # Note: SQLiteSessionBackend doesn't have a close() method, so we just recreate it
-        self.backend = SQLiteSessionBackend()
 
         # Phase 2: Load session like a fresh app start
         loaded = ensure_session_loaded(self.session_id)
@@ -372,7 +376,7 @@ class TestFullSessionPersistence:
         # Verify all data is preserved
         assert self.session_id in st.session_state
         assert "session" in st.session_state[self.session_id]
-        assert "messages" in st.session_state[self.session_id]
+        assert "messages" not in st.session_state[self.session_id]
 
         # Check specific values
         session_df = st.session_state[self.session_id]["session"]
@@ -380,17 +384,11 @@ class TestFullSessionPersistence:
                         if hasattr(session_df, 'to_dict')
                         else session_df)
 
-        target_value = session_dict.get("HAS_TARGET")
+        target_value = session_dict.get(SessionKeys.HAS_TARGET)
         if isinstance(target_value, list):
             assert target_value[0] is True
         else:
             assert target_value is True
-
-        # Check AI messages
-        messages = st.session_state[self.session_id]["messages"]
-        user_messages = [msg for msg in messages if msg["role"] == "user"]
-        assert len(user_messages) > 0
-        assert any("continuity test" in msg["content"] for msg in user_messages)
 
         print("✓ Cross-session continuity works")
 
@@ -415,12 +413,14 @@ class TestFullSessionPersistence:
         assert "test_key2" in st.session_state[self.session_id]
         assert "test_key3" in st.session_state[self.session_id]
 
-        # Verify persistence
+        # Verify temporary UI state is not part of the durable session contract.
+        save_persistent_session(self.session_id, force=True)
         session_data = self.backend.load_session(self.session_id)
         assert session_data is not None
-        assert "test_key1" in session_data
-        assert "test_key2" in session_data
-        assert "test_key3" in session_data
+        assert "session" in session_data
+        assert "test_key1" not in session_data
+        assert "test_key2" not in session_data
+        assert "test_key3" not in session_data
 
         print("✓ generate_temp with persistence works")
 
