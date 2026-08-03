@@ -6,7 +6,7 @@ and audit logging functionality. These tests are structured to support
 the auth system when implemented.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from datetime import datetime
 
 from webapp.config.unified import get_config
@@ -113,10 +113,10 @@ class TestUserAuthentication:
 class TestAuthorizationMiddleware:
     """Test authorization middleware and session checking."""
 
-    @patch('streamlit.session_state')
-    def test_session_authorization_check_structure(self, mock_session_state):
+    def test_session_authorization_check_structure(self):
         """Test session-based authorization checking structure."""
         # Mock session with authorized user
+        mock_session_state = MagicMock()
         mock_session_state.__getitem__.return_value = {
             'user_authenticated': True,
             'user_email': 'admin@test.com',
@@ -134,10 +134,10 @@ class TestAuthorizationMiddleware:
         result = check_session_authorization('test_session_id')
         assert result is True
 
-    @patch('streamlit.session_state')
-    def test_unauthorized_session_handling_structure(self, mock_session_state):
+    def test_unauthorized_session_handling_structure(self):
         """Test handling of unauthorized sessions."""
         # Mock session without authentication
+        mock_session_state = MagicMock()
         mock_session_state.__getitem__.return_value = {
             'user_authenticated': False
         }
