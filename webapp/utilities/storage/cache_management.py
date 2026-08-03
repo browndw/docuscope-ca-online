@@ -331,7 +331,7 @@ def log_user_query_local(user_id: str, session_id: str, assistant_type: str = No
     session_id : str
         The session ID for the query
     assistant_type : str, optional
-        Type of assistant ('plotbot', 'pandasai', etc.)
+        Type of assistant, such as 'plotbot'.
     message_content : str, optional
         The actual query content
 
