@@ -10,10 +10,10 @@ This module provides functionality for:
 """
 
 import os
+from functools import partial
 
 import spacy
 import streamlit as st
-from time import perf_counter
 
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
@@ -33,6 +33,7 @@ from webapp.utilities.analysis import (
 from webapp.utilities.processing import (
     process_external, process_internal,
     process_new, handle_uploaded_parquet,
+    handle_uploaded_tabular,
     attach_queued_internal_target,
     handle_uploaded_text, sidebar_process_section
     )
@@ -383,13 +384,15 @@ def main() -> None:
                     'Select a saved corpus to load:',
                     sorted(saved_corpora)
                 )
-            process_fn = lambda: process_internal(
+            process_fn = partial(
+                process_internal,
                 saved_corpora.get(to_load),
                 user_session_id,
                 CorpusKeys.TARGET
             )
             if get_redis_queue_config().enabled:
-                process_fn = lambda: _submit_internal_target_job(
+                process_fn = partial(
+                    _submit_internal_target_job,
                     saved_corpora.get(to_load),
                     user_session_id,
                 )
@@ -413,7 +416,6 @@ def main() -> None:
 
     # If a target corpus is already loaded
     if has_target:
-        target_branch_start = perf_counter()
         probe_state = st.session_state.get(PROCESS_TARGET_PROBE_STAGE_KEY)
         if (
             isinstance(probe_state, dict) and
@@ -444,18 +446,15 @@ def main() -> None:
         # Load and display corpus information
         load_and_display_target_corpus(session, user_session_id)
 
-
         if not has_meta:
             if metadata_target is None:
                 metadata_target = load_metadata("target", user_session_id)
 
-            target_metadata_start = perf_counter()
             handle_target_metadata_processing(metadata_target, user_session_id)
 
         # If reference corpus is loaded, show info and warnings
         if not has_reference:
             # Reference corpus not loaded: offer options to load one
-            reference_prompt_start = perf_counter()
             st.markdown("---")
             st.markdown('##### Reference corpus:')
             load_ref = st.radio(
@@ -477,7 +476,6 @@ def main() -> None:
 
             if load_ref == 'Yes':
                 if metadata_target is None:
-                    metadata_start = perf_counter()
                     metadata_target = load_metadata("target", user_session_id)
 
                 # Choose reference corpus source
@@ -676,6 +674,86 @@ def main() -> None:
                                 ref_persistence_policy,
                             ))
 
+                # Option 4: Process new reference corpus from a tabular file
+                if ref_corpus_source == 'Tabular':
+                    st.markdown(
+                        """
+                        :material/priority:
+                        Upload a single **Parquet**, **CSV**, or **TSV** file
+                        with columns named **doc_id** and **text**.
+
+                        :material/priority:
+                        Extra columns are allowed, but only **doc_id** and
+                        **text** will be used for corpus processing.
+
+                        :material/priority:
+                        Once you've selected your file, click the **UPLOAD REFERENCE**
+                        button and a processing button will appear in the sidebar.
+
+                        :material/priority: Your reference will be tagged with
+                        **the same model** as your target corpus.
+
+                        :material/priority: Be sure that document IDs are unique
+                        and that they don't share IDs with your target corpus.
+                        """
+                        )
+
+                    corp_df, ready, exceptions = None, False, []
+
+                    with st.form("ref-tabular-form", clear_on_submit=True):
+                        ref_file = st.file_uploader(
+                            "Upload your reference corpus",
+                            type=["parquet", "csv", "tsv"],
+                            accept_multiple_files=False
+                        )
+                        submitted = st.form_submit_button(
+                            LABEL_UPLOAD_REFERENCE
+                            )
+
+                        if submitted:
+                            st.session_state[user_session_id][WarningKeys.LOAD_CORPUS] = 0
+
+                        if submitted and ref_file is None:
+                            st.warning(
+                                "Please select a file to upload.",
+                                icon=":material/warning:")
+
+                        if submitted:
+                            corp_df, ready, exceptions = handle_uploaded_tabular(
+                                ref_file,
+                                CHECK_SIZE,
+                                MAX_TEXT,
+                                check_language_flag=ENABLE_DETECT,
+                                check_ref=True,
+                                target_docs=metadata_target.get(MetadataKeys.DOCIDS)[0]['ids']  # noqa: E501
+                            )
+
+                            if ready and corp_df is not None:
+                                st.session_state[user_session_id][LoadCorpusKeys.REF_CORPUS_DF] = corp_df  # noqa: E501
+                                st.session_state[user_session_id][LoadCorpusKeys.REF_EXCEPTIONS] = exceptions  # noqa: E501
+
+                    if ready:
+                        st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS] = True  # noqa: E501
+
+                    if st.session_state[user_session_id][LoadCorpusKeys.REF_READY_TO_PROCESS]:  # noqa: E501
+                        stored_ref_corp_df = st.session_state[user_session_id].get(LoadCorpusKeys.REF_CORPUS_DF)  # noqa: E501
+                        stored_ref_exceptions = st.session_state[user_session_id].get(LoadCorpusKeys.REF_EXCEPTIONS)  # noqa: E501
+
+                        models = load_models()
+                        selected_dict = metadata_target.get('model')[0]
+                        nlp = models[selected_dict]
+
+                        sidebar_process_section(
+                            section_title=LABEL_PROCESS_REFERENCE,
+                            button_label=LABEL_PROCESS_REFERENCE,
+                            process_fn=lambda: process_new(
+                                stored_ref_corp_df,
+                                nlp,
+                                user_session_id,
+                                CorpusKeys.REFERENCE,
+                                stored_ref_exceptions
+                            ))
+
         # Sidebar: Reset all tools and files
         st.sidebar.markdown(
             body='### Reset all tools and files:'
@@ -780,13 +858,15 @@ def main() -> None:
                     'Select a saved corpus to load:',
                     (sorted(saved_corpora))
                     )
-            process_fn = lambda: process_internal(
+            process_fn = partial(
+                process_internal,
                 saved_corpora.get(to_load),
                 user_session_id,
                 CorpusKeys.TARGET
             )
             if get_redis_queue_config().enabled:
-                process_fn = lambda: _submit_internal_target_job(
+                process_fn = partial(
+                    _submit_internal_target_job,
                     saved_corpora.get(to_load),
                     user_session_id,
                 )
