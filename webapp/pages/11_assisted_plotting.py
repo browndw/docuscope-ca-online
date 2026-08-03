@@ -7,7 +7,6 @@ Users can interact with Plotbot to generate and refine Plotly Express plots.
 """
 
 import base64
-import io
 import json
 import streamlit as st
 from datetime import datetime, timezone
@@ -285,30 +284,7 @@ def render_plotbot_chat_interface(
                         icon=":material/error:"
                     )
             elif message["type"] == "plot":
-                # Handle different plot types with safe rendering
-                if plot_lib in ["matplotlib", "seaborn"]:
-                    try:
-                        fig = message['value']
-                        # Convert matplotlib figure to image
-                        buf = io.BytesIO()
-                        fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-                        buf.seek(0)
-                        img_bytes = buf.getvalue()
-                        st.image(img_bytes)
-
-                        # Add download link
-                        b64 = base64.b64encode(img_bytes).decode()
-                        href = (f'<a href="data:image/png;base64,{b64}" '
-                                'download="plot.png">Download PNG</a>')
-                        st.markdown(href, unsafe_allow_html=True)
-                        buf.close()
-                    except Exception as e:
-                        st.error(
-                            f"Failed to render plot: {str(e)}",
-                            icon=":material/error:"
-                        )
-
-                elif plot_lib == "plotly.express":
+                if plot_lib == "plotly.express":
                     try:
                         fig = message['value']
                         # Only call plotly methods on plotly figures
@@ -487,7 +463,9 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
         if show_work_preservation:
             # Show work preservation interface when quota is exhausted but user has work
             render_work_preservation_interface(user_session_id, user_email, "plotbot")
-        elif show_api_input and not safe_session_get(session, SessionKeys.TAGS_TABLE, False):
+        elif show_api_input and not safe_session_get(
+            session, SessionKeys.TAGS_TABLE, False
+        ):
             # Show API key input when no work preservation needed
             render_api_key_input(user_session_id)
         else:
