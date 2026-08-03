@@ -242,7 +242,7 @@ class SessionHealthChecker:
         known_patterns = [
             'has_', 'target_', 'reference_', 'metadata_',
             'boxplot_', 'scatterplot_', 'pca_', 'keyness_',
-            'pandasai', 'plotbot'
+            'plotbot'
         ]
 
         orphaned_keys = []
