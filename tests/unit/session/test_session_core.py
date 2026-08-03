@@ -21,6 +21,7 @@ except ImportError:
     sys.modules['streamlit'] = MagicMock()
     st = MagicMock()
 
+from webapp.utilities.session import session_core as session_core_module
 from webapp.utilities.session.session_core import (
     METADATA_DESCRIPTOR_FILE,
     init_session,
@@ -41,7 +42,12 @@ class TestInitSession:
         session_id = "test_session"
         st.session_state[session_id] = {}
 
-        init_session(session_id)
+        with patch.object(
+            session_core_module,
+            "load_persistent_session",
+            return_value=False,
+        ):
+            init_session(session_id)
 
         assert session_id in st.session_state
         assert "session" in st.session_state[session_id]
@@ -81,7 +87,12 @@ class TestInitSession:
             "session": {"existing": "data"}
         }
 
-        init_session(session_id)
+        with patch.object(
+            session_core_module,
+            "load_persistent_session",
+            return_value=False,
+        ):
+            init_session(session_id)
 
         session_df = st.session_state[session_id]["session"]
         session_dict = session_df.to_dict(as_series=False)

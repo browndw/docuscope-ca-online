@@ -332,14 +332,11 @@ def test_run_plotbot_generation_stores_serialized_result(control_plane_env, monk
         "frequency_penalty": 0,
         "presence_penalty": 0,
     }
-    cached_code = """
-fig, ax = plt.subplots()
-ax.bar(df['label'], df['value'])
-""".strip()
+    cached_code = "fig = px.bar(df, x='label', y='value')"
 
     enqueued = client_module.enqueue_plotbot_generation(
         dataframe_records=dataframe_records,
-        plot_lib="matplotlib",
+        plot_lib="plotly.express",
         user_input="Make a bar chart of value by label.",
         llm_params=llm_params,
         cached_code=cached_code,
@@ -348,7 +345,7 @@ ax.bar(df['label'], df['value'])
     artifact_id = tasks_module.run_plotbot_generation(
         enqueued.control_plane_job_id,
         dataframe_records,
-        "matplotlib",
+        "plotly.express",
         "Make a bar chart of value by label.",
         llm_params,
         None,
@@ -371,4 +368,6 @@ ax.bar(df['label'], df['value'])
     assert "<svg" in payload["result"]["plot_svg"]
     assert "dataframe_records" not in payload
     assert "df" not in payload
-    assert payload["result"]["code"].startswith("fig, ax = plt.subplots()")
+    assert (
+        payload["result"]["code"] == "fig = px.bar(df, x='label', y='value')"
+    )

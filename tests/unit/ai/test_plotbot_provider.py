@@ -315,7 +315,7 @@ def test_run_plotbot_serialized_service_returns_svg_payload(monkeypatch):
     df = pd.DataFrame({"label": ["a", "b"], "value": [1, 2]})
     service_result = run_plotbot_serialized_service(
         df=df,
-        plot_lib="matplotlib",
+        plot_lib="plotly.express",
         user_input="Make a bar chart of value by label.",
         api_key="test-key",
         llm_params={
@@ -325,15 +325,12 @@ def test_run_plotbot_serialized_service_returns_svg_payload(monkeypatch):
             "frequency_penalty": 0,
             "presence_penalty": 0,
         },
-        cached_code="""
-fig, ax = plt.subplots()
-ax.bar(df['label'], df['value'])
-""".strip()
+        cached_code="fig = px.bar(df, x='label', y='value')"
     )
 
     assert service_result.success is True
     assert service_result.result_type == "plot"
     assert service_result.used_cached_code is True
-    assert service_result.code.startswith("fig, ax = plt.subplots()")
+    assert service_result.code == "fig = px.bar(df, x='label', y='value')"
     assert service_result.plot_svg is not None
     assert "<svg" in service_result.plot_svg

@@ -110,7 +110,7 @@ class TestLLMIntegration:
         mock_st.error = MagicMock()
 
         try:
-            setup_ai_session_state("test_session", "pandabot")
+            setup_ai_session_state("test_session", "plotbot")
             # Function should complete without error
             assert True
         except AttributeError as e:

@@ -16,7 +16,7 @@ class TestPlottingConfiguration:
     def test_plotting_backend_config(self):
         """Test plotting backend configuration."""
         plotting_backend = get_config('plotting_backend', 'visualization', 'plotly')
-        assert plotting_backend in ['plotly', 'matplotlib', 'altair']
+        assert plotting_backend == 'plotly'
 
     def test_chart_export_config(self):
         """Test chart export configuration."""

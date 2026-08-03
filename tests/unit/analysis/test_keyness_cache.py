@@ -3,10 +3,29 @@
 from unittest.mock import MagicMock, patch
 
 import polars as pl
+import pytest
 import streamlit as st
 
+from webapp.persistence import Base
+from webapp.persistence.database import build_engine, create_session_factory
+from webapp.persistence.registry import ArtifactRegistryService
 from webapp.utilities.analysis import statistical_analysis as stats
 from webapp.utilities.state import WarningKeys
+
+
+@pytest.fixture
+def control_plane_env(tmp_path, monkeypatch):
+    db_path = tmp_path / "control_plane.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    build_engine.cache_clear()
+    create_session_factory.cache_clear()
+    engine = build_engine()
+    Base.metadata.create_all(engine)
+    registry = ArtifactRegistryService()
+    monkeypatch.setattr(stats, "registry_service", registry)
+    yield tmp_path
+    build_engine.cache_clear()
+    create_session_factory.cache_clear()
 
 
 def _make_freq_df() -> pl.DataFrame:
@@ -210,7 +229,10 @@ class TestSharedKeynessCache:
         mock_reserve.assert_called_once_with(user_session_id, 0.01, False)
         mock_keyness_table.assert_not_called()
 
-    def test_reserve_artifact_creates_pending_job_and_marks_complete(self):
+    def test_reserve_artifact_creates_pending_job_and_marks_complete(
+        self,
+        control_plane_env,
+    ):
         identity = stats.build_shared_keyness_identity(
             target_source='webapp/_corpora/ld/A_MICUSP_mini',
             reference_source='webapp/_corpora/ld/C_BAWE_mini',
