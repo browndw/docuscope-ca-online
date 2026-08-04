@@ -210,7 +210,9 @@ def _render_collocation_queue_status(user_session_id: str) -> None:
 
     if job_row.status == "failed":
         _clear_collocation_queue_state(user_session_id)
-        st.error("Collocation generation failed. Please adjust the configuration and try again.")
+        st.error(
+            "Collocation generation failed. Please adjust the configuration and try again."
+        )
         return
 
     rq_status = "unknown"

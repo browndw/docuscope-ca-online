@@ -50,7 +50,11 @@ from webapp.utilities.analysis import (
     freq_simplify_pl, generate_keyness_parts, attach_keyness_parts_artifact
 )
 from webapp.persistence import registry_service
-from webapp.queue import enqueue_keyness_parts_preparation, get_queue, get_redis_queue_config
+from webapp.queue import (
+    enqueue_keyness_parts_preparation,
+    get_queue,
+    get_redis_queue_config,
+)
 from webapp.menu import (   # noqa: E402
     menu,
     require_login
@@ -187,7 +191,9 @@ def _render_keyness_parts_queue_status(user_session_id: str) -> None:
                 "Queued corpus-parts job was pending without a queue job id.",
             )
             _clear_keyness_parts_queue_state(user_session_id)
-            st.error("Queued corpus-parts generation failed before execution. Please retry.")
+            st.error(
+                "Queued corpus-parts generation failed before execution. Please retry."
+            )
             return
 
         try:
@@ -201,7 +207,9 @@ def _render_keyness_parts_queue_status(user_session_id: str) -> None:
                 "Queue job record was missing while control-plane status was pending.",
             )
             _clear_keyness_parts_queue_state(user_session_id)
-            st.error("Queued corpus-parts generation failed before execution. Please retry.")
+            st.error(
+                "Queued corpus-parts generation failed before execution. Please retry."
+            )
             return
 
         rq_status_raw = rq_job.get_status(refresh=True)
