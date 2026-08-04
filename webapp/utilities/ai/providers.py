@@ -116,7 +116,11 @@ def check_openai_compatible_provider_health(
     timeout_seconds: float = 1.0,
 ) -> OpenAICompatibleProviderHealth:
     """Check whether an OpenAI-compatible endpoint is reachable and model-ready."""
-    resolved_base_url = (base_url or os.environ.get("DOCUSCOPE_AI_BASE_URL") or DEFAULT_LOCAL_BASE_URL).strip()
+    resolved_base_url = (
+        base_url
+        or os.environ.get("DOCUSCOPE_AI_BASE_URL")
+        or DEFAULT_LOCAL_BASE_URL
+    ).strip()
     configured_model = (model or os.environ.get("DOCUSCOPE_AI_MODEL") or "").strip() or None
     if not resolved_base_url:
         return OpenAICompatibleProviderHealth(

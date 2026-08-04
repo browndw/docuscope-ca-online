@@ -335,13 +335,13 @@ def render_data_table_interface(
 
 
 def render_dataframe(
-        df: pl.DataFrame | None = None,
-        column_config: dict | None = None,
-        width: Literal['stretch', 'content'] = 'stretch',
-        num_rows: Literal['fixed', 'dynamic'] = 'dynamic',
+    df: pl.DataFrame | None = None,
+    column_config: dict | None = None,
+    width: Literal['stretch', 'content'] = 'stretch',
+    num_rows: Literal['fixed', 'dynamic'] = 'dynamic',
     disabled: bool = True,
     user_session_id: str | None = None,
-        ) -> None:
+) -> None:
     """
     Render a DataFrame in Streamlit.
 

@@ -296,7 +296,8 @@ def generate_ngrams(
         return
     if cache_decision.state == "pending":
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
-            "This shared n-grams table is already being prepared. Please try again in a moment.",
+            "This shared n-grams table is already being prepared. "
+            "Please try again in a moment.",
             ":material/hourglass_top:"
         )
         return
@@ -430,7 +431,8 @@ def generate_clusters(
         return
     if cache_decision.state == "pending":
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
-            "This shared cluster table is already being prepared. Please try again in a moment.",
+            "This shared cluster table is already being prepared. "
+            "Please try again in a moment.",
             ":material/hourglass_top:"
         )
         return
@@ -485,7 +487,10 @@ def generate_clusters(
         return
     elif getattr(ngram_df, "height", 0) > 100000:
         if job_id is not None:
-            registry_service.mark_job_failed(job_id, "Cluster search returned too many matches")
+            registry_service.mark_job_failed(
+                job_id,
+                "Cluster search returned too many matches",
+            )
         st.session_state[user_session_id][WarningKeys.NGRAM] = (
             "Your search returned too many matches! Try something more specific.",
             ":material/info:"
@@ -702,7 +707,8 @@ def generate_collocations(
         return
     if cache_decision.state == "pending":
         st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = (
-            "This shared collocations table is already being prepared. Please try again in a moment.",
+            "This shared collocations table is already being prepared. "
+            "Please try again in a moment.",
             ":material/hourglass_top:"
         )
         return
@@ -743,7 +749,10 @@ def generate_collocations(
     # --- Data-dependent warnings ---
     if coll_df is None or coll_df.is_empty():
         if job_id is not None:
-            registry_service.mark_job_failed(job_id, "Collocation search returned no matches")
+            registry_service.mark_job_failed(
+                job_id,
+                "Collocation search returned no matches",
+            )
         st.session_state[user_session_id][WarningKeys.COLLOCATIONS] = (
             "Your search didn't return any matches. Try something else.",
             ":material/info:"

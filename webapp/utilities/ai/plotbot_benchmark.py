@@ -112,7 +112,10 @@ def _referenced_dataframe_columns(code: str) -> set[str]:
     columns: set[str] = set()
     patterns = [
         r"df\[['\"]([^'\"]+)['\"]\]",
-        r"\b(?:x|y|color|labels|names|values|hover_name|facet_col|facet_row)\s*=\s*['\"]([^'\"]+)['\"]",
+        (
+            r"\b(?:x|y|color|labels|names|values|hover_name|facet_col|facet_row)"
+            r"\s*=\s*['\"]([^'\"]+)['\"]"
+        ),
     ]
     for pattern in patterns:
         columns.update(re.findall(pattern, code))
@@ -148,12 +151,17 @@ def run_plotbot_benchmark(
         latency = time.perf_counter() - started
 
         code = plot_code if isinstance(plot_code, str) else ""
-        result_type = plot_result.get("type", "error") if isinstance(plot_result, dict) else "error"
+        result_type = (
+            plot_result.get("type", "error")
+            if isinstance(plot_result, dict)
+            else "error"
+        )
         error = plot_result.get("value") if result_type == "error" else None
         referenced_columns = _referenced_dataframe_columns(code)
         available_columns = set(data.columns)
         hallucinated_columns = sorted(
-            (referenced_columns - available_columns) | (referenced_columns & case.forbidden_columns)
+            (referenced_columns - available_columns)
+            | (referenced_columns & case.forbidden_columns)
         )
         uses_expected_columns = (
             not case.expected_columns or case.expected_columns.issubset(referenced_columns)

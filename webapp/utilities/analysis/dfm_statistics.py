@@ -30,12 +30,29 @@ STATISTIC_LABELS: dict[DfmStatistic, str] = {
 
 STATISTIC_NOTES: dict[DfmStatistic, str] = {
     "mean_rf": "Mean RF is the average normalized feature frequency across documents.",
-    "median_rf": "Median RF is less affected by unusually high-frequency documents than the mean.",
-    "std_rf": "Standard deviation of RF shows how much normalized frequency varies across documents.",
-    "cv_rf": "Coefficient of variation divides RF standard deviation by mean RF; it helps compare variability for features with different average frequencies.",
-    "range_pct": "Document range is the percent of documents where the feature appears at least once.",
-    "dp_dispersion": "DP dispersion estimates how unevenly a feature is distributed across documents. Higher values suggest stronger concentration in fewer documents.",
-    "total_af": "Total AF is the raw count across documents and is sensitive to corpus or group size.",
+    "median_rf": (
+        "Median RF is less affected by unusually high-frequency documents than the mean."
+    ),
+    "std_rf": (
+        "Standard deviation of RF shows how much normalized frequency varies "
+        "across documents."
+    ),
+    "cv_rf": (
+        "Coefficient of variation divides RF standard deviation by mean RF; "
+        "it helps compare variability for features with different average frequencies."
+    ),
+    "range_pct": (
+        "Document range is the percent of documents where the feature appears "
+        "at least once."
+    ),
+    "dp_dispersion": (
+        "DP dispersion estimates how unevenly a feature is distributed across "
+        "documents. Higher values suggest stronger concentration in fewer documents."
+    ),
+    "total_af": (
+        "Total AF is the raw count across documents and is sensitive to corpus "
+        "or group size."
+    ),
 }
 
 
@@ -86,7 +103,10 @@ def available_dfm_features(dfm: pl.DataFrame, tagset: str) -> list[str]:
     return _feature_columns(_filter_output_features(dfm, tagset))
 
 
-def _select_features(dfm: pl.DataFrame, selected_features: list[str] | None) -> pl.DataFrame:
+def _select_features(
+    dfm: pl.DataFrame,
+    selected_features: list[str] | None,
+) -> pl.DataFrame:
     if not selected_features:
         return dfm
     id_columns = [column for column in ["doc_id", "Group"] if column in dfm.columns]
@@ -158,7 +178,9 @@ def _feature_dp(counts_long: pl.DataFrame, group_column: str | None = None) -> p
     doc_totals = counts_long.group_by(doc_keys).agg(pl.col("AF").sum().alias("Doc_AF"))
     feature_totals = counts_long.group_by(keys).agg(pl.col("AF").sum().alias("Feature_AF"))
     if corpus_keys:
-        corpus_totals = counts_long.group_by(corpus_keys).agg(pl.col("AF").sum().alias("Corpus_AF"))
+        corpus_totals = counts_long.group_by(corpus_keys).agg(
+            pl.col("AF").sum().alias("Corpus_AF")
+        )
     else:
         corpus_totals = counts_long.select(pl.col("AF").sum().alias("Corpus_AF"))
 
@@ -187,7 +209,9 @@ def _feature_statistics(
         pl.col("RF").mean().alias("mean_rf"),
         pl.col("RF").median().alias("median_rf"),
         pl.col("RF").std().fill_null(0).alias("std_rf"),
-        (pl.col("RF").std().fill_null(0) / pl.col("RF").mean()).fill_nan(None).alias("cv_rf"),
+        (
+            pl.col("RF").std().fill_null(0) / pl.col("RF").mean()
+        ).fill_nan(None).alias("cv_rf"),
         ((pl.col("RF") > 0).sum() / pl.len() * 100).alias("range_pct"),
     )
     af = counts_long.group_by(keys).agg(pl.col("AF").sum().alias("total_af"))

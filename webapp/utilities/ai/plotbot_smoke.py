@@ -129,7 +129,11 @@ def run_plotbot_smoke_prompts(
 
             code = generated or ""
             execution = plotbot_module.plotbot_code_execute(code, df=df, plot_lib=plot_lib)
-            execution_type = execution.get("type", "error") if isinstance(execution, dict) else "error"
+            execution_type = (
+                execution.get("type", "error")
+                if isinstance(execution, dict)
+                else "error"
+            )
             creates_fig = execution_type == "plot"
 
             results.append(PlotbotSmokeResult(
@@ -152,8 +156,16 @@ def run_plotbot_smoke_prompts(
 def main() -> None:
     """Run the Plotbot smoke benchmark against the configured provider."""
     parser = argparse.ArgumentParser(description="Run Plotbot provider smoke prompts.")
-    parser.add_argument("--api-key", default="", help="API key for the configured provider.")
-    parser.add_argument("--plot-lib", default="plotly.express", help="Plotting library to request.")
+    parser.add_argument(
+        "--api-key",
+        default="",
+        help="API key for the configured provider.",
+    )
+    parser.add_argument(
+        "--plot-lib",
+        default="plotly.express",
+        help="Plotting library to request.",
+    )
     args = parser.parse_args()
 
     results = run_plotbot_smoke_prompts(api_key=args.api_key, plot_lib=args.plot_lib)
