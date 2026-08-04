@@ -140,12 +140,12 @@ def _build_keyness_parts_metadata(
     tar_tokens_ds = target_tokens.group_by(
         ["doc_id", "ds_id", "ds_tag"]
     ).agg(pl.col("token").str.concat("")).filter(
-        ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
+        ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))  # noqa: E501
     ).height
     ref_tokens_ds = reference_tokens.group_by(
         ["doc_id", "ds_id", "ds_tag"]
     ).agg(pl.col("token").str.concat("")).filter(
-        ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))
+        ~(pl.col("token").str.contains("^[[[:punct:]] ]+$") & pl.col("ds_tag").str.contains("Untagged"))  # noqa: E501
     ).height
     tar_ndocs = target_tokens.get_column("doc_id").unique().len()
     ref_ndocs = reference_tokens.get_column("doc_id").unique().len()
@@ -283,7 +283,7 @@ def run_keyness_preparation(
                 swap_target=swap_target,
             ),
         }
-        if any(frame is None or getattr(frame, "height", 0) == 0 for frame in keyness_frames.values()):
+        if any(frame is None or getattr(frame, "height", 0) == 0 for frame in keyness_frames.values()):  # noqa: E501
             raise RuntimeError("Keyness computation returned no results.")
 
         artifact = registry_service.store_keyness_bundle(identity, keyness_frames)
@@ -407,7 +407,7 @@ def run_keyness_parts_preparation(
                 swap_target=swap_target,
             ),
         }
-        if any(frame is None or getattr(frame, "height", 0) == 0 for frame in keyness_frames.values()):
+        if any(frame is None or getattr(frame, "height", 0) == 0 for frame in keyness_frames.values()):  # noqa: E501
             raise RuntimeError("Corpus-parts keyness computation returned no results.")
 
         metadata = _build_keyness_parts_metadata(
