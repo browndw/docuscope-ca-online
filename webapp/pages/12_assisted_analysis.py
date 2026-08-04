@@ -98,7 +98,7 @@ def _build_group_selection(
     overlap = sorted(set(group_a).intersection(group_b))
     if overlap:
         overlap_labels = ", ".join(overlap)
-        return None, None, f"Categories cannot be in both group A and group B: {overlap_labels}"
+        return None, None, f"Categories cannot be in both group A and group B: {overlap_labels}"  # noqa: E501
     if not group_a or not group_b:
         return None, None, "Select at least one category for group A and group B."
 
