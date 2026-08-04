@@ -32,7 +32,9 @@ from webapp.utilities.session.session_persistence import (  # noqa: E402
 )
 from webapp.utilities.corpus import get_corpus_manager  # noqa: E402
 from webapp.utilities.storage.cache_management import persistent_hash  # noqa: E402
-from webapp.utilities.storage.sqlite_session_backend import SQLiteSessionBackend  # noqa: E402
+from webapp.utilities.storage.sqlite_session_backend import (  # noqa: E402
+    SQLiteSessionBackend,
+)
 from webapp.utilities.state import (  # noqa: E402
     CorpusPersistencePolicy,
     MetadataKeys,
@@ -342,10 +344,42 @@ class TestSQLiteSessionBackendUserHashing:
             assert not artifact_path.exists()
             assert not sidecar_path.exists()
 
+    def test_delete_session_uses_configured_session_artifact_root(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configured_parent = Path(tmpdir) / 'configured'
+            configured_root = configured_parent / 'corpora'
+            monkeypatch.setenv(
+                'DOCUSCOPE_SESSION_ARTIFACT_ROOT',
+                str(configured_root),
+            )
+            backend = self._create_backend(tmpdir)
+            artifact_path, sidecar_path = self._create_session_artifact(
+                str(configured_parent),
+                'configured123',
+            )
+            default_artifact_path, _ = self._create_session_artifact(
+                tmpdir,
+                'default123',
+            )
+
+            assert backend.save_session(
+                'session-1',
+                self._artifact_backed_payload(artifact_path),
+                'person@example.com',
+            ) is True
+            assert backend.delete_session('session-1') is True
+
+            assert not artifact_path.exists()
+            assert not sidecar_path.exists()
+            assert default_artifact_path.exists()
+
     def test_cleanup_expired_sessions_removes_session_artifacts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             backend = self._create_backend(tmpdir)
-            artifact_path, sidecar_path = self._create_session_artifact(tmpdir, 'expired123')
+            artifact_path, sidecar_path = self._create_session_artifact(
+                tmpdir,
+                'expired123',
+            )
 
             assert backend.save_session(
                 'session-expired',
@@ -356,7 +390,9 @@ class TestSQLiteSessionBackendUserHashing:
             with backend.pool.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE sessions SET expires_at = datetime('now', '-1 second') WHERE session_id = ?",
+                    "UPDATE sessions "
+                    "SET expires_at = datetime('now', '-1 second') "
+                    "WHERE session_id = ?",
                     ('session-expired',),
                 )
                 conn.commit()

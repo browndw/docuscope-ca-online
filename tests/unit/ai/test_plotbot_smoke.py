@@ -1,6 +1,9 @@
 """Tests for the Plotbot smoke benchmark harness."""
 
-from webapp.utilities.ai.plotbot_smoke import make_plotbot_smoke_dataframe, run_plotbot_smoke_prompts
+from webapp.utilities.ai.plotbot_smoke import (
+    make_plotbot_smoke_dataframe,
+    run_plotbot_smoke_prompts,
+)
 
 
 class FakeSmokeProvider:

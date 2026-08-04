@@ -50,7 +50,10 @@ def test_compute_dfm_statistics_ranks_features_by_dp_dispersion():
     )
 
     assert result.table.get_column("Feature").to_list()[0] == "Concentrated"
-    concentrated = result.table.filter(pl.col("Feature") == "Concentrated").row(0, named=True)
+    concentrated = result.table.filter(pl.col("Feature") == "Concentrated").row(
+        0,
+        named=True,
+    )
     even = result.table.filter(pl.col("Feature") == "Even").row(0, named=True)
     assert concentrated["dp_dispersion"] > even["dp_dispersion"]
     assert "unevenly" in result.note

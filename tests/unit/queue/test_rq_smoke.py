@@ -12,7 +12,7 @@ from rq.job import JobStatus
 from webapp.persistence import Base
 from webapp.persistence.database import build_engine, create_session_factory
 from webapp.persistence.models import ArtifactRecord
-from webapp.persistence.registry import ArtifactRegistryService
+from webapp.persistence.registry import ArtifactIdentity, ArtifactRegistryService
 from webapp.queue import client as client_module
 from webapp.queue import tasks as tasks_module
 
@@ -31,7 +31,10 @@ def control_plane_env(tmp_path, monkeypatch):
     create_session_factory.cache_clear()
 
 
-def test_enqueue_registry_smoke_test_deduplicates_pending_jobs(control_plane_env, monkeypatch):
+def test_enqueue_registry_smoke_test_deduplicates_pending_jobs(
+    control_plane_env,
+    monkeypatch,
+):
     registry = ArtifactRegistryService()
     monkeypatch.setattr(client_module, "registry_service", registry)
 
@@ -76,7 +79,11 @@ def test_run_registry_smoke_test_stores_json_artifact(control_plane_env, monkeyp
 
     artifact_root = Path(control_plane_env) / "_artifacts"
     monkeypatch.setattr(registry_module, "ARTIFACT_STORE_ROOT", artifact_root)
-    monkeypatch.setattr(tasks_module, "get_current_job", lambda: SimpleNamespace(id="rq-job-42"))
+    monkeypatch.setattr(
+        tasks_module,
+        "get_current_job",
+        lambda: SimpleNamespace(id="rq-job-42"),
+    )
 
     class FakeQueue:
         def fetch_job(self, _job_id):
@@ -101,6 +108,31 @@ def test_run_registry_smoke_test_stores_json_artifact(control_plane_env, monkeyp
     assert payload["status"] == "ok"
     assert payload["control_plane_job_id"] == enqueued.control_plane_job_id
     assert payload["worker_id"] == "rq-job-42"
+
+
+def test_registry_json_artifact_uses_configured_store_root(
+    control_plane_env,
+    monkeypatch,
+):
+    artifact_root = Path(control_plane_env) / "configured_artifacts"
+    monkeypatch.setenv("DOCUSCOPE_ARTIFACT_STORE_ROOT", str(artifact_root))
+
+    registry = ArtifactRegistryService()
+    identity = ArtifactIdentity(
+        artifact_type="configured_json",
+        scope="public",
+        selector_hash="selector",
+        selector_payload={"selector": "demo"},
+        parameter_hash="params",
+        parameter_payload={"params": "demo"},
+        pipeline_version="test",
+        model_version="test",
+    )
+
+    artifact = registry.store_json_artifact(identity, {"ok": True})
+
+    assert Path(artifact.storage_uri).is_relative_to(artifact_root)
+    assert registry.load_json_artifact(artifact) == {"ok": True}
 
 
 def test_enqueue_internal_target_preparation_deduplicates_pending_jobs(
@@ -149,7 +181,11 @@ def test_run_internal_target_preparation_stores_result_and_frequency_artifact(
 
     artifact_root = Path(control_plane_env) / "_artifacts"
     monkeypatch.setattr(registry_module, "ARTIFACT_STORE_ROOT", artifact_root)
-    monkeypatch.setattr(tasks_module, "get_current_job", lambda: SimpleNamespace(id="rq-job-target-42"))
+    monkeypatch.setattr(
+        tasks_module,
+        "get_current_job",
+        lambda: SimpleNamespace(id="rq-job-target-42"),
+    )
 
     corpus_dir = Path(control_plane_env) / "corpus"
     corpus_dir.mkdir(parents=True, exist_ok=True)
@@ -267,7 +303,10 @@ def test_enqueue_plotbot_generation_deduplicates_pending_jobs(
 
         def enqueue(self, func, *args, **kwargs):
             self.enqueued.append((func, args, kwargs))
-            job = SimpleNamespace(id="rq-job-plotbot-1", get_status=lambda: JobStatus.QUEUED)
+            job = SimpleNamespace(
+                id="rq-job-plotbot-1",
+                get_status=lambda: JobStatus.QUEUED,
+            )
             self.jobs[kwargs["job_id"]] = job
             return job
 
@@ -313,7 +352,11 @@ def test_run_plotbot_generation_stores_serialized_result(control_plane_env, monk
 
     artifact_root = Path(control_plane_env) / "_artifacts"
     monkeypatch.setattr(registry_module, "ARTIFACT_STORE_ROOT", artifact_root)
-    monkeypatch.setattr(tasks_module, "get_current_job", lambda: SimpleNamespace(id="rq-job-plotbot-42"))
+    monkeypatch.setattr(
+        tasks_module,
+        "get_current_job",
+        lambda: SimpleNamespace(id="rq-job-plotbot-42"),
+    )
 
     class FakeQueue:
         def fetch_job(self, _job_id):

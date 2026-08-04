@@ -22,7 +22,7 @@ def _postgres_integration_enabled() -> bool:
     not _postgres_integration_enabled(),
     reason="Set DOCUSCOPE_POSTGRES_INTEGRATION=1 to run real Postgres smoke tests.",
 )
-def test_postgres_control_plane_session_and_registry_smoke():
+def test_postgres_control_plane_session_and_registry_smoke(tmp_path, monkeypatch):
     """Exercise schema, session envelopes, artifact reservation, and job completion."""
 
     from webapp.persistence.database import (
@@ -43,6 +43,14 @@ def test_postgres_control_plane_session_and_registry_smoke():
     selector_hash = f"selector-{run_id}"
     parameter_hash = "params"
     artifact_dir: Path | None = None
+    session_artifact_root = tmp_path / "session-corpora"
+    session_artifact_dir = session_artifact_root / run_id / "target"
+    session_artifact_dir.mkdir(parents=True, exist_ok=True)
+    session_artifact_path = session_artifact_dir / "ds_tokens.gz"
+    session_sidecar_path = session_artifact_dir / "metadata_descriptor.json"
+    session_artifact_path.write_bytes(b"payload")
+    session_sidecar_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("DOCUSCOPE_SESSION_ARTIFACT_ROOT", str(session_artifact_root))
 
     session_factory = create_session_factory()
 
@@ -52,7 +60,15 @@ def test_postgres_control_plane_session_and_registry_smoke():
             "session": {
                 "has_target": True,
                 "target_db": f"target-{run_id}",
-            }
+            },
+            "target": {
+                "_artifact_refs": {
+                    "ds_tokens": {
+                        "storage_type": "gzip_pickle",
+                        "path": str(session_artifact_path),
+                    }
+                }
+            },
         }
         assert backend.save_session(
             session_id,
@@ -61,6 +77,8 @@ def test_postgres_control_plane_session_and_registry_smoke():
         ) is True
         assert backend.load_session(session_id) == session_payload
         assert backend.delete_session(session_id) is True
+        assert not session_artifact_path.exists()
+        assert not session_sidecar_path.exists()
         assert backend.load_session(session_id) is None
 
         registry = ArtifactRegistryService()
