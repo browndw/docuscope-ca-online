@@ -28,11 +28,9 @@ from webapp.utilities.ai import (
     render_quota_tracker, should_show_api_key_input,
     render_work_preservation_interface, should_show_work_preservation_interface,
     export_conversation_history, clear_plotbot_table,
-    prune_message_thread
+    get_plotbot_builtin_sources, prune_message_thread
 )
 from webapp.utilities.ai.providers import get_openai_compatible_provider_config
-from webapp.utilities.configuration.logging_config import get_logger
-from webapp.persistence import registry_service
 from webapp.queue import (
     enqueue_plotbot_generation,
     get_queue,
@@ -54,8 +52,6 @@ from webapp.menu import (
 
 TITLE = "AI-Assisted Plotting"
 ICON = ":material/smart_toy:"
-
-logger = get_logger()
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
@@ -102,18 +98,8 @@ def _dataframe_to_plotbot_records(df) -> list[dict[str, object]]:
     return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
-def _append_queued_plotbot_result(user_session_id: str, artifact_id: int) -> bool:
-    """Attach a completed queued Plotbot JSON result to the chat state."""
-    artifact = registry_service.get_artifact_by_id(artifact_id)
-    if artifact is None:
-        return False
-
-    try:
-        payload = registry_service.load_json_artifact(artifact)
-    except Exception as exc:
-        logger.warning(f"Queued Plotbot artifact load failed for {artifact_id}: {exc}")
-        return False
-
+def _append_queued_plotbot_result(user_session_id: str, payload: dict) -> bool:
+    """Attach a completed ephemeral Plotbot result to the chat state."""
     result = payload.get("result") if isinstance(payload, dict) else None
     if not isinstance(result, dict):
         return False
@@ -157,6 +143,7 @@ def _submit_plotbot_job(
     llm_params: dict,
     code_chunk: str | None,
     user_email: str,
+    source_refs: list[str],
 ) -> None:
     """Submit Plotbot generation to Redis/RQ and store pending state."""
     if df is None:
@@ -175,27 +162,19 @@ def _submit_plotbot_job(
     schema = df.dtypes.to_string() if hasattr(df, "dtypes") else str(type(df))
     result = enqueue_plotbot_generation(
         dataframe_records=dataframe_records,
+        source_refs=source_refs,
         plot_lib=plot_lib,
         user_input=user_input,
         llm_params=llm_params,
         schema=schema,
         code_chunk=code_chunk,
         api_key=api_key,
-        requester_principal_id=user_email or "anonymous",
+        requester_principal_id=f"{user_email or 'anonymous'}:{user_session_id}",
     )
-
-    if result.state == "ready" and result.artifact_id is not None:
-        _clear_plotbot_queue_state(user_session_id)
-        if _append_queued_plotbot_result(user_session_id, result.artifact_id):
-            st.rerun()
-        st.error("Ready Plotbot result could not be attached. Please retry.")
-        return
 
     st.session_state[PLOTBOT_QUEUE_STATE_KEY] = {
         "session_id": user_session_id,
-        "control_plane_job_id": result.control_plane_job_id,
         "rq_job_id": result.rq_job_id,
-        "artifact_id": result.artifact_id,
     }
     st.rerun()
 
@@ -207,54 +186,38 @@ def _render_plotbot_queue_status(user_session_id: str) -> None:
     if queue_state is None:
         return
 
-    control_plane_job_id = queue_state.get("control_plane_job_id")
     rq_job_id = queue_state.get("rq_job_id")
     if not isinstance(rq_job_id, str) or not rq_job_id:
-        if isinstance(control_plane_job_id, int):
-            rq_job_id = f"plotbot-{control_plane_job_id}"
-            queue_state["rq_job_id"] = rq_job_id
-            st.session_state[PLOTBOT_QUEUE_STATE_KEY] = queue_state
-        else:
-            rq_job_id = None
-
-    if control_plane_job_id is None:
         _clear_plotbot_queue_state(user_session_id)
         st.warning("Queued Plotbot job state was incomplete. Please try again.")
         return
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
-    if job_row is None:
+    try:
+        rq_job = get_queue().fetch_job(rq_job_id)
+    except Exception:
+        rq_job = None
+    if rq_job is None:
         _clear_plotbot_queue_state(user_session_id)
         st.warning("Queued Plotbot job could not be found. Please try again.")
         return
 
-    if job_row.status == "completed" and job_row.artifact_id is not None:
-        if _append_queued_plotbot_result(user_session_id, job_row.artifact_id):
+    rq_status_raw = rq_job.get_status(refresh=True)
+    rq_status = str(getattr(rq_status_raw, "value", rq_status_raw)).strip().lower()
+    if rq_status == "finished":
+        if _append_queued_plotbot_result(user_session_id, rq_job.result):
             _clear_plotbot_queue_state(user_session_id)
             st.rerun()
         _clear_plotbot_queue_state(user_session_id)
         st.error("Completed Plotbot result could not be attached. Please retry.")
         return
 
-    if job_row.status == "failed":
+    if rq_status in {"failed", "stopped", "canceled"}:
         _clear_plotbot_queue_state(user_session_id)
-        st.error(f"Plotbot generation failed: {job_row.failure_reason}")
+        st.error("Plotbot generation failed. Please retry.")
         return
 
-    rq_status = "unknown"
-    if rq_job_id:
-        try:
-            rq_job = get_queue().fetch_job(rq_job_id)
-            if rq_job is not None:
-                rq_status_raw = rq_job.get_status(refresh=True)
-                rq_status = str(
-                    getattr(rq_status_raw, "value", rq_status_raw)
-                ).strip().lower()
-        except Exception:
-            rq_status = "unavailable"
-
     st.status(
-        f"Generating plot in the background... ({job_row.status}, queue: {rq_status})",
+        f"Generating plot in the background... (queue: {rq_status})",
         state="running",
     )
 
@@ -264,7 +227,8 @@ def render_plotbot_chat_interface(
     api_key: str,
     df,
     selected_query: str,
-    plot_lib: str
+    plot_lib: str,
+    source_refs: list[str],
 ) -> None:
     """Render the chat interface for Plotbot."""
     # Convert DataFrame once for reuse in API calls
@@ -321,7 +285,7 @@ def render_plotbot_chat_interface(
 
     # Get last code chunk
     last_code = previous_code_chunk(st.session_state[user_session_id]["plotbot"])
-    queue_enabled = get_redis_queue_config().enabled
+    queue_enabled = get_redis_queue_config().enabled and bool(source_refs)
     try:
         user_email = (st.user.email if hasattr(st, 'user') and st.user and
                       hasattr(st.user, 'email') else 'anonymous')
@@ -356,6 +320,7 @@ def render_plotbot_chat_interface(
                         llm_params=LLM_PARAMS,
                         code_chunk=last_code,
                         user_email=user_email,
+                        source_refs=source_refs,
                     )
                 else:
                     # Generate response
@@ -368,7 +333,8 @@ def render_plotbot_chat_interface(
                         llm_params=LLM_PARAMS,
                         code_chunk=last_code,
                         prompt_position=st.session_state[user_session_id][prompt_count_key],
-                        cache_mode=get_runtime_setting('cache_mode', False, 'cache')
+                        cache_mode=get_runtime_setting('cache_mode', False, 'cache'),
+                        allow_persistence=bool(source_refs),
                     )
                 st.rerun()
     else:
@@ -392,6 +358,7 @@ def render_plotbot_chat_interface(
                         llm_params=LLM_PARAMS,
                         code_chunk=last_code,
                         user_email=user_email,
+                        source_refs=source_refs,
                     )
                 else:
                     # Generate refined response
@@ -406,7 +373,8 @@ def render_plotbot_chat_interface(
                         prompt_position=st.session_state[user_session_id][
                             SessionKeys.AI_PLOTBOT_PROMPT_COUNT
                         ],
-                        cache_mode=get_runtime_setting('cache_mode', False, 'cache')
+                        cache_mode=get_runtime_setting('cache_mode', False, 'cache'),
+                        allow_persistence=bool(source_refs),
                     )
                 st.rerun()
 
@@ -559,7 +527,7 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
             if last_code is None or len(last_code) == 0:
 
                 # Data selection interface
-                selected_query, df = render_data_selection_interface(
+                selected_corpus, selected_query, df = render_data_selection_interface(
                     user_session_id=user_session_id,
                     session=session,
                     bot_prefix="plotbot",
@@ -578,15 +546,34 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
 
                     st.session_state[user_session_id]['plotbot_df'] = df
                     st.session_state[user_session_id]['plotbot_query'] = selected_query
+                    st.session_state[user_session_id][
+                        SessionKeys.AI_PLOTBOT_SOURCE
+                    ] = selected_corpus
                 else:
                     st.session_state[user_session_id].pop('plotbot_df', None)
                     st.session_state[user_session_id].pop('plotbot_query', None)
+                    st.session_state[user_session_id].pop(
+                        SessionKeys.AI_PLOTBOT_SOURCE,
+                        None,
+                    )
 
                 st.session_state[user_session_id]['plotbot_library'] = PLOTBOT_LIBRARY
 
             # Chat interface
             df = st.session_state[user_session_id].get('plotbot_df', None)
             selected_query = st.session_state[user_session_id].get('plotbot_query', None)
+            selected_corpus = st.session_state[user_session_id].get(
+                SessionKeys.AI_PLOTBOT_SOURCE,
+            )
+            source_refs = get_plotbot_builtin_sources(
+                selected_corpus,
+                target_source=safe_session_get(session, SessionKeys.TARGET_DB, ""),
+                reference_source=safe_session_get(
+                    session,
+                    SessionKeys.REFERENCE_DB,
+                    "",
+                ),
+            )
             plot_lib = PLOTBOT_LIBRARY
 
             if last_code is not None and len(last_code) > 0:
@@ -612,7 +599,12 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
 
             if model_available:
                 render_plotbot_chat_interface(
-                    user_session_id, api_key or "", df, selected_query, plot_lib
+                    user_session_id,
+                    api_key or "",
+                    df,
+                    selected_query,
+                    plot_lib,
+                    source_refs,
                 )
             elif selected_query:
                 st.info(
