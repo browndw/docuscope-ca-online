@@ -7,7 +7,9 @@ runtime overrides while maintaining clean dependency management.
 """
 
 import os
-from typing import Any, Dict
+import tomllib
+from pathlib import Path
+from typing import Any, Dict, Optional
 from webapp.config.static_config import static_config
 
 
@@ -21,6 +23,101 @@ class ConfigManager:
         """Initialize configuration manager."""
         self._runtime_overrides: Dict[str, Any] = {}
         self._runtime_config_available = False
+
+    _project_root: Optional[Path] = None
+
+    @classmethod
+    def get_project_root(cls) -> Path:
+        """
+        Get the project root directory with caching.
+
+        Handles both regular execution and PyInstaller/Tauri bundles.
+
+        Returns
+        -------
+        Path
+            The project root directory path.
+        """
+        if cls._project_root is None:
+            if hasattr(os.sys, '_MEIPASS'):
+                # In PyInstaller bundle - use the extracted directory
+                cls._project_root = Path(os.sys._MEIPASS)
+            else:
+                cls._project_root = Path(__file__).resolve().parents[2]
+        return cls._project_root
+
+    # Convenient static path/property accessors (migrated from the legacy
+    # ConfigurationManager in webapp/utilities/configuration/config_manager.py)
+    @property
+    def desktop_mode(self) -> bool:
+        """Get desktop mode setting (with intelligent fallback)."""
+        return self.is_desktop_mode()
+
+    @property
+    def test_mode(self) -> bool:
+        """Get enterprise test mode setting."""
+        return self.is_test_mode()
+
+    @property
+    def check_size(self) -> bool:
+        """Get size checking setting."""
+        return self.get('check_size', 'global', False)
+
+    @property
+    def check_language(self) -> bool:
+        """Get language checking setting."""
+        return self.get('check_language', 'global', False)
+
+    @property
+    def max_text_size(self) -> int:
+        """Get maximum text bytes setting."""
+        return self.get('max_text_size', 'global', 20000000)
+
+    @property
+    def max_polars_size(self) -> int:
+        """Get maximum polars bytes setting."""
+        return self.get('max_polars_size', 'global', 150000000)
+
+    @property
+    def model_large_path(self) -> str:
+        """Get path to large DocuScope spaCy model."""
+        return str(self.get_project_root() / "webapp" / "_models" / "en_docusco_spacy")
+
+    @property
+    def model_small_path(self) -> str:
+        """Get path to small DocuScope spaCy model."""
+        return str(self.get_project_root() / "webapp" / "_models" / "en_docusco_spacy_cd")
+
+    @property
+    def corpus_dir_path(self) -> str:
+        """Get path to corpora directory."""
+        return str(self.get_project_root() / "webapp" / "_corpora")
+
+    @property
+    def docuscope_logo_path(self) -> str:
+        """Get path to DocuScope logo PNG file."""
+        return str(self.get_project_root() / "webapp" / "_static" / "docuscope-logo.png")
+
+    @property
+    def porpoise_badge_path(self) -> str:
+        """Get path to Porpoise badge SVG file."""
+        return str(self.get_project_root() / "webapp" / "_static" / "porpoise_badge.svg")
+
+    @property
+    def user_guide_badge_path(self) -> str:
+        """Get path to User Guide badge SVG file."""
+        return str(self.get_project_root() / "webapp" / "_static" / "user_guide.svg")
+
+    @property
+    def spacy_model_meta_path(self) -> str:
+        """Get path to spaCy model meta.json file."""
+        base_path = self.get_project_root() / "webapp" / "_models"
+        return str(base_path / "en_docusco_spacy" / "meta.json")
+
+    @property
+    def version(self) -> str:
+        """Get application version from pyproject.toml."""
+        return get_version_from_pyproject()
 
     def _try_get_runtime_override(self, key: str, section: str) -> tuple[bool, Any]:
         """
@@ -301,6 +398,24 @@ class ConfigManager:
             pass
 
         return default
+
+
+def get_version_from_pyproject() -> str:
+    """
+    Extract the version string from pyproject.toml.
+
+    Returns
+    -------
+    str
+        The version string, or '0.0.0' if not found.
+    """
+    pyproject_path = ConfigManager.get_project_root() / "pyproject.toml"
+    try:
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+        return data["project"]["version"]
+    except Exception:
+        return "0.0.0"
 
 
 # Global configuration manager instance
