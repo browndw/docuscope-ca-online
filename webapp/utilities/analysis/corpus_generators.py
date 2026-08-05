@@ -41,15 +41,18 @@ def _get_shared_collocation_identity(
     if not target_db:
         return None
 
-    return build_shared_collocation_identity(
-        target_source=target_db,
-        node_word=node_word,
-        node_tag=node_tag,
-        to_left=to_left,
-        to_right=to_right,
-        stat_mode=stat_mode,
-        count_by=count_by,
-    )
+    try:
+        return build_shared_collocation_identity(
+            target_source=target_db,
+            node_word=node_word,
+            node_tag=node_tag,
+            to_left=to_left,
+            to_right=to_right,
+            stat_mode=stat_mode,
+            count_by=count_by,
+        )
+    except ValueError:
+        return None
 
 
 def _get_shared_ngram_identity(
@@ -70,17 +73,20 @@ def _get_shared_ngram_identity(
     if not target_db:
         return None
 
-    return build_shared_ngram_identity(
-        target_source=target_db,
-        analysis_type=analysis_type,
-        ngram_span=ngram_span,
-        count_by=count_by,
-        from_anchor=from_anchor,
-        node_word=node_word,
-        tag=tag,
-        position=position,
-        search_type=search_type,
-    )
+    try:
+        return build_shared_ngram_identity(
+            target_source=target_db,
+            analysis_type=analysis_type,
+            ngram_span=ngram_span,
+            count_by=count_by,
+            from_anchor=from_anchor,
+            node_word=node_word,
+            tag=tag,
+            position=position,
+            search_type=search_type,
+        )
+    except ValueError:
+        return None
 
 
 def _ngram_parameters(
@@ -115,7 +121,7 @@ def attach_ngram_artifact(
     """Attach a ready n-gram/cluster artifact to the target corpus session."""
 
     if artifact_type is None:
-        artifact = registry_service.get_artifact_by_id(artifact_id)
+        artifact = registry_service.get_public_artifact_by_id(artifact_id)
         if artifact is None or artifact.status != "ready":
             return False
         artifact_type = artifact.artifact_type
@@ -191,7 +197,7 @@ def attach_collocation_artifact(
     """Attach a ready collocation artifact to the current target corpus session."""
 
     if artifact_type is None:
-        artifact = registry_service.get_artifact_by_id(artifact_id)
+        artifact = registry_service.get_public_artifact_by_id(artifact_id)
         if artifact is None or artifact.status != "ready":
             return False
         artifact_type = artifact.artifact_type
