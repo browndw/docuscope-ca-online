@@ -1,5 +1,5 @@
 [version]
-version = "0.4.1"  # Update this version when making changes
+version = "0.5.0"  # Update this version when making changes
 
 [global]
 # Set to true for desktop mode (single user, local storage)
@@ -88,8 +88,6 @@ enable_analysis_cache = true
 cache_compression = true
 
 # Enterprise cache settings (when desktop_mode = false)
-cache_backend = "sqlite"
-cache_db_path = "webapp/_session/cache.db"
 cache_max_size_mb = 500
 cache_ttl_hours = 24
 cache_cleanup_interval_minutes = 30
