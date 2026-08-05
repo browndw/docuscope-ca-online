@@ -61,12 +61,15 @@ def _get_shared_keyness_identity(user_session_id: str, threshold: float, swap_ta
     if not target_db or not reference_db:
         return None
 
-    return build_shared_keyness_identity(
-        target_source=target_db,
-        reference_source=reference_db,
-        threshold=threshold,
-        swap_target=swap_target,
-    )
+    try:
+        return build_shared_keyness_identity(
+            target_source=target_db,
+            reference_source=reference_db,
+            threshold=threshold,
+            swap_target=swap_target,
+        )
+    except ValueError:
+        return None
 
 
 def _normalize_category_selection(categories: list) -> list[str]:
@@ -122,13 +125,16 @@ def _get_shared_keyness_parts_identity(
     if not tar_list or not ref_list:
         return None
 
-    return build_shared_keyness_parts_identity(
-        target_source=target_db,
-        target_categories=tar_list,
-        reference_categories=ref_list,
-        threshold=threshold,
-        swap_target=swap_target,
-    )
+    try:
+        return build_shared_keyness_parts_identity(
+            target_source=target_db,
+            target_categories=tar_list,
+            reference_categories=ref_list,
+            threshold=threshold,
+            swap_target=swap_target,
+        )
+    except ValueError:
+        return None
 
 
 def _load_cached_keyness_tables(
@@ -170,7 +176,7 @@ def attach_keyness_parts_artifact(
 ) -> bool:
     """Attach a ready corpus-parts keyness artifact to the target corpus session."""
 
-    artifact = registry_service.get_artifact_by_id(artifact_id)
+    artifact = registry_service.get_public_artifact_by_id(artifact_id)
     if artifact is None or artifact.status != "ready":
         return False
     if artifact_type is None:
@@ -214,7 +220,7 @@ def attach_keyness_artifact(
     """Attach a ready keyness artifact to the current target corpus session."""
 
     if artifact_type is None:
-        artifact = registry_service.get_artifact_by_id(artifact_id)
+        artifact = registry_service.get_public_artifact_by_id(artifact_id)
         if artifact is None or artifact.status != "ready":
             return False
         artifact_type = artifact.artifact_type
