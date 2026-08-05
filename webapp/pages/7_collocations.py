@@ -184,7 +184,7 @@ def _render_collocation_queue_status(user_session_id: str) -> None:
         st.warning("Queued collocation job state was incomplete. Please try again.")
         return
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_public_job_by_id(control_plane_job_id)
     if job_row is None:
         _clear_collocation_queue_state(user_session_id)
         st.warning("Queued collocation job could not be found. Please try again.")
