@@ -53,6 +53,7 @@ else:
         enqueue_plotbot_generation,
         enqueue_internal_target_preparation,
         enqueue_registry_smoke_test,
+        get_plotbot_queue,
         get_queue,
         get_redis_connection,
     )
@@ -76,6 +77,7 @@ else:
         "enqueue_plotbot_generation",
         "enqueue_internal_target_preparation",
         "enqueue_registry_smoke_test",
+        "get_plotbot_queue",
         "get_queue",
         "get_redis_queue_config",
         "get_redis_connection",
