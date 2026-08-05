@@ -37,6 +37,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
       REDIS_URL: redis://redis:6379/0
       DOCUSCOPE_RQ_ENABLED: "1"
@@ -74,6 +75,7 @@ services:
       redis:
         condition: service_healthy
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
       REDIS_URL: redis://redis:6379/0
       DOCUSCOPE_RQ_ENABLED: "1"
@@ -114,6 +116,7 @@ services:
       - "8000:8000"
     ipc: host
     gpus: all
+    restart: unless-stopped
     command:
       - --host
       - 0.0.0.0
