@@ -143,6 +143,9 @@ class TestSessionPersistencePolicy:
     @patch('streamlit.session_state', {})
     def test_build_persistable_session_data_drops_heavy_tables(self):
         session_id = 'test_session'
+        builtin_core_path = (
+            Path.cwd() / 'webapp' / '_corpora' / 'ld' / 'A_MICUSP_mini' / 'ds_tokens.gz'
+        )
         st.session_state[session_id] = {
             'session': pl.from_dict({
                 SessionKeys.CORPUS_PERSISTENCE_POLICY: [
@@ -167,7 +170,7 @@ class TestSessionPersistencePolicy:
                 '_artifact_refs': {
                     'ds_tokens': {
                         'storage_type': 'gzip_pickle',
-                        'path': 'webapp/_corpora/demo/ds_tokens.gz',
+                        'path': str(builtin_core_path),
                     }
                 },
                 'ds_tokens': pl.DataFrame({'token': ['x']}),
@@ -180,8 +183,8 @@ class TestSessionPersistencePolicy:
 
         assert projected['session'][SessionKeys.HAS_TARGET] is True
         assert SessionKeys.FREQ_TABLE not in projected['session']
-        assert projected['target']['_artifact_refs']['ds_tokens']['path'].endswith(
-            'ds_tokens.gz'
+        assert projected['target']['_artifact_refs']['ds_tokens']['path'] == (
+            'builtin:ld/A_MICUSP_mini/ds_tokens.gz'
         )
         assert 'ds_tokens' not in projected['target']
         assert MetadataKeys.NDOCS in projected[SessionKeys.METADATA_TARGET]
@@ -458,3 +461,55 @@ class TestSQLiteSessionBackendUserHashing:
 
             assert restored_tokens is not None
             assert restored_tokens.equals(ds_tokens)
+
+    @patch('streamlit.session_state', {})
+    def test_load_session_clears_target_when_file_backed_core_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            backend = self._create_backend(tmpdir)
+            missing_artifact_path = Path(tmpdir) / 'missing' / 'ds_tokens.gz'
+
+            manager = SessionPersistenceManager()
+            manager._backend = backend
+
+            assert backend.save_session(
+                'session-missing-core',
+                {
+                    'session': {
+                        SessionKeys.HAS_TARGET: True,
+                        SessionKeys.TARGET_DB: 'webapp/_session/corpora/stale/target',
+                        SessionKeys.HAS_META: True,
+                        SessionKeys.TARGET_PERSISTENCE_POLICY: (
+                            CorpusPersistencePolicy.SERVER_SAVED
+                        ),
+                        SessionKeys.REFERENCE_PERSISTENCE_POLICY: (
+                            CorpusPersistencePolicy.SERVER_SAVED
+                        ),
+                    },
+                    SessionKeys.METADATA_TARGET: {
+                        MetadataKeys.NDOCS: [1],
+                        MetadataKeys.DOCCATS: [{'cats': ['stale']}],
+                    },
+                    'target': {
+                        '_artifact_refs': {
+                            'ds_tokens': {
+                                'storage_type': 'gzip_pickle',
+                                'path': str(missing_artifact_path),
+                            }
+                        }
+                    },
+                },
+                'person@example.com',
+            ) is True
+
+            assert manager.load_session('session-missing-core') is True
+
+            restored_session = st.session_state['session-missing-core']['session']
+            session_flags = restored_session.to_dict(as_series=False)
+
+            assert session_flags[SessionKeys.HAS_TARGET] == [False]
+            assert session_flags[SessionKeys.TARGET_DB] == ['']
+            assert session_flags[SessionKeys.HAS_META] == [False]
+            assert SessionKeys.METADATA_TARGET not in st.session_state[
+                'session-missing-core'
+            ]
+            assert 'target' not in st.session_state['session-missing-core']

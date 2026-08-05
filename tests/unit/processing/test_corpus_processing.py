@@ -788,6 +788,7 @@ class TestProcessInternalProbeModes:
     def setup_method(self):
         self.user_session_id = "test_session"
         self.corpus_path = "webapp/_corpora/ld/A_MICUSP_mini"
+        self.portable_corpus_path = "builtin:ld/A_MICUSP_mini"
 
     @patch('webapp.utilities.processing.corpus_processing.st.caption')
     @patch('webapp.utilities.processing.corpus_processing.st.rerun')
@@ -832,7 +833,7 @@ class TestProcessInternalProbeModes:
         )
 
         session = session_state[self.user_session_id]['session'].to_dict(as_series=False)
-        assert session[SessionKeys.TARGET_DB] == [self.corpus_path]
+        assert session[SessionKeys.TARGET_DB] == [self.portable_corpus_path]
         assert session[SessionKeys.HAS_TARGET] == [True]
         mock_manager.warm_shared_frequency_data.assert_not_called()
 
@@ -880,7 +881,7 @@ class TestProcessInternalProbeModes:
         )
 
         session = session_state[self.user_session_id]['session'].to_dict(as_series=False)
-        assert session[SessionKeys.TARGET_DB] == [self.corpus_path]
+        assert session[SessionKeys.TARGET_DB] == [self.portable_corpus_path]
         assert session[SessionKeys.HAS_TARGET] == [True]
         mock_manager.warm_shared_frequency_data.assert_not_called()
 
@@ -928,6 +929,6 @@ class TestProcessInternalProbeModes:
         mock_manager.warm_shared_frequency_data.assert_called_once_with()
 
         session = session_state[self.user_session_id]['session'].to_dict(as_series=False)
-        assert session[SessionKeys.TARGET_DB] == [self.corpus_path]
+        assert session[SessionKeys.TARGET_DB] == [self.portable_corpus_path]
         assert session[SessionKeys.HAS_TARGET] == [True]
         mock_rerun.assert_called_once()
