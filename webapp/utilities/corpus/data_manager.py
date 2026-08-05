@@ -13,9 +13,11 @@ import gzip
 import os
 import pickle
 from collections import OrderedDict
+from contextlib import contextmanager
+from dataclasses import dataclass
 from threading import Lock
 from time import perf_counter
-from typing import Dict, Optional, Any
+from typing import Dict, Iterator, Optional, Any
 import polars as pl
 import streamlit as st
 import docuscospacy as ds
@@ -41,8 +43,19 @@ _artifact_frame_cache: OrderedDict[
     tuple[ArtifactFrameCacheOwner, str],
     pl.DataFrame,
 ] = OrderedDict()
-_artifact_frame_cache_locks: dict[tuple[ArtifactFrameCacheOwner, str], Lock] = {}
-_artifact_frame_cache_locks_guard = Lock()
+
+
+@dataclass
+class _ArtifactFrameLockEntry:
+    lock: Lock
+    users: int = 0
+
+
+_artifact_frame_cache_locks: dict[
+    tuple[ArtifactFrameCacheOwner, str],
+    _ArtifactFrameLockEntry,
+] = {}
+_artifact_frame_cache_state_lock = Lock()
 
 
 def _get_cached_artifact_frame(
@@ -52,12 +65,13 @@ def _get_cached_artifact_frame(
     """Return an ephemeral in-process cache hit for an artifact-backed frame."""
 
     cache_key = (cache_owner, key)
-    cached = _artifact_frame_cache.get(cache_key)
-    if cached is None:
-        return None
+    with _artifact_frame_cache_state_lock:
+        cached = _artifact_frame_cache.get(cache_key)
+        if cached is None:
+            return None
 
-    _artifact_frame_cache.move_to_end(cache_key)
-    return cached
+        _artifact_frame_cache.move_to_end(cache_key)
+        return cached
 
 
 def _set_cached_artifact_frame(
@@ -68,23 +82,37 @@ def _set_cached_artifact_frame(
     """Store an artifact-backed frame in the ephemeral in-process cache."""
 
     cache_key = (cache_owner, key)
-    _artifact_frame_cache[cache_key] = value
-    _artifact_frame_cache.move_to_end(cache_key)
+    with _artifact_frame_cache_state_lock:
+        _artifact_frame_cache[cache_key] = value
+        _artifact_frame_cache.move_to_end(cache_key)
 
-    while len(_artifact_frame_cache) > ARTIFACT_FRAME_CACHE_MAX_ITEMS:
-        _artifact_frame_cache.popitem(last=False)
+        while len(_artifact_frame_cache) > ARTIFACT_FRAME_CACHE_MAX_ITEMS:
+            _artifact_frame_cache.popitem(last=False)
 
 
-def _get_artifact_frame_lock(cache_owner: ArtifactFrameCacheOwner, key: str) -> Lock:
-    """Return the shared lock guarding first-load cache misses for one frame."""
+@contextmanager
+def _artifact_frame_load_lock(
+    cache_owner: ArtifactFrameCacheOwner,
+    key: str,
+) -> Iterator[None]:
+    """Serialize one frame load and discard the lock after its final user."""
 
     cache_key = (cache_owner, key)
-    with _artifact_frame_cache_locks_guard:
-        lock = _artifact_frame_cache_locks.get(cache_key)
-        if lock is None:
-            lock = Lock()
-            _artifact_frame_cache_locks[cache_key] = lock
-        return lock
+    with _artifact_frame_cache_state_lock:
+        entry = _artifact_frame_cache_locks.get(cache_key)
+        if entry is None:
+            entry = _ArtifactFrameLockEntry(lock=Lock())
+            _artifact_frame_cache_locks[cache_key] = entry
+        entry.users += 1
+
+    try:
+        with entry.lock:
+            yield
+    finally:
+        with _artifact_frame_cache_state_lock:
+            entry.users -= 1
+            if entry.users == 0:
+                _artifact_frame_cache_locks.pop(cache_key, None)
 
 
 def _build_shared_frequency_cache_owner(identity) -> str:
@@ -126,7 +154,8 @@ def _clear_cached_artifact_frame(
 ) -> None:
     """Clear one cached frame entry without disturbing other cached frames."""
 
-    _artifact_frame_cache.pop((cache_owner, key), None)
+    with _artifact_frame_cache_state_lock:
+        _artifact_frame_cache.pop((cache_owner, key), None)
 
 
 class CorpusDataManager:
@@ -372,8 +401,7 @@ class CorpusDataManager:
         if cached is not None:
             return cached
 
-        frame_lock = _get_artifact_frame_lock(cache_owner, key)
-        with frame_lock:
+        with _artifact_frame_load_lock(cache_owner, key):
             cached = _get_cached_artifact_frame(cache_owner, key)
             if cached is not None:
                 return cached
@@ -414,9 +442,8 @@ class CorpusDataManager:
             cache_stage = "cache_hit"
             return cached
 
-        frame_lock = _get_artifact_frame_lock(artifact_id, key)
         lock_wait_start = perf_counter()
-        with frame_lock:
+        with _artifact_frame_load_lock(artifact_id, key):
             lock_wait_ms = (perf_counter() - lock_wait_start) * 1000
             cached = _get_cached_artifact_frame(artifact_id, key)
             if cached is not None:
@@ -425,7 +452,7 @@ class CorpusDataManager:
 
             cache_stage = "payload_load"
             registry_lookup_start = perf_counter()
-            artifact = registry_service.get_artifact_by_id(artifact_id)
+            artifact = registry_service.get_public_artifact_by_id(artifact_id)
             registry_lookup_ms = (perf_counter() - registry_lookup_start) * 1000
             if artifact is None or artifact.status != "ready":
                 return None
@@ -472,7 +499,10 @@ class CorpusDataManager:
         if not target_db:
             return None
 
-        return build_shared_frequency_identity(target_source=target_db)
+        try:
+            return build_shared_frequency_identity(target_source=target_db)
+        except ValueError:
+            return None
 
     def _load_cached_frequency_tables(self) -> tuple[pl.DataFrame, pl.DataFrame] | None:
         """Load shared built-in frequency tables from the artifact registry."""
@@ -774,9 +804,8 @@ class CorpusDataManager:
                             self._set_session_ephemeral_data(key, cached)
                             return finalize_general(cached)
 
-                    frame_lock = _get_artifact_frame_lock(cache_owner, key)
                     lock_wait_start = perf_counter()
-                    with frame_lock:
+                    with _artifact_frame_load_lock(cache_owner, key):
                         lock_wait_ms = (perf_counter() - lock_wait_start) * 1000
                         if not force_refresh:
                             cached = _get_cached_artifact_frame(cache_owner, key)
