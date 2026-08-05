@@ -125,6 +125,13 @@ def get_queue() -> Queue:
     return Queue(config.queue_name, connection=get_redis_connection())
 
 
+def get_plotbot_queue() -> Queue:
+    """Return the configured RQ queue for built-in-only Plotbot jobs."""
+
+    config = get_redis_queue_config()
+    return Queue(config.plotbot_queue_name, connection=get_redis_connection())
+
+
 def _build_job_retry(config: RedisQueueConfig) -> Retry | None:
     """Return the bounded retry policy for queued jobs, or None to disable retries."""
 
@@ -728,7 +735,7 @@ def enqueue_plotbot_generation(
             "Redis/RQ queueing is disabled. Set DOCUSCOPE_RQ_ENABLED=1 to enable it."
         )
 
-    queue = get_queue()
+    queue = get_plotbot_queue()
     request_hash = _hash_payload({
         "table_hash": _hash_payload({"records": dataframe_records}),
         "source_refs": sorted(portable_sources),
