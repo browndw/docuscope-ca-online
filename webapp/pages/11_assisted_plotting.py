@@ -31,6 +31,7 @@ from webapp.utilities.ai import (
     prune_message_thread
 )
 from webapp.utilities.ai.providers import get_openai_compatible_provider_config
+from webapp.utilities.configuration.logging_config import get_logger
 from webapp.persistence import registry_service
 from webapp.queue import (
     enqueue_plotbot_generation,
@@ -53,6 +54,8 @@ from webapp.menu import (
 
 TITLE = "AI-Assisted Plotting"
 ICON = ":material/smart_toy:"
+
+logger = get_logger()
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
@@ -105,7 +108,12 @@ def _append_queued_plotbot_result(user_session_id: str, artifact_id: int) -> boo
     if artifact is None:
         return False
 
-    payload = registry_service.load_json_artifact(artifact)
+    try:
+        payload = registry_service.load_json_artifact(artifact)
+    except Exception as exc:
+        logger.warning(f"Queued Plotbot artifact load failed for {artifact_id}: {exc}")
+        return False
+
     result = payload.get("result") if isinstance(payload, dict) else None
     if not isinstance(result, dict):
         return False
@@ -238,7 +246,10 @@ def _render_plotbot_queue_status(user_session_id: str) -> None:
         try:
             rq_job = get_queue().fetch_job(rq_job_id)
             if rq_job is not None:
-                rq_status = str(getattr(rq_job.get_status(), "value", rq_job.get_status()))
+                rq_status_raw = rq_job.get_status(refresh=True)
+                rq_status = str(
+                    getattr(rq_status_raw, "value", rq_status_raw)
+                ).strip().lower()
         except Exception:
             rq_status = "unavailable"
 
