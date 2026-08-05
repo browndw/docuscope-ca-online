@@ -734,7 +734,9 @@ def attach_queued_internal_target(
         )
         init_metadata_target(user_session_id)
         if queue_artifact_id is not None:
-            queue_artifact = registry_service.get_artifact_by_id(queue_artifact_id)
+            queue_artifact = registry_service.get_public_artifact_by_id(
+                queue_artifact_id
+            )
             if queue_artifact is not None and queue_artifact.status == "ready":
                 queue_payload = registry_service.load_json_artifact(queue_artifact)
                 frequency_artifact_id = queue_payload.get("frequency_artifact_id")
