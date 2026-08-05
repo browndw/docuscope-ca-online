@@ -32,6 +32,7 @@ except Exception:  # pragma: no cover
     ds = None  # type: ignore
 
 Metric = Literal["freq", "tags", "dtm"]
+SUPPORTED_METRICS: tuple[Metric, ...] = ("freq", "tags", "dtm")
 
 
 # ------------------------- Error classes ---------------------------------- #
@@ -184,7 +185,28 @@ def _parse(tokens_df: pl.DataFrame, nlp) -> pl.DataFrame:
     return parsed
 
 
-def _compute_metrics(tokens: pl.DataFrame, metrics: Iterable[Metric]):
+def _normalize_metrics(metrics: Iterable[Metric]) -> tuple[Metric, ...]:
+    """Materialize, validate, and deduplicate requested metrics in order."""
+
+    requested = tuple(metrics)
+    if not requested:
+        raise CorpusProcessingError(
+            "At least one metric is required; choose from freq, tags, and dtm."
+        )
+
+    unsupported = sorted(
+        {str(metric) for metric in requested if metric not in SUPPORTED_METRICS}
+    )
+    if unsupported:
+        raise CorpusProcessingError(
+            "Unsupported metric selection: "
+            f"{', '.join(unsupported)}. Choose from freq, tags, and dtm."
+        )
+
+    return tuple(dict.fromkeys(requested))
+
+
+def _compute_metrics(tokens: pl.DataFrame, metrics: Sequence[Metric]):
     freq_pos = freq_ds = tags_pos = tags_ds = dtm_pos = dtm_ds = None
     if ds is None:  # pragma: no cover
         raise CorpusProcessingError("docuscospacy not available; install dependencies")
@@ -257,7 +279,8 @@ def process_corpus(
     model:
         spaCy model name or path (fallback to local ``webapp/_models/<model>``).
     metrics:
-        Iterable of metric identifiers among {"freq", "tags", "dtm"}.
+        Non-empty iterable of metric identifiers among {"freq", "tags", "dtm"}.
+        Duplicate identifiers are removed while preserving their first-seen order.
     export_dir:
         Optional directory to write artifacts (Parquet + manifest JSON). Created if missing.
 
@@ -266,6 +289,7 @@ def process_corpus(
     CorpusResult
         Container with tokens and any requested metric tables.
     """
+    normalized_metrics = _normalize_metrics(metrics)
     t0 = time.perf_counter()
     docs_df = _ingest_sources(sources)
     t_ingest = time.perf_counter()
@@ -274,7 +298,7 @@ def process_corpus(
     tokens = _parse(docs_df, nlp)
     t_parse = time.perf_counter()
     freq_pos, freq_ds, tags_pos, tags_ds, dtm_pos, dtm_ds = _compute_metrics(
-        tokens, metrics
+        tokens, normalized_metrics
     )
     t_metrics = time.perf_counter()
 
@@ -285,7 +309,7 @@ def process_corpus(
         or getattr(meta, "get", lambda *_: None)("name")  # type: ignore[attr-defined]
         or model
     )
-    manifest = _build_manifest(tokens, docs_df, list(metrics), model_name)
+    manifest = _build_manifest(tokens, docs_df, normalized_metrics, model_name)
 
     result = CorpusResult(
         tokens=tokens,
