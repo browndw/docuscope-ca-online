@@ -544,7 +544,7 @@ def render_data_selection_interface(
     clear_function: callable,
     metadata_target: dict = None,
     metadata_reference: dict = None
-) -> tuple[str, str, pl.DataFrame | None]:
+) -> tuple[str | None, str | None, pl.DataFrame | None]:
     """
     Render data selection interface for AI assistants.
 
@@ -564,7 +564,7 @@ def render_data_selection_interface(
     Returns
     -------
     tuple[str, str, pl.DataFrame | None]
-        Selected corpus, query, and dataframe
+        Selected corpus, query, and dataframe.
     """
     try:
         st.markdown(
@@ -632,13 +632,13 @@ def render_data_selection_interface(
                 categories=groups
             )
 
-        return selected_query, df
+        return selected_corpus, selected_query, df
 
     except Exception:
         st.warning(
             body="Nothing to preview yet. Select a table from the list.",
             icon=":material/table_eye:")
-        return None, None
+        return None, None, None
 
 
 def render_data_preview_controls(
