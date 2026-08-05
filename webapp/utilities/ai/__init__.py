@@ -82,6 +82,7 @@ from webapp.utilities.ai.plotbot import (
     run_plotbot_serialized_service,
     generate_plotbot_code_and_result,
     generate_plotbot_code_and_plot,
+    get_plotbot_builtin_sources,
     plotbot_user_query
 )
 
@@ -162,6 +163,7 @@ __all__ = [
     'clear_plotbot_table',
     'PlotbotServiceResult',
     'PlotbotSerializedResult',
+    'get_plotbot_builtin_sources',
     'plotbot_user_query',
     'make_plotbot_cache_key',
     'plotbot_code_generate_or_update',
