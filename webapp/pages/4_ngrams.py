@@ -158,7 +158,7 @@ def _render_ngram_queue_status(user_session_id: str) -> None:
         st.warning("Queued n-gram job state was incomplete. Please try again.")
         return
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_public_job_by_id(control_plane_job_id)
     if job_row is None:
         _clear_ngram_queue_state(user_session_id)
         st.warning("Queued n-gram job could not be found. Please try again.")
