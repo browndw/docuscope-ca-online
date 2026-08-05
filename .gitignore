@@ -2,6 +2,15 @@
 .streamlit/secrets.toml
 .DS_Store
 
+# Process-local editor preferences
+/.vscode/
+
+# Runtime artifact and session contents
+/webapp/_artifacts/*
+!/webapp/_artifacts/.gitkeep
+/webapp/_session/*
+!/webapp/_session/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
