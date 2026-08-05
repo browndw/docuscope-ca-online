@@ -27,11 +27,25 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
+    command: alembic upgrade head
+
   streamlit_app:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -70,6 +84,8 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -79,17 +95,45 @@ services:
       DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
       REDIS_URL: redis://redis:6379/0
       DOCUSCOPE_RQ_ENABLED: "1"
+      DOCUSCOPE_RQ_SIMPLE_WORKER: "0"
       DOCUSCOPE_AI_PROVIDER: ${DOCUSCOPE_AI_PROVIDER:-}
       DOCUSCOPE_AI_BASE_URL: ${DOCUSCOPE_AI_BASE_URL:-}
       DOCUSCOPE_AI_MODEL: ${DOCUSCOPE_AI_MODEL:-}
     volumes:
       - artifact_data:/app/webapp/_artifacts
     command: python -m webapp.queue.worker
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
+      test: ["CMD", "python", "-m", "webapp.queue.worker", "--health-check"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 15s
+
+  cleanup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
+      DOCUSCOPE_ARTIFACT_STORE_ROOT: /app/webapp/_artifacts
+      DOCUSCOPE_CLEANUP_INTERVAL_SECONDS: ${DOCUSCOPE_CLEANUP_INTERVAL_SECONDS:-3600}
+      DOCUSCOPE_PRIVATE_ARTIFACT_TTL_HOURS: ${DOCUSCOPE_PRIVATE_ARTIFACT_TTL_HOURS:-24}
+      DOCUSCOPE_TERMINAL_JOB_RETENTION_DAYS: ${DOCUSCOPE_TERMINAL_JOB_RETENTION_DAYS:-7}
+      DOCUSCOPE_ACCESS_LOG_RETENTION_DAYS: ${DOCUSCOPE_ACCESS_LOG_RETENTION_DAYS:-30}
+      DOCUSCOPE_CONFIG_AUDIT_RETENTION_DAYS: ${DOCUSCOPE_CONFIG_AUDIT_RETENTION_DAYS:-90}
+    volumes:
+      - artifact_data:/app/webapp/_artifacts
+    command: python -m webapp.persistence.cleanup
+    restart: unless-stopped
+    healthcheck:
+      disable: true
 
   qwen_bootstrap:
     profiles: ["qwen"]
