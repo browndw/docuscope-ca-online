@@ -68,7 +68,6 @@ cache_location = "firestore"
 
 [authorization]
 enable_user_authorization = true
-default_admin_email = "dwb2@andrew.cmu.edu"  # First admin user
 session_cache_authorization = true
 audit_access_attempts = true
 
