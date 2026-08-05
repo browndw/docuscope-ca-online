@@ -1,0 +1,5 @@
+include alembic.ini
+include docker-compose.yml
+include docker-compose.dev.yml
+include docker-compose.model.yml
+recursive-include migrations *.py *.md
