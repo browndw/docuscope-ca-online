@@ -15,7 +15,7 @@ from webapp.utilities.ai.providers import ChatCompletionProvider, get_default_ch
 from webapp.utilities.ai.shared import LLM_MODEL
 
 
-DEFAULT_INTERPRETATION_MODEL = "qwen2.5:7b-instruct"
+DEFAULT_INTERPRETATION_MODEL = "docker.io/ai/qwen3-coder:latest"
 DEFAULT_TEACHING_LENS = "understand_table"
 
 TEACHING_LENSES: dict[str, dict[str, str]] = {
