@@ -29,14 +29,6 @@ from webapp.utilities.processing.corpus_processing import (
     finalize_corpus_load
 )
 
-# Import original functions from process.py and delegate to them
-# Legacy functions that need to be migrated or removed
-# TODO: Migrate these functions from the legacy process module
-
-
-# Legacy functions temporarily disabled until migration is complete
-# These functions were previously imported from the legacy process module
-
 __all__ = [
     'find_saved',
     'find_saved_reference',

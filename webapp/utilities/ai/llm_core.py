@@ -702,12 +702,12 @@ def render_data_preview_controls(
                             )
 
             # Display preview
-            st.data_editor(
+            st.dataframe(
                 df.head(10).with_columns(
                     pl.selectors.float().round(3)
                 ),
-                width="stretch",
-                disabled=True)
+                width="stretch"
+                )
 
         return df
 

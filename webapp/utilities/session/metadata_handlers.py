@@ -6,13 +6,13 @@ metadata for target and reference corpora.
 """
 
 import streamlit as st
-import polars as pl
 from webapp.utilities.session.session_core import (
-    get_corpus_categories
+    get_corpus_categories,
 )
 from webapp.utilities.state import (
-    SessionKeys, CorpusKeys,
-    MetadataKeys
+    CorpusKeys,
+    MetadataKeys,
+    SessionKeys,
 )
 
 
@@ -118,11 +118,9 @@ def update_metadata(
     if hasattr(metadata_raw, 'to_dict') and hasattr(metadata_raw, 'columns'):
         # It's a Polars DataFrame (has both to_dict and columns attributes)
         metadata = metadata_raw.to_dict(as_series=False)
-        was_dataframe = True
     else:
         # It's already a dictionary or other object
         metadata = metadata_raw.copy() if isinstance(metadata_raw, dict) else {}
-        was_dataframe = False
 
     # Update the metadata dictionary
     if key == MetadataKeys.DOCCATS:
@@ -137,14 +135,9 @@ def update_metadata(
     else:
         metadata[key] = value
 
-    # Store back in the same format it was in originally
-    if was_dataframe:
-        # Convert back to DataFrame and store
-        df = pl.from_dict(metadata, strict=False)
-        st.session_state[session_id][table_name] = df
-    else:
-        # Store as dictionary
-        st.session_state[session_id][table_name] = metadata
+    # Store metadata as a plain mapping after mutation. This avoids rebuilding
+    # nested object/list metadata into a Polars frame on Streamlit rerun.
+    st.session_state[session_id][table_name] = metadata
 
 
 def handle_target_metadata_processing(metadata_target: dict, user_session_id: str) -> None:
@@ -198,7 +191,6 @@ def handle_target_metadata_processing(metadata_target: dict, user_session_id: st
                         st.sidebar.success(
                             f"Successfully processed {unique_count} document categories!"
                         )
-                        st.rerun()
                     else:
                         st.sidebar.error(
                             f"Found {unique_count} categories. "

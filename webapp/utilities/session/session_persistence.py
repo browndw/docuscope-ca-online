@@ -9,6 +9,7 @@ import polars as pl
 import streamlit as st
 from typing import Dict, Any
 from datetime import datetime, timezone
+from pathlib import Path
 import hashlib
 import json
 from time import perf_counter
@@ -19,10 +20,15 @@ from webapp.utilities.state.session_keys import (
     MetadataKeys,
     SessionKeys,
 )
+from webapp.corpus_paths import (
+    make_portable_corpus_path,
+    resolve_corpus_path,
+)
 
 logger = get_logger()
 SLOW_PERSISTENCE_OPERATION_MS = 25
 MIN_PERSIST_INTERVAL_SECONDS = 0.5
+BACKEND_INIT_RETRY_COOLDOWN_SECONDS = 30
 ARTIFACT_REF_KEY = "_artifact_refs"
 PERSISTED_CORPUS_KEYS = ("target", "reference")
 CORPUS_POLICY_KEYS = {
@@ -200,12 +206,55 @@ def _project_corpus_state(corpus_raw: Any) -> Dict[str, Any]:
     if not isinstance(refs, dict):
         return {}
 
-    return {
-        ARTIFACT_REF_KEY: {
-            key: value.copy() if isinstance(value, dict) else value
-            for key, value in refs.items()
-        }
-    }
+    projected_refs: Dict[str, Any] = {}
+    for key, value in refs.items():
+        if not isinstance(value, dict):
+            projected_refs[key] = value
+            continue
+
+        projected_ref = value.copy()
+        if projected_ref.get("storage_type") == "gzip_pickle":
+            path = projected_ref.get("path")
+            if isinstance(path, str):
+                projected_ref["path"] = make_portable_corpus_path(path)
+        projected_refs[key] = projected_ref
+
+    return {ARTIFACT_REF_KEY: projected_refs}
+
+
+def _corpus_state_has_restorable_core(corpus_state: Dict[str, Any]) -> bool:
+    """Return whether persisted corpus refs can restore required core data."""
+
+    refs = corpus_state.get(ARTIFACT_REF_KEY)
+    if not isinstance(refs, dict):
+        return False
+
+    core_ref = refs.get("ds_tokens")
+    if not isinstance(core_ref, dict):
+        return False
+
+    if core_ref.get("storage_type") == "gzip_pickle":
+        path = core_ref.get("path")
+        return bool(path and Path(resolve_corpus_path(path)).exists())
+
+    return "artifact_id" in core_ref
+
+
+def _clear_unrestorable_corpus_flags(
+    session_flags: Dict[str, Any],
+    corpus_key: str,
+) -> None:
+    """Clear session flags for a corpus whose persisted core refs are stale."""
+
+    if corpus_key == "target":
+        session_flags[SessionKeys.HAS_TARGET] = False
+        session_flags[SessionKeys.TARGET_DB] = ""
+        session_flags[SessionKeys.HAS_META] = False
+        return
+
+    if corpus_key == "reference":
+        session_flags[SessionKeys.HAS_REFERENCE] = False
+        session_flags[SessionKeys.REFERENCE_DB] = ""
 
 
 def build_persistable_session_data(session_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -246,21 +295,41 @@ def restore_persisted_session_data(session_data: Dict[str, Any]) -> Dict[str, An
     restored: Dict[str, Any] = {}
 
     session_flags = _project_session_flags(session_data.get(SessionKeys.SESSION_DATAFRAME))
+
+    projected_corpus_states = {
+        corpus_key: _project_corpus_state(session_data.get(corpus_key))
+        for corpus_key in PERSISTED_CORPUS_KEYS
+    }
+    restorable_corpora = {
+        corpus_key: _corpus_state_has_restorable_core(corpus_state)
+        for corpus_key, corpus_state in projected_corpus_states.items()
+    }
+
+    for corpus_key, is_restorable in restorable_corpora.items():
+        if is_restorable:
+            continue
+        if projected_corpus_states[corpus_key]:
+            logger.warning(
+                "Skipping unrestorable persisted {} corpus for session restore",
+                corpus_key,
+            )
+        _clear_unrestorable_corpus_flags(session_flags, corpus_key)
+
     restored[SessionKeys.SESSION_DATAFRAME] = pl.from_dict(session_flags)
 
     target_metadata = _project_metadata(session_data.get(SessionKeys.METADATA_TARGET))
-    if target_metadata:
+    if target_metadata and restorable_corpora["target"]:
         restored[SessionKeys.METADATA_TARGET] = target_metadata
 
     reference_metadata = _project_metadata(
         session_data.get(SessionKeys.METADATA_REFERENCE)
     )
-    if reference_metadata:
+    if reference_metadata and restorable_corpora["reference"]:
         restored[SessionKeys.METADATA_REFERENCE] = reference_metadata
 
     for corpus_key in PERSISTED_CORPUS_KEYS:
-        corpus_state = _project_corpus_state(session_data.get(corpus_key))
-        if corpus_state:
+        corpus_state = projected_corpus_states[corpus_key]
+        if corpus_state and restorable_corpora[corpus_key]:
             restored[corpus_key] = corpus_state
 
     return restored
@@ -423,6 +492,7 @@ class SessionPersistenceManager:
     def __init__(self):
         """Initialize the session persistence manager."""
         self._backend = None
+        self._backend_init_failed_at = None
         self._session_cache = {}
         self._last_sync = {}
         self._dirty_sessions = set()
@@ -455,12 +525,30 @@ class SessionPersistenceManager:
     @property
     def backend(self):
         """Get the session backend, initializing if needed."""
-        if self._backend is None:
-            try:
-                self._backend = _get_session_backend()
-            except Exception as e:
-                logger.error(f"Failed to initialize session backend: {e}")
+        if self._backend is not None:
+            return self._backend
+
+        if self._backend_init_failed_at is not None:
+            elapsed = perf_counter() - self._backend_init_failed_at
+            if elapsed < BACKEND_INIT_RETRY_COOLDOWN_SECONDS:
+                # Recently failed; avoid hammering an unreachable backend and
+                # re-logging on every session interaction.
                 return None
+
+        try:
+            self._backend = _get_session_backend()
+            self._backend_init_failed_at = None
+        except Exception as e:
+            self._backend_init_failed_at = perf_counter()
+            logger.error(
+                "Failed to initialize session backend: {}. Session persistence "
+                "is disabled for the next {}s. If you are running locally without "
+                "Postgres, set desktop_mode = true in webapp/config/options.toml "
+                "or start the full stack with `docker-compose up`.",
+                e,
+                BACKEND_INIT_RETRY_COOLDOWN_SECONDS,
+            )
+            return None
         return self._backend
 
     def get_user_id(self) -> str:

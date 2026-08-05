@@ -18,7 +18,9 @@ import streamlit as st
 import docuscospacy as ds
 
 # Module-specific imports
+from webapp.utilities.common.document_utils import sanitize_doc_id
 from webapp.utilities.processing.corpus_loading import load_corpus_internal
+from webapp.corpus_paths import make_portable_corpus_path
 from webapp.utilities.session import (
     build_corpus_metadata_descriptor,
     init_metadata_target,
@@ -568,10 +570,11 @@ def process_internal(
             SessionKeys.HAS_TARGET if corpus_type == "target"
             else SessionKeys.HAS_REFERENCE
         )
+        portable_corp_path = make_portable_corpus_path(str(corp_path))
 
         if probe_mode == PROCESS_TARGET_PROBE_NO_METADATA:
             _update_session_state_without_persistence(
-                user_session_id, session_key_db, str(corp_path)
+                user_session_id, session_key_db, portable_corp_path
             )
             _update_session_state_without_persistence(
                 user_session_id, session_key_has_corpus, True
@@ -603,7 +606,7 @@ def process_internal(
 
         if probe_mode == PROCESS_TARGET_PROBE_METADATA_NO_PERSIST:
             _update_session_state_without_persistence(
-                user_session_id, session_key_db, str(corp_path)
+                user_session_id, session_key_db, portable_corp_path
             )
             _update_session_state_without_persistence(
                 user_session_id, session_key_has_corpus, True
@@ -616,7 +619,7 @@ def process_internal(
             _persist_session_updates(
                 user_session_id,
                 {
-                    SessionKeys.TARGET_DB: str(corp_path),
+                    SessionKeys.TARGET_DB: portable_corp_path,
                     SessionKeys.HAS_TARGET: True,
                 },
                 persist_immediately=False,
@@ -626,7 +629,7 @@ def process_internal(
             _persist_session_updates(
                 user_session_id,
                 {
-                    SessionKeys.REFERENCE_DB: str(corp_path),
+                    SessionKeys.REFERENCE_DB: portable_corp_path,
                     SessionKeys.HAS_REFERENCE: True,
                 },
                 persist_immediately=False,
@@ -744,7 +747,7 @@ def attach_queued_internal_target(
         _persist_session_updates(
             user_session_id,
             {
-                SessionKeys.TARGET_DB: str(corp_path),
+                SessionKeys.TARGET_DB: make_portable_corpus_path(str(corp_path)),
                 SessionKeys.HAS_TARGET: True,
             },
             persist_immediately=False,
@@ -1283,7 +1286,7 @@ def corpus_from_widget(docs) -> tuple[pl.DataFrame, list]:
         try:
             doc_txt = doc.getvalue().decode('utf-8')
             doc_txt = unidecode.unidecode(doc_txt)
-            doc_id = str(os.path.splitext(doc.name.replace(" ", ""))[0])
+            doc_id = sanitize_doc_id(os.path.splitext(doc.name)[0])
             records.append({"doc_id": doc_id, "text": doc_txt})
         except Exception:
             exceptions.append(doc.name)

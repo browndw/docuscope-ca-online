@@ -12,6 +12,7 @@ import polars as pl
 import streamlit as st
 
 from webapp.utilities.corpus import get_corpus_manager
+from webapp.corpus_paths import resolve_corpus_path
 
 
 def load_corpus_internal(
@@ -45,6 +46,7 @@ def load_corpus_internal(
     -------
     None
     """
+    db_path = resolve_corpus_path(db_path)
     manager = get_corpus_manager(session_id, corpus_type)
 
     files_list = glob.glob(os.path.join(db_path, '*.gz'))

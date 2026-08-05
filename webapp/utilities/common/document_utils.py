@@ -5,6 +5,33 @@ This module provides simple utility functions for working with document IDs
 and categories without dependencies on session or complex analysis modules.
 """
 
+import os
+import re
+
+
+def sanitize_doc_id(raw_id: str) -> str:
+    """
+    Normalize a user-supplied filename stem into a safe document id.
+
+    Strips any directory components and replaces characters other than
+    alphanumerics, underscores, and hyphens with underscores. This guards
+    against path traversal when the doc_id is later used to name exported
+    files (e.g. as a member name inside a zip archive).
+
+    Parameters
+    ----------
+    raw_id : str
+        The raw, user-supplied id (typically an uploaded filename stem).
+
+    Returns
+    -------
+    str
+        A sanitized id containing only `[A-Za-z0-9_-]` characters.
+    """
+    stem = os.path.basename(raw_id).replace(" ", "")
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", stem)
+    return safe or "doc"
+
 
 # Utility function to safely access metadata values in both formats
 def safe_metadata_get(metadata: dict, key: str, default=None, nested_key: str = None):

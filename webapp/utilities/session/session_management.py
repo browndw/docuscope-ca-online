@@ -171,7 +171,8 @@ def validate_session_state(user_session_id: str) -> bool:
 
         return True
 
-    except Exception:
+    except Exception as exc:
+        logger.debug(f"validate_session_state failed for {user_session_id}: {exc}")
         return False
 
 
@@ -197,7 +198,8 @@ def validate_session_structure(user_session_id: str, required_keys: list) -> boo
 
         session_data = st.session_state[user_session_id]
         return all(key in session_data for key in required_keys)
-    except Exception:
+    except Exception as exc:
+        logger.debug(f"validate_session_structure failed for {user_session_id}: {exc}")
         return False
 
 
@@ -220,9 +222,8 @@ def ensure_session_key(user_session_id: str, key: str, default_value=None) -> No
 
         if key not in st.session_state[user_session_id]:
             st.session_state[user_session_id][key] = default_value
-    except Exception:
-        # Silently handle errors to avoid disrupting the application
-        pass
+    except Exception as exc:
+        logger.debug(f"ensure_session_key failed for {user_session_id}/{key}: {exc}")
 
 
 def get_session_value(user_session_id: str, key: str, default=None):
@@ -245,7 +246,8 @@ def get_session_value(user_session_id: str, key: str, default=None):
     """
     try:
         return st.session_state.get(user_session_id, {}).get(key, default)
-    except Exception:
+    except Exception as exc:
+        logger.debug(f"get_session_value failed for {user_session_id}/{key}: {exc}")
         return default
 
 

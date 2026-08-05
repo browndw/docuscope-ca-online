@@ -14,7 +14,7 @@ import polars as pl
 import streamlit as st
 import plotly.express as px
 from RestrictedPython import compile_restricted
-from RestrictedPython.Guards import safe_builtins, guarded_unpack_sequence
+from RestrictedPython.Guards import safe_builtins, safer_getattr, guarded_unpack_sequence
 from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
 from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
 
@@ -529,20 +529,15 @@ def plotbot_code_execute(plot_code: str,
 
     exec_locals = {}
 
-    # Create a safer attribute getter for DataFrame operations
-    def safe_getattr(obj, name, default=None):
-        """Safe attribute getter for restricted execution."""
-        if hasattr(obj, name):
-            return getattr(obj, name)
-        return default
-
     allowed_globals = {
         "__builtins__": safe_builtins,
         "df": df,
         "_getitem_": guarded_getitem,
         "_unpack_sequence_": guarded_unpack_sequence,
         "_getiter_": guarded_getiter,
-        "_getattr_": safe_getattr,
+        # RestrictedPython's own guard, which rejects underscore-prefixed
+        # attribute names (blocks __class__/__globals__/__subclasses__ escapes).
+        "_getattr_": safer_getattr,
         # Add pandas functionality for DataFrame operations
         "pd": pd,
         # Add common Python functions needed for data manipulation

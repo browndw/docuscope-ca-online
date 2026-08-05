@@ -29,6 +29,7 @@ from webapp.persistence import (
 )
 from webapp.utilities.session.session_persistence import auto_persist_session
 from webapp.utilities.session.session_persistence import mark_session_dirty
+from webapp.corpus_paths import resolve_corpus_path
 
 logger = get_logger()
 shared_artifact_workflow = SharedArtifactWorkflow(registry_service, logger)
@@ -364,6 +365,7 @@ class CorpusDataManager:
         path = ref.get("path")
         if not path:
             return None
+        path = resolve_corpus_path(path)
 
         cache_owner = _build_file_backed_cache_owner(path)
         cached = _get_cached_artifact_frame(cache_owner, key)
@@ -684,14 +686,15 @@ class CorpusDataManager:
         if not force_refresh and key in self.session_corpus_data:
             return finalize(self.session_corpus_data[key])
 
-        # If it's core data and not found, return None
-        if key in self.core_keys:
-            return finalize(self.session_corpus_data.get(key))
-
         if not force_refresh:
             artifact_data = self._load_artifact_backed_data(key)
             if artifact_data is not None:
                 return finalize(artifact_data)
+
+        # If it's core data and still not found (no in-memory or artifact-backed
+        # value), return None rather than falling through to derived-data logic.
+        if key in self.core_keys:
+            return finalize(self.session_corpus_data.get(key))
 
         # Handle derived data with lazy loading
         if key == "ft_pos_general":
@@ -848,7 +851,7 @@ class CorpusDataManager:
         if key == "ft_pos_general":
             artifact_ref = self._get_artifact_refs().get("ft_pos")
             has_shared_cache_owner = False
-            if isinstance(artifact_ref, dict) and artifact_ref.get("artifact_id") is not None:
+            if isinstance(artifact_ref, dict) and artifact_ref.get("artifact_id") is not None:  # noqa: E501
                 has_shared_cache_owner = True
             elif self._get_shared_frequency_identity() is not None:
                 has_shared_cache_owner = True

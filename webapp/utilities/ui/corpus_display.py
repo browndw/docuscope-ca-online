@@ -339,7 +339,7 @@ def load_and_display_target_corpus(session: dict, user_session_id: str) -> None:
                         cat_counts,
                         session,
                         corpus_type="target")
-                    st.data_editor(cat_df, hide_index=True, disabled=True)
+                    st.dataframe(cat_df, hide_index=True)
             _log_slow_corpus_display_step(
                 user_session_id,
                 "render_target_tab",
@@ -393,7 +393,7 @@ def display_reference_corpus_tab(tab, metadata_reference: dict, session: dict) -
                             cat_counts_ref,
                             session,
                             corpus_type="reference")
-                        st.data_editor(cat_df_ref, hide_index=True, disabled=True)
+                        st.dataframe(cat_df_ref, hide_index=True)
                     else:
                         st.warning(
                             "No categories found in reference corpus file names.",

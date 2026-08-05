@@ -301,6 +301,18 @@ def update_session(key: str, value: any, session_id: str) -> None:
     # Handle both DataFrame and dict cases (unified session management)
     if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
         # It's a Polars DataFrame (has both to_dict and columns attributes)
+        if session_raw.height == 1:
+            st.session_state[session_id]["session"] = session_raw.with_columns(
+                pl.lit(value).alias(key)
+            )
+            mark_session_dirty(session_id)
+
+            persist_start = perf_counter()
+            auto_persist_session(session_id)
+            persist_ms = (perf_counter() - persist_start) * 1000
+            _log_slow_session_update(session_id, key, update_start, persist_ms)
+            return
+
         session = session_raw.to_dict(as_series=False)
         was_dataframe = True
     else:

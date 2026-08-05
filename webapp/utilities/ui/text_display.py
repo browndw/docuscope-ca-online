@@ -450,10 +450,11 @@ def render_document_interface(
             df = pd.DataFrame()
         if df is not None and len(df) > 0:
             column_config = get_streamlit_column_config(df)
-            st.data_editor(df,
-                           hide_index=True,
-                           column_config=column_config,
-                           disabled=True)
+            st.dataframe(
+                df,
+                hide_index=True,
+                column_config=column_config,
+                )
         toggle_download(
             label="Excel",
             convert_args=(df,) if (df is not None) else (None,),

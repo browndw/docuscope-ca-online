@@ -6,13 +6,6 @@ using RestrictedPython to prevent malicious code execution.
 """
 
 import re
-import pandas as pd
-import plotly.express as px
-from RestrictedPython import compile_restricted
-from RestrictedPython.Guards import safe_builtins
-from RestrictedPython.Guards import guarded_unpack_sequence
-from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
-from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
 
 # Import centralized logging configuration and logger
 from webapp.utilities.configuration.logging_config import get_logger
@@ -20,15 +13,22 @@ from webapp.utilities.configuration.logging_config import get_logger
 logger = get_logger()
 
 
-# Security: Define forbidden patterns for code safety (legacy working version)
+# Security: Define forbidden patterns for code safety.
+# These are a defense-in-depth text scan in addition to RestrictedPython's
+# compiled-bytecode sandbox and `safer_getattr` attribute guard, since some
+# escapes (e.g. pandas `.eval()`/`.query()`, dunder attribute chains) are not
+# stopped by the bytecode restrictions alone.
 FORBIDDEN_PATTERNS = [
-    r'^\s*import\s',         # import statement at line start
-    r'\bexec\s*\(',          # exec(
-    r'\beval\s*\(',          # eval(
-    r'\bopen\s*\(',          # open(
-    r'^\s*os\.',             # os. usage at line start
-    r'^\s*sys\.',            # sys. usage at line start
-    r'^\s*subprocess\.',     # subprocess. usage at line start
+    r'^\s*(import|from)\s',  # import / from-import statements anywhere in the code
+    r'\bexec\s*\(',           # exec(
+    r'\beval\s*\(',           # eval(
+    r'\.eval\s*\(',           # DataFrame/pd.eval( can run arbitrary Python internally
+    r'\.query\s*\(',          # DataFrame.query( can evaluate arbitrary expressions
+    r'\bopen\s*\(',           # open(
+    r'\bos\.',                # os. usage anywhere, not just at line start
+    r'\bsys\.',                # sys. usage anywhere
+    r'\bsubprocess\.',        # subprocess. usage anywhere
+    r'__\w+__',                # dunder access (e.g. __class__, __globals__, __import__)
 ]
 
 
@@ -48,7 +48,7 @@ def is_code_safe(plot_code: str) -> bool:
     """
     for pattern in FORBIDDEN_PATTERNS:
         if re.search(pattern, plot_code, re.MULTILINE):
-            logger(f"Unsafe pattern matched: {pattern} in code: {plot_code}")
+            logger.warning(f"Unsafe pattern matched: {pattern} in code: {plot_code}")
             return False
     return True
 
@@ -69,89 +69,5 @@ def strip_imports(code: str) -> str:
     """
     return "\n".join(
         line for line in code.splitlines()
-        if not re.match(r'^\s*import\s', line)
+        if not re.match(r'^\s*(import|from)\s', line)
     )
-
-
-def plotbot_code_execute(
-    plot_code: str,
-    df: pd.DataFrame,
-    plot_lib: str
-) -> dict:
-    """
-    Safely execute AI-generated plotting code.
-
-    Parameters
-    ----------
-    plot_code : str
-        The plotting code to execute.
-    df : pd.DataFrame
-        The dataframe to plot.
-    plot_lib : str
-        The plotting library to use ('plotly.express').
-
-    Returns
-    -------
-    dict
-        Result dictionary with 'type' and 'value' keys.
-    """
-    if not isinstance(plot_code, str) or not plot_code.strip():
-        return {
-            "type": "error",
-            "value": ("Sorry, I couldn't generate your plot. "
-                      "Please try rephrasing your request.")
-        }
-
-    # Strip import statements before safety check
-    plot_code = strip_imports(plot_code)
-    if not is_code_safe(plot_code):
-        return {
-            "type": "error",
-            "value": "Sorry, your request included unsafe code and could not be executed."
-        }
-
-    exec_locals = {}
-    allowed_globals = {
-        "__builtins__": safe_builtins,
-        "df": df,
-        "_getitem_": guarded_getitem,
-        "_unpack_sequence_": guarded_unpack_sequence,
-        "_getiter_": guarded_getiter,
-    }
-
-    # Add plotting library to allowed globals
-    if plot_lib == "plotly.express":
-        allowed_globals["px"] = px
-    else:
-        return {
-            "type": "error",
-            "value": f"Unsupported plotting library: {plot_lib}"
-        }
-
-    try:
-        byte_code = compile_restricted(plot_code, '<string>', 'exec')
-        exec(byte_code, allowed_globals, exec_locals)
-
-        if "fig" in exec_locals:
-            fig = exec_locals["fig"]
-            return {
-                "type": "plot",
-                "value": fig
-            }
-        else:
-            return {
-                "type": "error",
-                "value": "Sorry, no plot was generated. Please try a different request."
-            }
-
-    except SyntaxError:
-        return {
-            "type": "error",
-            "value": ("Sorry, there was a problem with the plot code. "
-                      "Please try a different request.")
-        }
-    except Exception:
-        return {
-            "type": "error",
-            "value": "Sorry, something went wrong while generating your plot."
-        }

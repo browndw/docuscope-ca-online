@@ -5,11 +5,11 @@ This module contains utility functions that are used by multiple UI modules
 to avoid circular imports.
 """
 
-import os
 import re
 import pandas as pd
 import streamlit as st
 
+from webapp.corpus_paths import corpus_display_name
 from webapp.utilities.session.session_core import safe_session_get
 
 
@@ -33,7 +33,7 @@ def add_category_description(
     if not target_db:
         return cat_df
 
-    corpus_name = os.path.basename(target_db)
+    corpus_name = corpus_display_name(target_db)
 
     # Documentation links for each corpus family
     doc_links = {

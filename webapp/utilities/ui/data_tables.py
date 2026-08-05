@@ -199,6 +199,12 @@ def get_streamlit_column_config(df) -> dict:
                 format="%.3f",
                 help=tooltips.get(col, tooltips.get(base, "Mutual information"))
             )
+        elif col == "Pre-Node":
+            config[col] = st.column_config.TextColumn(alignment="right")
+        elif col == "Node":
+            config[col] = st.column_config.TextColumn(alignment="center")
+        elif col == "Post-Node":
+            config[col] = st.column_config.TextColumn(alignment="left")
     return config
 
 
@@ -394,13 +400,11 @@ def render_dataframe(
             )
         else:
             data_editor_start = perf_counter()
-            st.data_editor(
+            st.dataframe(
                 df,
                 hide_index=True,
                 column_config=column_config,
-                width=width,
-                num_rows=num_rows,
-                disabled=disabled
+                width=width
             )
             _log_table_operation(
                 "st_data_editor",

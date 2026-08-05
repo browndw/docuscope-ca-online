@@ -18,6 +18,7 @@ from lingua import Language
 from typing import Optional, List, Union
 
 from webapp.utilities.analysis.corpus_loading import load_detector
+from webapp.utilities.common.document_utils import sanitize_doc_id
 from webapp.utilities.state import SessionKeys
 from webapp.utilities.session.session_core import safe_session_get
 
@@ -150,8 +151,7 @@ def check_corpus_new(
                 all_files.append(file_size)
             corpus_size = sum(all_files)
         # check for duplicates
-        doc_ids = [str(os.path.splitext(doc.name)[0]) for doc in docs]
-        doc_ids = [doc.replace(" ", "") for doc in doc_ids]
+        doc_ids = [sanitize_doc_id(os.path.splitext(doc.name)[0]) for doc in docs]
         if len(doc_ids) > len(set(doc_ids)):
             dup_ids = [x for x in doc_ids if doc_ids.count(x) >= 2]
             dup_ids = list(set(dup_ids))
