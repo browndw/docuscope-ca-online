@@ -1,0 +1,23 @@
+services:
+  streamlit_app:
+    environment:
+      DOCUSCOPE_AI_PROVIDER: local
+      DOCUSCOPE_AI_TIMEOUT_SECONDS: ${DOCUSCOPE_AI_TIMEOUT_SECONDS:-120}
+    models:
+      plotbot:
+        endpoint_var: DOCUSCOPE_AI_BASE_URL
+        model_var: DOCUSCOPE_AI_MODEL
+
+  rq_plotbot_worker:
+    environment:
+      DOCUSCOPE_AI_PROVIDER: local
+      DOCUSCOPE_AI_TIMEOUT_SECONDS: ${DOCUSCOPE_AI_TIMEOUT_SECONDS:-120}
+    models:
+      plotbot:
+        endpoint_var: DOCUSCOPE_AI_BASE_URL
+        model_var: DOCUSCOPE_AI_MODEL
+
+models:
+  plotbot:
+    model: ${DOCUSCOPE_MODEL_RUNNER_MODEL:-ai/qwen3-coder}
+    context_size: 4096
