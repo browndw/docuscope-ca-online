@@ -36,6 +36,30 @@ from webapp.corpus_paths import (
 logger = get_logger()
 
 
+def mark_control_plane_job_failed(
+    rq_job,
+    _connection,
+    _exception_type,
+    exception_value,
+    _traceback,
+) -> None:
+    """Release a registry reservation after RQ exhausts all retries."""
+
+    if getattr(rq_job, "retries_left", 0) > 0:
+        return
+    control_plane_job_id = rq_job.args[0]
+    registry_service.mark_job_failed(control_plane_job_id, str(exception_value))
+
+
+def _record_retry_if_pending(control_plane_job_id: int, failure_reason: str) -> None:
+    """Record an attempt only when RQ has another retry available."""
+
+    current_rq_job = get_current_job()
+    if current_rq_job is None or current_rq_job.retries_left <= 0:
+        return
+    registry_service.record_job_retry(control_plane_job_id, failure_reason)
+
+
 def _get_shared_artifact_workflow() -> SharedArtifactWorkflow:
     """Build a shared-artifact workflow against the current registry service."""
 
@@ -171,7 +195,7 @@ def _build_keyness_parts_metadata(
 def run_registry_smoke_test(control_plane_job_id: int) -> int:
     """Run a tiny registry-backed background job and persist a JSON artifact."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_job_by_id_internal(control_plane_job_id)
     if job_row is None:
         raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
 
@@ -193,14 +217,14 @@ def run_registry_smoke_test(control_plane_job_id: int) -> int:
         registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
         return artifact.artifact_id
     except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
+        _record_retry_if_pending(control_plane_job_id, str(exc))
         raise
 
 
 def run_internal_target_preparation(control_plane_job_id: int, corpus_path: str) -> int:
     """Prepare a built-in target corpus off the Streamlit rerun path."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_job_by_id_internal(control_plane_job_id)
     if job_row is None:
         raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
 
@@ -226,7 +250,7 @@ def run_internal_target_preparation(control_plane_job_id: int, corpus_path: str)
         registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
         return artifact.artifact_id
     except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
+        _record_retry_if_pending(control_plane_job_id, str(exc))
         raise
 
 
@@ -239,7 +263,7 @@ def run_keyness_preparation(
 ) -> int:
     """Generate shared keyness tables for a built-in target/reference pair."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_job_by_id_internal(control_plane_job_id)
     if job_row is None:
         raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
 
@@ -296,7 +320,7 @@ def run_keyness_preparation(
         registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
         return artifact.artifact_id
     except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
+        _record_retry_if_pending(control_plane_job_id, str(exc))
         raise
 
 
@@ -312,7 +336,7 @@ def run_collocation_preparation(
 ) -> int:
     """Generate a shared collocation table for a built-in target corpus."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_job_by_id_internal(control_plane_job_id)
     if job_row is None:
         raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
 
@@ -347,7 +371,7 @@ def run_collocation_preparation(
         registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
         return artifact.artifact_id
     except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
+        _record_retry_if_pending(control_plane_job_id, str(exc))
         raise
 
 
@@ -361,7 +385,7 @@ def run_keyness_parts_preparation(
 ) -> int:
     """Generate shared keyness tables for selected parts of a built-in target corpus."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_job_by_id_internal(control_plane_job_id)
     if job_row is None:
         raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
 
@@ -430,7 +454,7 @@ def run_keyness_parts_preparation(
         registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
         return artifact.artifact_id
     except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
+        _record_retry_if_pending(control_plane_job_id, str(exc))
         raise
 
 
@@ -448,7 +472,7 @@ def run_ngram_preparation(
 ) -> int:
     """Generate a shared n-gram/cluster table for a built-in target corpus."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
+    job_row = registry_service.get_job_by_id_internal(control_plane_job_id)
     if job_row is None:
         raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
 
@@ -504,12 +528,11 @@ def run_ngram_preparation(
         registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
         return artifact.artifact_id
     except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
+        _record_retry_if_pending(control_plane_job_id, str(exc))
         raise
 
 
 def run_plotbot_generation(
-    control_plane_job_id: int,
     dataframe_records: list[dict[str, object]],
     plot_lib: str,
     user_input: str,
@@ -518,46 +541,23 @@ def run_plotbot_generation(
     code_chunk: str | None = None,
     cached_code: str | None = None,
     api_key: str = "",
-) -> int:
-    """Generate Plotbot code and store a compact serialized result artifact."""
+) -> dict[str, object]:
+    """Generate a compact Plotbot result retained only by RQ's result TTL."""
 
-    job_row = registry_service.get_job_by_id(control_plane_job_id)
-    if job_row is None:
-        raise ValueError(f"Unknown control-plane job id: {control_plane_job_id}")
-
-    identity = _identity_from_job_row(job_row)
-    current_rq_job = get_current_job()
-    worker_id = current_rq_job.id if current_rq_job is not None else f"pid-{os.getpid()}"
-    registry_service.mark_job_running(control_plane_job_id, worker_id=worker_id)
-
-    try:
-        df = pd.DataFrame.from_records(dataframe_records)
-        result = run_plotbot_serialized_service(
-            df=df,
-            plot_lib=plot_lib,
-            user_input=user_input,
-            api_key=api_key,
-            llm_params=llm_params,
-            schema=schema,
-            code_chunk=code_chunk,
-            cached_code=cached_code,
-            track_quota=False,
-            include_svg=True,
-        )
-        payload = {
-            "status": "ok" if result.success else "error",
-            "control_plane_job_id": control_plane_job_id,
-            "selector_hash": identity.selector_hash,
-            "processed_at": datetime.now(timezone.utc).isoformat(),
-            "worker_id": worker_id,
-            "worker_pid": os.getpid(),
-            "plot_lib": plot_lib,
-            "user_input": user_input,
-            "result": asdict(result),
-        }
-        artifact = registry_service.store_json_artifact(identity, payload)
-        registry_service.mark_job_completed(control_plane_job_id, artifact.artifact_id)
-        return artifact.artifact_id
-    except Exception as exc:
-        registry_service.mark_job_failed(control_plane_job_id, str(exc))
-        raise
+    df = pd.DataFrame.from_records(dataframe_records)
+    result = run_plotbot_serialized_service(
+        df=df,
+        plot_lib=plot_lib,
+        user_input=user_input,
+        api_key=api_key,
+        llm_params=llm_params,
+        schema=schema,
+        code_chunk=code_chunk,
+        cached_code=cached_code,
+        track_quota=False,
+        include_svg=True,
+    )
+    return {
+        "status": "ok" if result.success else "error",
+        "result": asdict(result),
+    }

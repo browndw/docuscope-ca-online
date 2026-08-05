@@ -9,6 +9,7 @@ import json
 
 from redis import Redis
 from rq import Queue, Retry
+from rq.job import Callback
 
 from webapp.persistence import ArtifactIdentity, registry_service
 from webapp.persistence.registry import (
@@ -18,12 +19,15 @@ from webapp.persistence.registry import (
     build_shared_ngram_identity,
     get_pipeline_version,
 )
+from webapp.corpus_paths import is_builtin_corpus_ref, make_portable_corpus_path
 from webapp.queue.config import RedisQueueConfig, get_redis_queue_config
-from webapp.corpus_paths import make_portable_corpus_path
 
 
 RQ_SMOKE_ARTIFACT_TYPE = "rq_smoke_result"
 INTERNAL_TARGET_ARTIFACT_TYPE = "internal_target_ready"
+CONTROL_PLANE_FAILURE_CALLBACK = Callback(
+    "webapp.queue.tasks.mark_control_plane_job_failed"
+)
 
 
 @dataclass(frozen=True)
@@ -91,9 +95,7 @@ class QueuePlotbotEnqueueResult:
     """Result returned when a Plotbot generation job is requested."""
 
     state: str
-    control_plane_job_id: int | None
-    rq_job_id: str | None = None
-    artifact_id: int | None = None
+    rq_job_id: str
 
 
 def _hash_payload(payload: dict[str, object]) -> str:
@@ -193,46 +195,6 @@ def build_internal_target_identity(
     )
 
 
-def build_plotbot_identity(
-    dataframe_records: list[dict[str, object]],
-    plot_lib: str,
-    user_input: str,
-    llm_params: dict[str, object],
-    code_chunk: str | None = None,
-    cached_code: str | None = None,
-    requester_principal_id: str = "anonymous",
-    model_version: str = "plotbot-v1",
-) -> ArtifactIdentity:
-    """Build a private identity for queued Plotbot generation."""
-
-    table_payload = {
-        "records": dataframe_records,
-    }
-    selector_payload = {
-        "request_type": "plotbot_generate",
-        "table_hash": _hash_payload(table_payload),
-        "plot_lib": plot_lib,
-        "user_input": user_input,
-        "code_chunk_hash": _hash_payload({"code_chunk": code_chunk or ""}),
-        "cached_code_hash": _hash_payload({"cached_code": cached_code or ""}),
-    }
-    parameter_payload = {
-        "job_kind": "plotbot_generate",
-        "llm_params": llm_params,
-    }
-    return ArtifactIdentity(
-        artifact_type="plotbot_result",
-        scope="private",
-        owner_principal_id=requester_principal_id or "anonymous",
-        selector_hash=_hash_payload(selector_payload),
-        selector_payload=selector_payload,
-        parameter_hash=_hash_payload(parameter_payload),
-        parameter_payload=parameter_payload,
-        pipeline_version=get_pipeline_version(),
-        model_version=model_version,
-    )
-
-
 def enqueue_registry_smoke_test(
     request_key: str = "local-smoke",
     requester_principal_id: str | None = None,
@@ -294,6 +256,7 @@ def enqueue_registry_smoke_test(
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
+        on_failure=CONTROL_PLANE_FAILURE_CALLBACK,
     )
     return QueueSmokeEnqueueResult(
         state="queued",
@@ -366,6 +329,7 @@ def enqueue_internal_target_preparation(
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
+        on_failure=CONTROL_PLANE_FAILURE_CALLBACK,
     )
     return QueueInternalTargetEnqueueResult(
         state="queued",
@@ -448,6 +412,7 @@ def enqueue_keyness_preparation(
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
+        on_failure=CONTROL_PLANE_FAILURE_CALLBACK,
     )
     return QueueKeynessEnqueueResult(
         state="queued",
@@ -539,6 +504,7 @@ def enqueue_collocation_preparation(
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
+        on_failure=CONTROL_PLANE_FAILURE_CALLBACK,
     )
     return QueueCollocationEnqueueResult(
         state="queued",
@@ -624,6 +590,7 @@ def enqueue_keyness_parts_preparation(
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
+        on_failure=CONTROL_PLANE_FAILURE_CALLBACK,
     )
     return QueueKeynessPartsEnqueueResult(
         state="queued",
@@ -720,6 +687,7 @@ def enqueue_ngram_preparation(
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
+        on_failure=CONTROL_PLANE_FAILURE_CALLBACK,
     )
     return QueueNgramEnqueueResult(
         state="queued",
@@ -731,6 +699,7 @@ def enqueue_ngram_preparation(
 
 def enqueue_plotbot_generation(
     dataframe_records: list[dict[str, object]],
+    source_refs: list[str],
     plot_lib: str,
     user_input: str,
     llm_params: dict[str, object],
@@ -741,7 +710,17 @@ def enqueue_plotbot_generation(
     requester_principal_id: str = "anonymous",
     model_version: str = "plotbot-v1",
 ) -> QueuePlotbotEnqueueResult:
-    """Enqueue private Plotbot code generation and serialized plot execution."""
+    """Enqueue a TTL-backed Plotbot job for built-in-only corpus data."""
+
+    portable_sources = [
+        make_portable_corpus_path(source) for source in source_refs if source
+    ]
+    if not portable_sources or not all(
+        is_builtin_corpus_ref(source) for source in portable_sources
+    ):
+        raise ValueError(
+            "Queued Plotbot generation requires built-in-only corpus data."
+        )
 
     config = get_redis_queue_config()
     if not config.enabled:
@@ -749,42 +728,32 @@ def enqueue_plotbot_generation(
             "Redis/RQ queueing is disabled. Set DOCUSCOPE_RQ_ENABLED=1 to enable it."
         )
 
-    identity = build_plotbot_identity(
-        dataframe_records=dataframe_records,
-        plot_lib=plot_lib,
-        user_input=user_input,
-        llm_params=llm_params,
-        code_chunk=code_chunk,
-        cached_code=cached_code,
-        requester_principal_id=requester_principal_id,
-        model_version=model_version,
-    )
-    reservation = registry_service.reserve_artifact(identity)
-
-    if reservation.state == "ready" and reservation.artifact is not None:
-        return QueuePlotbotEnqueueResult(
-            state="ready",
-            control_plane_job_id=None,
-            artifact_id=reservation.artifact.artifact_id,
-        )
-
-    if reservation.job is None:
-        raise RuntimeError("Plotbot reservation did not return a job to enqueue.")
-
     queue = get_queue()
-    rq_job_id = f"plotbot-{reservation.job.job_id}"
+    request_hash = _hash_payload({
+        "table_hash": _hash_payload({"records": dataframe_records}),
+        "source_refs": sorted(portable_sources),
+        "plot_lib": plot_lib,
+        "user_input": user_input,
+        "llm_params": llm_params,
+        "schema": schema or "",
+        "code_chunk_hash": _hash_payload({"code_chunk": code_chunk or ""}),
+        "cached_code_hash": _hash_payload({"cached_code": cached_code or ""}),
+        "requester_hash": _hash_payload({
+            "requester": requester_principal_id or "anonymous"
+        }),
+        "model_version": model_version,
+    })
+    rq_job_id = f"plotbot-{request_hash[:32]}"
     existing_job = queue.fetch_job(rq_job_id)
     existing_status = (
-        _normalize_rq_status(existing_job.get_status())
+        _normalize_rq_status(existing_job.get_status(refresh=True))
         if existing_job is not None
         else ""
     )
-    if reservation.state == "pending" and existing_job is not None:
+    if existing_status == "finished" and isinstance(existing_job.result, dict):
         return QueuePlotbotEnqueueResult(
-            state="pending",
-            control_plane_job_id=reservation.job.job_id,
+            state="ready",
             rq_job_id=existing_job.id,
-            artifact_id=reservation.artifact.artifact_id if reservation.artifact else None,
         )
 
     if existing_job is not None and existing_status in {
@@ -794,15 +763,15 @@ def enqueue_plotbot_generation(
         "deferred",
     }:
         return QueuePlotbotEnqueueResult(
-            state="queued",
-            control_plane_job_id=reservation.job.job_id,
+            state="pending",
             rq_job_id=existing_job.id,
-            artifact_id=reservation.artifact.artifact_id if reservation.artifact else None,
         )
+
+    if existing_job is not None:
+        existing_job.delete()
 
     rq_job = queue.enqueue(
         "webapp.queue.tasks.run_plotbot_generation",
-        reservation.job.job_id,
         dataframe_records,
         plot_lib,
         user_input,
@@ -818,7 +787,5 @@ def enqueue_plotbot_generation(
     )
     return QueuePlotbotEnqueueResult(
         state="queued",
-        control_plane_job_id=reservation.job.job_id,
         rq_job_id=rq_job.id,
-        artifact_id=reservation.artifact.artifact_id if reservation.artifact else None,
     )

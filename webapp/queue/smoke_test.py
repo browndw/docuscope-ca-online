@@ -47,12 +47,14 @@ def main() -> None:
 
     deadline = time.monotonic() + args.wait_seconds
     while time.monotonic() < deadline:
-        job = registry_service.get_job_by_id(result.control_plane_job_id)
+        job = registry_service.get_job_by_id_internal(
+            result.control_plane_job_id
+        )
         if job is None:
             raise SystemExit("Control-plane job disappeared before completion.")
 
         if job.status == "completed":
-            artifact = registry_service.get_artifact_by_id(job.artifact_id)
+            artifact = registry_service.get_artifact_by_id_internal(job.artifact_id)
             payload = registry_service.load_json_artifact(artifact)
             print(json.dumps(payload, indent=2, sort_keys=True))
             return
@@ -63,7 +65,8 @@ def main() -> None:
         time.sleep(args.poll_interval)
 
     raise SystemExit(
-        f"Timed out waiting for control-plane job {result.control_plane_job_id} to complete."
+        "Timed out waiting for control-plane job "
+        f"{result.control_plane_job_id} to complete."
     )
 
 
