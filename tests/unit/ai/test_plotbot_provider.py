@@ -193,16 +193,17 @@ def test_openai_compatible_provider_uses_base_url_and_model(monkeypatch):
     class FakeOpenAIClient:
         chat = FakeChat()
 
-    def fake_openai(api_key, base_url):
+    def fake_openai(api_key, base_url, timeout):
         captured["api_key"] = api_key
         captured["base_url"] = base_url
+        captured["timeout"] = timeout
         return FakeOpenAIClient()
 
     monkeypatch.setattr("openai.OpenAI", fake_openai)
 
     provider = OpenAICompatibleChatProvider(
-        base_url="http://localhost:11434/v1",
-        model="Qwen2.5-Coder-7B-Instruct"
+        base_url="http://model-runner.docker.internal/v1",
+        model="ai/qwen3-coder"
     )
 
     text = provider.generate_text(
@@ -216,8 +217,44 @@ def test_openai_compatible_provider_uses_base_url_and_model(monkeypatch):
 
     assert text == "fig = px.bar(df, x='label', y='value')"
     assert captured["api_key"] == "local-model"
-    assert captured["base_url"] == "http://localhost:11434/v1"
-    assert captured["params"]["model"] == "Qwen2.5-Coder-7B-Instruct"
+    assert captured["base_url"] == "http://model-runner.docker.internal/v1"
+    assert captured["timeout"] == 60.0
+    assert captured["params"]["model"] == "ai/qwen3-coder"
+
+
+def test_openai_compatible_provider_uses_service_token_and_timeout(monkeypatch):
+    """Deployment credentials and timeouts should configure the local client."""
+    captured = {}
+
+    class FakeCompletions:
+        def create(self, **_params):
+            return []
+
+    class FakeOpenAIClient:
+        chat = type("FakeChat", (), {"completions": FakeCompletions()})()
+
+    def fake_openai(api_key, base_url, timeout):
+        captured.update(api_key=api_key, base_url=base_url, timeout=timeout)
+        return FakeOpenAIClient()
+
+    monkeypatch.setattr("openai.OpenAI", fake_openai)
+    provider = OpenAICompatibleChatProvider(
+        base_url="http://plotbot-model.internal:8000/v1",
+        model="ai/qwen3-coder",
+        service_api_key="service-token",
+        timeout_seconds=25.0,
+    )
+
+    provider.generate_text(
+        api_key="user-key",
+        request_params={"messages": [], "stream": True},
+    )
+
+    assert captured == {
+        "api_key": "service-token",
+        "base_url": "http://plotbot-model.internal:8000/v1",
+        "timeout": 25.0,
+    }
 
 
 def test_default_provider_selects_local_endpoint_from_environment(monkeypatch):
@@ -225,16 +262,20 @@ def test_default_provider_selects_local_endpoint_from_environment(monkeypatch):
     provider_module._discover_local_openai_compatible_model.cache_clear()
     monkeypatch.setenv("DOCUSCOPE_AI_PROVIDER", "local")
     monkeypatch.setenv("DOCUSCOPE_AI_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setenv("DOCUSCOPE_AI_MODEL", "Qwen2.5-Coder-7B-Instruct")
+    monkeypatch.setenv("DOCUSCOPE_AI_MODEL", "ai/qwen3-coder")
+    monkeypatch.setenv("DOCUSCOPE_AI_API_KEY", "internal-token")
+    monkeypatch.setenv("DOCUSCOPE_AI_TIMEOUT_SECONDS", "30")
 
     provider = get_default_chat_provider()
 
     assert isinstance(provider, OpenAICompatibleChatProvider)
     assert provider.base_url == "http://localhost:11434/v1"
-    assert provider.model == "Qwen2.5-Coder-7B-Instruct"
+    assert provider.model == "ai/qwen3-coder"
+    assert provider.service_api_key == "internal-token"
+    assert provider.timeout_seconds == 30.0
 
 
-def test_default_provider_auto_discovers_local_ollama_endpoint(monkeypatch):
+def test_default_provider_auto_discovers_local_compatible_endpoint(monkeypatch):
     """A running local OpenAI-compatible endpoint should be usable without env vars."""
     provider_module._discover_local_openai_compatible_model.cache_clear()
     monkeypatch.delenv("DOCUSCOPE_AI_PROVIDER", raising=False)
@@ -249,7 +290,7 @@ def test_default_provider_auto_discovers_local_ollama_endpoint(monkeypatch):
             return False
 
         def read(self):
-            return b'{"data": [{"id": "qwen2.5-coder:7b-instruct"}]}'
+            return b'{"data": [{"id": "docker.io/ai/qwen3-coder:latest"}]}'
 
     monkeypatch.setattr(provider_module, "urlopen", lambda url, timeout: FakeResponse())
 
@@ -258,11 +299,11 @@ def test_default_provider_auto_discovers_local_ollama_endpoint(monkeypatch):
 
     assert provider_config == (
         "http://localhost:11434/v1",
-        "qwen2.5-coder:7b-instruct"
+        "docker.io/ai/qwen3-coder:latest"
     )
     assert isinstance(provider, OpenAICompatibleChatProvider)
     assert provider.base_url == "http://localhost:11434/v1"
-    assert provider.model == "qwen2.5-coder:7b-instruct"
+    assert provider.model == "docker.io/ai/qwen3-coder:latest"
 
 
 def test_default_provider_falls_back_to_protected_openai(monkeypatch):
@@ -289,18 +330,18 @@ def test_openai_compatible_provider_health_reports_ready_model(monkeypatch):
             return False
 
         def read(self):
-            return b'{"data": [{"id": "qwen2.5-coder:7b-instruct"}]}'
+            return b'{"data": [{"id": "docker.io/ai/qwen3-coder:latest"}]}'
 
     monkeypatch.setattr(provider_module, "urlopen", lambda url, timeout: FakeResponse())
 
     health = check_openai_compatible_provider_health(
-        base_url="http://qwen-model:8000/v1",
-        model="qwen2.5-coder:7b-instruct",
+        base_url="http://model-runner.docker.internal/v1",
+        model="docker.io/ai/qwen3-coder:latest",
     )
 
     assert health.available is True
-    assert health.base_url == "http://qwen-model:8000/v1"
-    assert health.resolved_model == "qwen2.5-coder:7b-instruct"
+    assert health.base_url == "http://model-runner.docker.internal/v1"
+    assert health.resolved_model == "docker.io/ai/qwen3-coder:latest"
     assert health.error is None
 
 
@@ -319,8 +360,8 @@ def test_openai_compatible_provider_health_reports_missing_model(monkeypatch):
     monkeypatch.setattr(provider_module, "urlopen", lambda url, timeout: FakeResponse())
 
     health = check_openai_compatible_provider_health(
-        base_url="http://qwen-model:8000/v1",
-        model="qwen2.5-coder:7b-instruct",
+        base_url="http://model-runner.docker.internal/v1",
+        model="docker.io/ai/qwen3-coder:latest",
     )
 
     assert health.available is False
