@@ -33,7 +33,7 @@ from webapp.utilities.ai import (
 from webapp.utilities.ai.providers import get_openai_compatible_provider_config
 from webapp.queue import (
     enqueue_plotbot_generation,
-    get_queue,
+    get_plotbot_queue,
     get_redis_queue_config,
 )
 from webapp.utilities.analysis import (
@@ -193,7 +193,7 @@ def _render_plotbot_queue_status(user_session_id: str) -> None:
         return
 
     try:
-        rq_job = get_queue().fetch_job(rq_job_id)
+        rq_job = get_plotbot_queue().fetch_job(rq_job_id)
     except Exception:
         rq_job = None
     if rq_job is None:
