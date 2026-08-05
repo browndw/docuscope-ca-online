@@ -13,6 +13,7 @@ class RedisQueueConfig:
     enabled: bool
     redis_url: str
     queue_name: str
+    plotbot_queue_name: str
     job_timeout: int
     result_ttl: int
     max_retries: int
@@ -26,6 +27,9 @@ def get_redis_queue_config() -> RedisQueueConfig:
         enabled=os.environ.get("DOCUSCOPE_RQ_ENABLED", "0") == "1",
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         queue_name=os.environ.get("DOCUSCOPE_RQ_QUEUE", "docuscope"),
+        plotbot_queue_name=os.environ.get(
+            "DOCUSCOPE_RQ_PLOTBOT_QUEUE", "docuscope-plotbot"
+        ),
         job_timeout=int(os.environ.get("DOCUSCOPE_RQ_JOB_TIMEOUT", "600")),
         result_ttl=int(os.environ.get("DOCUSCOPE_RQ_RESULT_TTL", "86400")),
         # Bounded retries so a transient Redis/filesystem blip doesn't strand
