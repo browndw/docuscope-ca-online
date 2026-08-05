@@ -220,7 +220,10 @@ def _render_collocation_queue_status(user_session_id: str) -> None:
         try:
             rq_job = get_queue().fetch_job(rq_job_id)
             if rq_job is not None:
-                rq_status = str(getattr(rq_job.get_status(), "value", rq_job.get_status()))
+                rq_status_raw = rq_job.get_status(refresh=True)
+                rq_status = str(
+                    getattr(rq_status_raw, "value", rq_status_raw)
+                ).strip().lower()
         except Exception:
             rq_status = "unavailable"
 
