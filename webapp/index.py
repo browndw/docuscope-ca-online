@@ -36,8 +36,8 @@ if str(project_root) not in sys.path:
 from webapp.menu import (   # noqa: E402
     menu,
 )
-from webapp.utilities.configuration.config_manager import config_manager   # noqa: E402
 from webapp.utilities.configuration.logging_config import get_logger   # noqa: E402
+from webapp.config.unified import config   # noqa: E402
 
 # Initialize session backend early to ensure database is created
 try:
@@ -47,14 +47,14 @@ try:
 except Exception:
     pass
 
-TITLE_LOGO = config_manager.docuscope_logo_path
-PL_LOGO = config_manager.porpoise_badge_path
-UG_LOGO = config_manager.user_guide_badge_path
-SPACY_META = config_manager.spacy_model_meta_path
-DESKTOP = config_manager.desktop_mode
-TEST_MODE = config_manager.test_mode
+TITLE_LOGO = config.docuscope_logo_path
+PL_LOGO = config.porpoise_badge_path
+UG_LOGO = config.user_guide_badge_path
+SPACY_META = config.spacy_model_meta_path
+DESKTOP = config.desktop_mode
+TEST_MODE = config.test_mode
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
-VERSION = config_manager.version
+VERSION = config.version
 SLOW_INDEX_STEP_MS = 100
 logger = get_logger()
 
@@ -180,9 +180,13 @@ def main() -> None:
     if minimal_landing:
         minimal_start = perf_counter()
         st.title("DocuScope")
-        if DESKTOP or TEST_MODE or (hasattr(st, "user") and getattr(st.user, "is_logged_in", False)):
+        if (
+            DESKTOP or TEST_MODE or
+            (hasattr(st, "user") and getattr(st.user, "is_logged_in", False))
+        ):
             st.markdown(
-                "Use the navigation sidebar or go directly to corpus loading to start the workflow."
+                "Use the navigation sidebar or go directly to corpus loading "
+                "to start the workflow."
             )
             st.page_link(
                 page="pages/1_load_corpus.py",
