@@ -19,6 +19,7 @@ from RestrictedPython.Eval import default_guarded_getitem as guarded_getitem
 from RestrictedPython.Eval import default_guarded_getiter as guarded_getiter
 
 from webapp.utilities.state import SessionKeys
+from webapp.corpus_paths import is_builtin_corpus_ref, make_portable_corpus_path
 # Add async storage import for non-blocking Firestore operations
 from webapp.utilities.storage import (
     conditional_async_add_message, conditional_async_add_plot
@@ -49,6 +50,30 @@ FORBIDDEN_PATTERNS = [
     r'^\s*sys\.',            # sys. usage at line start
     r'^\s*subprocess\.',     # subprocess. usage at line start
 ]
+
+
+def get_plotbot_builtin_sources(
+    selected_corpus: str | None,
+    target_source: str = "",
+    reference_source: str = "",
+) -> list[str]:
+    """Return queue-eligible built-in refs for a Plotbot table selection."""
+
+    selected_sources = {
+        "Target": [target_source],
+        "Grouped Target": [target_source],
+        "Reference": [reference_source],
+        "Grouped Reference": [reference_source],
+        "Keywords": [target_source, reference_source],
+    }.get(selected_corpus or "", [])
+    portable_sources = [
+        make_portable_corpus_path(source) for source in selected_sources if source
+    ]
+    if len(portable_sources) != len(selected_sources) or not all(
+        is_builtin_corpus_ref(source) for source in portable_sources
+    ):
+        return []
+    return portable_sources
 
 
 @dataclass(frozen=True)
@@ -186,6 +211,7 @@ def clear_plotbot(session_id: str, clear_all=True):
 
         st.session_state[session_id].pop("plotbot_df", None)
         st.session_state[session_id].pop("plotbot_query", None)
+        st.session_state[session_id].pop(SessionKeys.AI_PLOTBOT_SOURCE, None)
         st.session_state[session_id].pop("plotbot_library", None)
 
         # Clear widget manager state for AI-related widgets
@@ -719,7 +745,8 @@ def plotbot_user_query(session_id: str,
                        llm_params: dict,
                        code_chunk=None,
                        prompt_position: int = 1,
-                       cache_mode: bool = False) -> None:
+                       cache_mode: bool = False,
+                       allow_persistence: bool = True) -> None:
     """
     Handle user queries for plotbot (iterative plotting assistant).
 
@@ -743,6 +770,8 @@ def plotbot_user_query(session_id: str,
         Position in the conversation for caching.
     cache_mode : bool
         Whether to cache results.
+    allow_persistence : bool
+        Whether chat and plot outputs may be written outside session state.
     """
     # Ensure session state keys exist
     if SessionKeys.AI_PLOTBOT_CHAT not in st.session_state[session_id]:
@@ -766,7 +795,9 @@ def plotbot_user_query(session_id: str,
         community_key_available = False
 
     key_type = determine_api_key_type(DESKTOP, api_key, community_key_available)
-    should_store_firestore = cache_mode and key_type == "community"
+    should_store_firestore = (
+        allow_persistence and cache_mode and key_type == "community"
+    )
 
     conditional_async_add_message(enable_firestore=should_store_firestore,
                                   user_id=user_email,
