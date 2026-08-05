@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import shutil
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from sqlalchemy import delete
+from sqlalchemy import func, select
 
 
 pytestmark = pytest.mark.integration
@@ -105,7 +107,7 @@ def test_postgres_control_plane_session_and_registry_smoke(tmp_path, monkeypatch
         artifact_dir = Path(artifact.storage_uri)
         registry.mark_job_completed(reservation.job.job_id, artifact.artifact_id)
 
-        job = registry.get_job_by_id(reservation.job.job_id)
+        job = registry.get_job_by_id_internal(reservation.job.job_id)
         assert job is not None
         assert job.status == "completed"
         assert job.artifact_id == artifact.artifact_id
@@ -134,5 +136,87 @@ def test_postgres_control_plane_session_and_registry_smoke(tmp_path, monkeypatch
         if artifact_dir is not None:
             shutil.rmtree(artifact_dir, ignore_errors=True)
 
+        build_engine.cache_clear()
+        create_session_factory.cache_clear()
+
+
+@pytest.mark.skipif(
+    not _postgres_integration_enabled(),
+    reason="Set DOCUSCOPE_POSTGRES_INTEGRATION=1 to run real Postgres smoke tests.",
+)
+def test_concurrent_public_reservations_share_one_artifact_and_job():
+    """Prove PostgreSQL uniqueness serializes a cold public reservation race."""
+
+    from webapp.persistence.database import create_session_factory, build_engine
+    from webapp.persistence.models import ArtifactJob, ArtifactRecord
+    from webapp.persistence.registry import ArtifactIdentity, ArtifactRegistryService
+
+    build_engine.cache_clear()
+    create_session_factory.cache_clear()
+    run_id = uuid.uuid4().hex
+    selector_hash = f"concurrent-selector-{run_id}"
+    identity = ArtifactIdentity(
+        artifact_type="concurrent_public_smoke",
+        scope="public",
+        selector_hash=selector_hash,
+        selector_payload={"run_id": run_id},
+        parameter_hash="params",
+        parameter_payload={"kind": "concurrent-postgres-smoke"},
+        pipeline_version="test",
+        model_version="test",
+    )
+    session_factory = create_session_factory()
+
+    try:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(
+                executor.map(
+                    lambda _request: ArtifactRegistryService().reserve_artifact(
+                        identity
+                    ),
+                    range(8),
+                )
+            )
+
+        artifact_ids = {
+            result.artifact.artifact_id
+            for result in results
+            if result.artifact is not None
+        }
+        job_ids = {
+            result.job.job_id
+            for result in results
+            if result.job is not None
+        }
+        assert artifact_ids and len(artifact_ids) == 1
+        assert job_ids and len(job_ids) == 1
+        assert sum(result.state == "reserved" for result in results) == 1
+        assert all(result.state in {"reserved", "pending"} for result in results)
+
+        with session_factory() as session:
+            artifact_count = session.scalar(
+                select(func.count()).select_from(ArtifactRecord).where(
+                    ArtifactRecord.selector_hash == selector_hash
+                )
+            )
+            active_job_count = session.scalar(
+                select(func.count()).select_from(ArtifactJob).where(
+                    ArtifactJob.selector_hash == selector_hash,
+                    ArtifactJob.status.in_(("pending", "running")),
+                )
+            )
+        assert artifact_count == 1
+        assert active_job_count == 1
+    finally:
+        with session_factory() as session:
+            session.execute(
+                delete(ArtifactJob).where(ArtifactJob.selector_hash == selector_hash)
+            )
+            session.execute(
+                delete(ArtifactRecord).where(
+                    ArtifactRecord.selector_hash == selector_hash
+                )
+            )
+            session.commit()
         build_engine.cache_clear()
         create_session_factory.cache_clear()

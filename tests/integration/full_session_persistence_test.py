@@ -328,22 +328,23 @@ class TestFullSessionPersistence:
         loaded = load_persistent_session(self.session_id)
         assert loaded is True
 
-        # Verify session was loaded correctly
+        # The session loads, but stale corpus flags are cleared because this
+        # fixture does not provide a restorable ds_tokens artifact reference.
         assert self.session_id in st.session_state
         session_df = st.session_state[self.session_id]["session"]
         session_dict = session_df.to_dict(as_series=False) if hasattr(session_df, 'to_dict') else session_df  # noqa: E501
 
         target_value = session_dict.get(SessionKeys.HAS_TARGET)
         if isinstance(target_value, list):
-            assert target_value[0] is True
+            assert target_value[0] is False
         else:
-            assert target_value is True
+            assert target_value is False
 
         db_value = session_dict.get(SessionKeys.TARGET_DB)
         if isinstance(db_value, list):
-            assert db_value[0] == "persisted_corpus"
+            assert db_value[0] == ""
         else:
-            assert db_value == "persisted_corpus"
+            assert db_value == ""
 
         print("✓ Session loading from storage works")
 
@@ -378,7 +379,7 @@ class TestFullSessionPersistence:
         assert "session" in st.session_state[self.session_id]
         assert "messages" not in st.session_state[self.session_id]
 
-        # Check specific values
+        # Corpus flags are cleared when no restorable core artifact was saved.
         session_df = st.session_state[self.session_id]["session"]
         session_dict = (session_df.to_dict(as_series=False)
                         if hasattr(session_df, 'to_dict')
@@ -386,9 +387,15 @@ class TestFullSessionPersistence:
 
         target_value = session_dict.get(SessionKeys.HAS_TARGET)
         if isinstance(target_value, list):
-            assert target_value[0] is True
+            assert target_value[0] is False
         else:
-            assert target_value is True
+            assert target_value is False
+
+        db_value = session_dict.get(SessionKeys.TARGET_DB)
+        if isinstance(db_value, list):
+            assert db_value[0] == ""
+        else:
+            assert db_value == ""
 
         print("✓ Cross-session continuity works")
 

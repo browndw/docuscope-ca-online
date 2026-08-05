@@ -2,6 +2,7 @@
 
 import pandas as pd
 import webapp.utilities.ai.providers as provider_module
+import webapp.utilities.ai.plotbot as plotbot_module
 
 from webapp.utilities.ai.providers import (
     OpenAICompatibleChatProvider,
@@ -13,9 +14,79 @@ from webapp.utilities.ai.providers import (
 from webapp.utilities.ai.plotbot import plotbot_code_generate_or_update
 from webapp.utilities.ai.plotbot import (
     generate_plotbot_code_and_result,
+    get_plotbot_builtin_sources,
+    plotbot_user_query,
     run_plotbot_serialized_service,
     run_plotbot_service,
 )
+
+
+def test_plotbot_source_classification_rejects_uploaded_and_mixed_data():
+    assert get_plotbot_builtin_sources(
+        "Target",
+        target_source="builtin:ld/B_MICUSP",
+    ) == ["builtin:ld/B_MICUSP"]
+    assert get_plotbot_builtin_sources(
+        "Target",
+        target_source="/tmp/uploaded-target",
+    ) == []
+    assert get_plotbot_builtin_sources(
+        "Keywords",
+        target_source="builtin:ld/B_MICUSP",
+        reference_source="/tmp/uploaded-reference",
+    ) == []
+
+
+def test_session_only_plotbot_disables_external_message_and_plot_storage(monkeypatch):
+    session_id = "private-plotbot-session"
+    monkeypatch.setattr(
+        plotbot_module.st,
+        "session_state",
+        {
+            session_id: {
+                "plotbot": [],
+                plotbot_module.SessionKeys.AI_PLOTBOT_CHAT: [],
+            }
+        },
+    )
+    monkeypatch.setattr(
+        plotbot_module,
+        "determine_api_key_type",
+        lambda *_args: "community",
+    )
+    monkeypatch.setattr(plotbot_module, "detect_intent", lambda _input: "plot")
+    monkeypatch.setattr(
+        plotbot_module,
+        "generate_plotbot_code_and_result",
+        lambda **_kwargs: ("fig = px.bar(df)", {"type": "plot", "value": object()}),
+    )
+    monkeypatch.setattr(plotbot_module, "fig_to_svg", lambda **_kwargs: "<svg />")
+    message_writes = []
+    plot_writes = []
+    monkeypatch.setattr(
+        plotbot_module,
+        "conditional_async_add_message",
+        lambda **kwargs: message_writes.append(kwargs),
+    )
+    monkeypatch.setattr(
+        plotbot_module,
+        "conditional_async_add_plot",
+        lambda **kwargs: plot_writes.append(kwargs),
+    )
+
+    plotbot_user_query(
+        session_id=session_id,
+        df=pd.DataFrame({"label": ["private"], "value": [1]}),
+        plot_lib="plotly.express",
+        user_input="Make a bar chart.",
+        api_key="community-key",
+        llm_params={},
+        cache_mode=True,
+        allow_persistence=False,
+    )
+
+    assert message_writes[0]["enable_firestore"] is False
+    assert plot_writes[0]["enable_firestore"] is False
 
 
 class FakeChatProvider:

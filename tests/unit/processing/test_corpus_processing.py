@@ -525,7 +525,7 @@ class TestAttachQueuedInternalTarget:
         mock_get_manager.return_value = mock_manager
 
         queue_artifact = MagicMock(status="ready")
-        mock_registry.get_artifact_by_id.return_value = queue_artifact
+        mock_registry.get_public_artifact_by_id.return_value = queue_artifact
         mock_registry.load_json_artifact.return_value = {"frequency_artifact_id": 42}
 
         attach_queued_internal_target(
@@ -539,7 +539,7 @@ class TestAttachQueuedInternalTarget:
             "queued-session",
             corpus_type="target",
         )
-        mock_registry.get_artifact_by_id.assert_called_once_with(17)
+        mock_registry.get_public_artifact_by_id.assert_called_once_with(17)
         mock_registry.load_json_artifact.assert_called_once_with(queue_artifact)
         mock_manager.set_artifact_refs.assert_called_once_with(
             "frequency_bundle",

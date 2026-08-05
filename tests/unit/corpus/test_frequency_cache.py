@@ -4,6 +4,8 @@ import gzip
 import pickle
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event, Lock
 from unittest.mock import patch
 
 import polars as pl
@@ -37,8 +39,9 @@ class TestSharedFrequencyCache:
     def setup_method(self):
         self.user_session_id = "freq-cache-session"
         st.session_state.clear()
-        data_manager_module._artifact_frame_cache.clear()
-        data_manager_module._artifact_frame_cache_locks.clear()
+        with data_manager_module._artifact_frame_cache_state_lock:
+            data_manager_module._artifact_frame_cache.clear()
+            data_manager_module._artifact_frame_cache_locks.clear()
         st.session_state[self.user_session_id] = {
             "target": {"ds_tokens": _make_tokens()},
             "session": {"target_db": "webapp/_corpora/ld/A_MICUSP_mini"},
@@ -57,6 +60,60 @@ class TestSharedFrequencyCache:
         assert result == cached
         mock_frequency.assert_not_called()
 
+    def test_concurrent_lru_operations_remain_bounded(self):
+        worker_count = 12
+        iterations = 200
+        start = Barrier(worker_count)
+
+        def exercise_cache(worker_id: int) -> None:
+            start.wait()
+            for iteration in range(iterations):
+                owner = f"worker-{worker_id}-{iteration}"
+                key = f"frame-{iteration % 5}"
+                frame = _make_frequency_table(str(iteration))
+                data_manager_module._set_cached_artifact_frame(owner, key, frame)
+                assert data_manager_module._get_cached_artifact_frame(
+                    owner,
+                    key,
+                ) is not None
+                if iteration % 3 == 0:
+                    data_manager_module._clear_cached_artifact_frame(owner, key)
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            list(executor.map(exercise_cache, range(worker_count)))
+
+        with data_manager_module._artifact_frame_cache_state_lock:
+            assert len(data_manager_module._artifact_frame_cache) <= (
+                data_manager_module.ARTIFACT_FRAME_CACHE_MAX_ITEMS
+            )
+            assert data_manager_module._artifact_frame_cache_locks == {}
+
+    def test_same_key_load_leases_serialize_and_are_released(self):
+        worker_count = 12
+        start = Barrier(worker_count)
+        state_lock = Lock()
+        overlap_window = Event()
+        active_users = 0
+        max_active_users = 0
+
+        def exercise_load_lock(_worker_id: int) -> None:
+            nonlocal active_users, max_active_users
+            start.wait()
+            with data_manager_module._artifact_frame_load_lock(17, "ft_pos"):
+                with state_lock:
+                    active_users += 1
+                    max_active_users = max(max_active_users, active_users)
+                overlap_window.wait(0.002)
+                with state_lock:
+                    active_users -= 1
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            list(executor.map(exercise_load_lock, range(worker_count)))
+
+        assert max_active_users == 1
+        with data_manager_module._artifact_frame_cache_state_lock:
+            assert data_manager_module._artifact_frame_cache_locks == {}
+
     def test_get_data_reuses_ephemeral_artifact_frame_cache(self):
         manager = CorpusDataManager(self.user_session_id, "target")
         ft_pos = _make_frequency_table("NN1")
@@ -67,7 +124,7 @@ class TestSharedFrequencyCache:
         artifact = type("Artifact", (), {"status": "ready"})()
         with patch.object(
             data_manager_module.registry_service,
-            "get_artifact_by_id",
+            "get_public_artifact_by_id",
             return_value=artifact,
         ):
             with patch.object(
@@ -101,7 +158,7 @@ class TestSharedFrequencyCache:
         artifact = type("Artifact", (), {"status": "ready"})()
         with patch.object(
             data_manager_module.registry_service,
-            "get_artifact_by_id",
+            "get_public_artifact_by_id",
             return_value=artifact,
         ):
             with patch.object(
@@ -150,8 +207,14 @@ class TestSharedFrequencyCache:
         assert second.equals(ft_pos_general)
         mock_generate_frequency_tables.assert_called_once()
         mock_simplify.assert_called_once_with(ft_pos)
-        assert f"_dataframe_cache_{self.user_session_id}" not in st.session_state[self.user_session_id]
-        assert f"_dataframe_cache_{second_session_id}" not in st.session_state[second_session_id]
+        assert (
+            f"_dataframe_cache_{self.user_session_id}"
+            not in st.session_state[self.user_session_id]
+        )
+        assert (
+            f"_dataframe_cache_{second_session_id}"
+            not in st.session_state[second_session_id]
+        )
 
     def test_get_data_reuses_session_ephemeral_general_pos_alias(self):
         manager = CorpusDataManager(self.user_session_id, "target")
@@ -184,7 +247,10 @@ class TestSharedFrequencyCache:
         assert first.equals(ft_pos_general)
         assert second.equals(ft_pos_general)
         mock_simplify.assert_called_once_with(ft_pos)
-        assert f"_dataframe_cache_{self.user_session_id}" not in st.session_state[self.user_session_id]
+        assert (
+            f"_dataframe_cache_{self.user_session_id}"
+            not in st.session_state[self.user_session_id]
+        )
         assert mock_get_cached_frame.call_args_list == [
             ((session_cache_owner, "ft_pos_general"),)
         ]
@@ -226,7 +292,10 @@ class TestSharedFrequencyCache:
         })
 
         with patch.object(manager, "_load_cached_frequency_tables") as mock_load_cached:
-            with patch.object(manager, "_reserve_shared_frequency_artifact") as mock_reserve:
+            with patch.object(
+                manager,
+                "_reserve_shared_frequency_artifact",
+            ) as mock_reserve:
                 with patch(
                     "webapp.utilities.corpus.data_manager.ds.frequency_table"
                 ) as mock_frequency:

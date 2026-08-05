@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime
 
 from webapp.config.unified import get_config
+from webapp.utilities.auth import user_authorization
 
 
 class TestAuthenticationConfiguration:
@@ -19,10 +20,6 @@ class TestAuthenticationConfiguration:
         """Test that authorization configuration is properly loaded."""
         auth_enabled = get_config('enable_user_authorization', 'authorization', False)
         assert isinstance(auth_enabled, bool)
-
-        # Test default admin email
-        admin_email = get_config('default_admin_email', 'authorization', '')
-        assert isinstance(admin_email, str)
 
     def test_session_cache_authorization_config(self):
         """Test session cache authorization configuration."""
@@ -38,14 +35,61 @@ class TestAuthenticationConfiguration:
 class TestUserAuthentication:
     """Test user authentication functionality."""
 
-    def test_admin_user_initialization(self):
-        """Test default admin user setup."""
-        # Test that default admin email is configured
-        admin_email = get_config('default_admin_email', 'authorization', '')
+    @patch.object(user_authorization, '_get_authorization_service')
+    @patch.object(user_authorization, 'get_secret')
+    @patch.object(user_authorization, 'is_authorization_enabled', return_value=True)
+    def test_admin_user_initialization_uses_optional_secret(
+        self,
+        _mock_enabled,
+        mock_get_secret,
+        mock_get_service,
+    ):
+        """Bootstrap the first admin only from the deployment secret."""
+        mock_get_secret.return_value = 'admin@example.test'
 
-        if admin_email:
-            assert '@' in admin_email  # Should be valid email format
-            assert '.' in admin_email
+        user_authorization.initialize_authorization_db()
+
+        mock_get_secret.assert_called_once_with(
+            'bootstrap_admin_email',
+            'authorization',
+            None,
+        )
+        mock_get_service.return_value.initialize_defaults.assert_called_once_with(
+            user_authorization.DEFAULT_ROLES,
+            'admin@example.test',
+        )
+
+    @patch.object(user_authorization, '_get_authorization_service')
+    @patch.object(user_authorization, 'get_secret', return_value=None)
+    @patch.object(user_authorization, 'is_authorization_enabled', return_value=True)
+    def test_admin_user_initialization_allows_missing_secret(
+        self,
+        _mock_enabled,
+        _mock_get_secret,
+        mock_get_service,
+    ):
+        """Initialize roles without granting an administrator by default."""
+        user_authorization.initialize_authorization_db()
+
+        mock_get_service.return_value.initialize_defaults.assert_called_once_with(
+            user_authorization.DEFAULT_ROLES,
+            None,
+        )
+
+    @patch.object(user_authorization, '_get_authorization_service')
+    @patch.object(user_authorization, 'get_secret')
+    @patch.object(user_authorization, 'is_authorization_enabled', return_value=False)
+    def test_admin_user_initialization_skips_when_authorization_disabled(
+        self,
+        _mock_enabled,
+        mock_get_secret,
+        mock_get_service,
+    ):
+        """Do not read secrets or initialize authorization when disabled."""
+        user_authorization.initialize_authorization_db()
+
+        mock_get_secret.assert_not_called()
+        mock_get_service.assert_not_called()
 
     def test_user_permission_checking_structure(self):
         """Test user permission checking structure."""

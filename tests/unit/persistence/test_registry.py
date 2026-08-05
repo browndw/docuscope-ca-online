@@ -23,6 +23,9 @@ from webapp.persistence.registry import (
     NGRAM_ARTIFACT_TYPE,
     ArtifactIdentity,
     ArtifactRegistryService,
+    PUBLIC_OWNER_PRINCIPAL_ID,
+    build_shared_frequency_identity,
+    build_shared_keyness_identity,
 )
 
 
@@ -54,6 +57,171 @@ def _identity(**overrides) -> ArtifactIdentity:
     )
     defaults.update(overrides)
     return ArtifactIdentity(**defaults)
+
+
+class TestSharedArtifactPolicy:
+    def test_public_identity_uses_non_null_owner_sentinel(self):
+        identity = build_shared_frequency_identity(
+            target_source="builtin:ld/B_MICUSP",
+        )
+
+        assert identity.owner_principal_id == PUBLIC_OWNER_PRINCIPAL_ID
+
+    def test_private_identity_requires_owner(self):
+        with pytest.raises(ValueError, match="require an owner"):
+            _identity(scope="private", owner_principal_id=None)
+
+    def test_builtin_identity_uses_bundled_model_metadata(self):
+        identity = build_shared_frequency_identity(
+            target_source="builtin:ld/B_MICUSP",
+        )
+
+        assert identity.model_version == "docusco_spacy@1.5+911539e"
+
+    def test_equivalent_builtin_sources_share_identity(self):
+        first = build_shared_frequency_identity(
+            target_source="builtin:ld/B_MICUSP",
+        )
+        second = build_shared_frequency_identity(
+            target_source="builtin:ld/B_MICUSP",
+        )
+
+        assert first == second
+
+    def test_uploaded_source_is_not_eligible(self, tmp_path):
+        with pytest.raises(ValueError, match="built-in corpus source"):
+            build_shared_frequency_identity(target_source=str(tmp_path))
+
+    def test_mixed_keyness_sources_are_not_eligible(self, tmp_path):
+        with pytest.raises(ValueError, match="built-in corpus source"):
+            build_shared_keyness_identity(
+                target_source="builtin:ld/B_MICUSP",
+                reference_source=str(tmp_path),
+                threshold=0.01,
+                swap_target=False,
+            )
+
+    def test_model_families_have_distinct_fingerprints(self):
+        large_dictionary = build_shared_frequency_identity(
+            target_source="builtin:ld/B_MICUSP",
+        )
+        common_dictionary = build_shared_frequency_identity(
+            target_source="builtin:cd/B_MICUSP",
+        )
+
+        assert large_dictionary.model_version == "docusco_spacy@1.5+911539e"
+        assert common_dictionary.model_version == "docusco_spacy_cd@1.5+911539e"
+
+    def test_keyness_rejects_mixed_model_families(self):
+        with pytest.raises(ValueError, match="same model"):
+            build_shared_keyness_identity(
+                target_source="builtin:ld/B_MICUSP",
+                reference_source="builtin:cd/B_MICUSP",
+                threshold=0.01,
+                swap_target=False,
+            )
+
+    def test_model_version_override_cannot_bypass_metadata(self):
+        with pytest.raises(ValueError, match="bundled model metadata"):
+            build_shared_frequency_identity(
+                target_source="builtin:ld/B_MICUSP",
+                model_version="preprocessed",
+            )
+
+
+class TestRegistryReadAuthorization:
+    def test_principal_reads_allow_public_rows(self, registry):
+        reservation = registry.reserve_artifact(_identity())
+
+        assert registry.get_artifact_by_id_for_principal(
+            reservation.artifact.artifact_id,
+            "any-principal",
+        ) is not None
+        assert registry.get_job_by_id_for_principal(
+            reservation.job.job_id,
+            "any-principal",
+        ) is not None
+
+    def test_public_reads_reject_private_rows(self, registry):
+        private_identity = _identity(
+            scope="private",
+            owner_principal_id="owner-1",
+        )
+        reservation = registry.reserve_artifact(private_identity)
+
+        assert (
+            registry.get_public_artifact_by_id(reservation.artifact.artifact_id)
+            is None
+        )
+        assert registry.get_public_job_by_id(reservation.job.job_id) is None
+
+    def test_owner_can_read_private_artifact_and_job(self, registry):
+        identity = _identity(scope="private", owner_principal_id="owner-1")
+        reservation = registry.reserve_artifact(identity)
+
+        artifact = registry.get_artifact_by_id_for_principal(
+            reservation.artifact.artifact_id,
+            "owner-1",
+        )
+        job = registry.get_job_by_id_for_principal(
+            reservation.job.job_id,
+            "owner-1",
+        )
+
+        assert artifact is not None
+        assert job is not None
+
+    def test_other_principal_cannot_read_private_artifact_or_job(self, registry):
+        identity = _identity(scope="private", owner_principal_id="owner-1")
+        reservation = registry.reserve_artifact(identity)
+
+        assert (
+            registry.get_artifact_by_id_for_principal(
+                reservation.artifact.artifact_id,
+                "owner-2",
+            )
+            is None
+        )
+        assert (
+            registry.get_job_by_id_for_principal(
+                reservation.job.job_id,
+                "owner-2",
+            )
+            is None
+        )
+
+    def test_empty_principal_cannot_read_private_rows(self, registry):
+        identity = _identity(scope="private", owner_principal_id="owner-1")
+        reservation = registry.reserve_artifact(identity)
+
+        assert registry.get_artifact_by_id_for_principal(
+            reservation.artifact.artifact_id,
+            "",
+        ) is None
+        assert registry.get_job_by_id_for_principal(
+            reservation.job.job_id,
+            "",
+        ) is None
+
+    def test_sharing_principal_can_read_private_artifact_and_job(self, registry):
+        identity = _identity(scope="private", owner_principal_id="owner-1")
+        reservation = registry.reserve_artifact(identity)
+        with registry._session_factory() as session:
+            artifact = session.get(
+                type(reservation.artifact),
+                reservation.artifact.artifact_id,
+            )
+            artifact.sharing_principal_id = "shared-with-1"
+            session.commit()
+
+        assert registry.get_artifact_by_id_for_principal(
+            reservation.artifact.artifact_id,
+            "shared-with-1",
+        ) is not None
+        assert registry.get_job_by_id_for_principal(
+            reservation.job.job_id,
+            "shared-with-1",
+        ) is not None
 
 
 class TestReserveArtifact:
@@ -137,7 +305,7 @@ class TestFindReadyArtifact:
 
         assert registry.find_ready_artifact(identity) is None
 
-        refreshed = registry.get_artifact_by_id(stored.artifact_id)
+        refreshed = registry.get_artifact_by_id_internal(stored.artifact_id)
         assert refreshed.status == "failed"
 
     def test_get_artifact_by_id_returns_none_when_ready_storage_missing(self, registry):
@@ -145,7 +313,7 @@ class TestFindReadyArtifact:
         stored = registry.store_json_artifact(identity, {"value": 1})
         shutil.rmtree(stored.storage_uri)
 
-        assert registry.get_artifact_by_id(stored.artifact_id) is None
+        assert registry.get_artifact_by_id_internal(stored.artifact_id) is None
 
         with registry._session_factory() as session:
             refreshed = session.get(type(stored), stored.artifact_id)
@@ -158,16 +326,32 @@ class TestJobLifecycle:
         reservation = registry.reserve_artifact(identity)
 
         registry.mark_job_running(reservation.job.job_id, worker_id="worker-1")
-        job = registry.get_job_by_id(reservation.job.job_id)
+        job = registry.get_job_by_id_internal(reservation.job.job_id)
         assert job.status == "running"
         assert job.worker_id == "worker-1"
 
         artifact = registry.store_json_artifact(identity, {"value": 42})
         registry.mark_job_completed(reservation.job.job_id, artifact.artifact_id)
 
-        job = registry.get_job_by_id(reservation.job.job_id)
+        job = registry.get_job_by_id_internal(reservation.job.job_id)
         assert job.status == "completed"
         assert job.artifact_id == artifact.artifact_id
+
+    def test_private_reservation_expires_but_public_does_not(
+        self,
+        registry,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("DOCUSCOPE_PRIVATE_ARTIFACT_TTL_HOURS", "6")
+
+        private = registry.reserve_artifact(
+            _identity(scope="private", owner_principal_id="user-1")
+        )
+        public = registry.reserve_artifact(_identity(selector_hash="public"))
+
+        assert private.artifact.expires_at is not None
+        assert private.artifact.expires_at > private.artifact.created_at
+        assert public.artifact.expires_at is None
 
     def test_mark_job_failed_releases_pending_artifact(self, registry):
         identity = _identity()
@@ -175,12 +359,31 @@ class TestJobLifecycle:
 
         registry.mark_job_failed(reservation.job.job_id, "boom")
 
-        job = registry.get_job_by_id(reservation.job.job_id)
+        job = registry.get_job_by_id_internal(reservation.job.job_id)
         assert job.status == "failed"
         assert job.failure_reason == "boom"
 
-        artifact = registry.get_artifact_by_id(reservation.artifact.artifact_id)
+        artifact = registry.get_artifact_by_id_internal(
+            reservation.artifact.artifact_id
+        )
         assert artifact.status == "failed"
+
+    def test_record_job_retry_keeps_reservation_active(self, registry):
+        identity = _identity()
+        reservation = registry.reserve_artifact(identity)
+        registry.mark_job_running(reservation.job.job_id, worker_id="worker-1")
+
+        registry.record_job_retry(reservation.job.job_id, "temporary failure")
+
+        job = registry.get_job_by_id_internal(reservation.job.job_id)
+        assert job.status == "running"
+        assert job.retry_count == 1
+        assert job.failure_reason == "temporary failure"
+        assert job.finished_at is None
+        artifact = registry.get_artifact_by_id_internal(
+            reservation.artifact.artifact_id
+        )
+        assert artifact.status == "pending"
 
     def test_mark_job_failed_on_unknown_job_is_a_no_op(self, registry):
         # Should not raise even though no job exists with this id.
@@ -196,6 +399,28 @@ class TestArtifactBundleRoundTrips:
 
         payload = registry.load_json_artifact(artifact)
         assert payload == {"hello": "world"}
+
+    def test_model_and_pipeline_versions_use_distinct_storage(self, registry):
+        original = registry.store_json_artifact(
+            _identity(model_version="model@1", pipeline_version="pipeline@1"),
+            {"version": "original"},
+        )
+        new_model = registry.store_json_artifact(
+            _identity(model_version="model@2", pipeline_version="pipeline@1"),
+            {"version": "new-model"},
+        )
+        new_pipeline = registry.store_json_artifact(
+            _identity(model_version="model@1", pipeline_version="pipeline@2"),
+            {"version": "new-pipeline"},
+        )
+
+        storage_uris = {
+            original.storage_uri,
+            new_model.storage_uri,
+            new_pipeline.storage_uri,
+        }
+        assert len(storage_uris) == 3
+        assert registry.load_json_artifact(original) == {"version": "original"}
 
     def test_keyness_bundle_store_load_and_dispatch(self, registry):
         identity = _identity(artifact_type=KEYNESS_ARTIFACT_TYPE)
@@ -277,7 +502,9 @@ class TestArtifactBundleRoundTrips:
         loaded = registry.load_artifact_payload(second)
         assert loaded["collocations"]["Token"][0] == "dog"
 
-        artifact_dir_parent = registry.get_artifact_by_id(second.artifact_id)
+        artifact_dir_parent = registry.get_artifact_by_id_internal(
+            second.artifact_id
+        )
         from pathlib import Path
         siblings = {p.name for p in Path(artifact_dir_parent.storage_uri).parent.iterdir()}
         assert siblings == {Path(artifact_dir_parent.storage_uri).name}

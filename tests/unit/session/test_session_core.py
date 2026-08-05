@@ -116,28 +116,19 @@ class TestUpdateSession:
     @patch('streamlit.session_state')
     def test_update_session_dataframe_format(self, mock_session_state):
         """Test updating session when stored as DataFrame."""
-        # Create a mock DataFrame session
         session_data = {SessionKeys.HAS_TARGET: [False], SessionKeys.TARGET_DB: ['']}
-        mock_df = pl.from_dict(session_data)
-        mock_df.to_dict = MagicMock(return_value={
-            SessionKeys.HAS_TARGET: False,
-            SessionKeys.TARGET_DB: ''
-        })
-        mock_df.columns = ['has_target', 'target_db']
+        mock_session_data = {"session": pl.from_dict(session_data)}
+        mock_session_state.__getitem__.return_value = mock_session_data
 
-        mock_session_state.__getitem__.return_value = {"session": mock_df}
-        mock_session_state.__setitem__ = MagicMock()
-
-        with patch('polars.from_dict') as mock_from_dict:
-            mock_new_df = MagicMock()
-            mock_from_dict.return_value = mock_new_df
-
+        with patch.object(session_core_module, "mark_session_dirty"), patch.object(
+            session_core_module,
+            "auto_persist_session",
+        ):
             update_session(SessionKeys.HAS_TARGET, True, self.session_id)
 
-            # Verify the session was updated and converted back to DataFrame
-            mock_from_dict.assert_called_once()
-            call_args = mock_from_dict.call_args[0][0]
-            assert call_args[SessionKeys.HAS_TARGET] is True
+        updated_session = mock_session_data["session"]
+        assert isinstance(updated_session, pl.DataFrame)
+        assert updated_session[SessionKeys.HAS_TARGET].to_list() == [True]
 
     @patch('streamlit.session_state')
     def test_update_session_dict_format(self, mock_session_state):
