@@ -27,6 +27,10 @@ from webapp.persistence import (
 )
 from webapp.utilities.ai.plotbot import run_plotbot_serialized_service
 from webapp.utilities.configuration.logging_config import get_logger
+from webapp.corpus_paths import (
+    make_portable_corpus_path,
+    resolve_corpus_path,
+)
 
 
 logger = get_logger()
@@ -57,7 +61,7 @@ def _identity_from_job_row(job_row) -> ArtifactIdentity:
 def _load_internal_target_tokens(corpus_path: str) -> DataFrame:
     """Load built-in target tokens from the file-backed internal corpus path."""
 
-    ds_tokens_path = Path(corpus_path) / "ds_tokens.gz"
+    ds_tokens_path = Path(resolve_corpus_path(corpus_path)) / "ds_tokens.gz"
     with gzip.open(ds_tokens_path, "rb") as handle:
         return pickle.load(handle)
 
@@ -66,7 +70,8 @@ def _ensure_shared_frequency_artifact(corpus_path: str):
     """Ensure a shared frequency artifact exists for a built-in target corpus."""
 
     shared_artifact_workflow = _get_shared_artifact_workflow()
-    identity = build_shared_frequency_identity(target_source=corpus_path)
+    portable_corpus_path = make_portable_corpus_path(corpus_path)
+    identity = build_shared_frequency_identity(target_source=portable_corpus_path)
     ready_artifact = registry_service.find_ready_artifact(identity)
     if ready_artifact is not None:
         return ready_artifact
@@ -85,7 +90,7 @@ def _ensure_shared_frequency_artifact(corpus_path: str):
     if decision.state != "reserved":
         raise RuntimeError(f"Unexpected frequency reservation state: {decision.state}")
 
-    ds_tokens = _load_internal_target_tokens(corpus_path)
+    ds_tokens = _load_internal_target_tokens(portable_corpus_path)
     ft_pos, ft_ds = ds.frequency_table(ds_tokens, count_by="both")
     artifact = shared_artifact_workflow.store(
         identity,
@@ -205,11 +210,12 @@ def run_internal_target_preparation(control_plane_job_id: int, corpus_path: str)
     registry_service.mark_job_running(control_plane_job_id, worker_id=worker_id)
 
     try:
-        frequency_artifact = _ensure_shared_frequency_artifact(corpus_path)
+        portable_corpus_path = make_portable_corpus_path(corpus_path)
+        frequency_artifact = _ensure_shared_frequency_artifact(portable_corpus_path)
         payload = {
             "status": "ok",
             "control_plane_job_id": control_plane_job_id,
-            "corp_path": corpus_path,
+            "corp_path": portable_corpus_path,
             "frequency_artifact_id": frequency_artifact.artifact_id,
             "selector_hash": identity.selector_hash,
             "processed_at": datetime.now(timezone.utc).isoformat(),
