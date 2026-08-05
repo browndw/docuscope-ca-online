@@ -63,6 +63,7 @@ HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 # Set Streamlit config
 ENV STREAMLIT_SERVER_PORT=8501
 ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV PYTHONPATH=/app
 
 # Run the application from the webapp entrypoint so multipage routing resolves
 # the bundled page files under webapp/pages.
