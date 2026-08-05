@@ -18,7 +18,7 @@ from webapp.utilities.ai.enterprise_integration import make_protected_openai_cal
 
 LOCAL_PROVIDER_NAMES = {"openai-compatible", "openai_compatible", "local"}
 DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1"
-DEFAULT_PLOTBOT_LOCAL_MODEL = "qwen2.5-coder:7b-instruct"
+DEFAULT_PLOTBOT_LOCAL_MODEL = "docker.io/ai/qwen3-coder:latest"
 
 
 @dataclass(frozen=True)
@@ -80,9 +80,17 @@ class ProtectedOpenAIChatProvider:
 class OpenAICompatibleChatProvider:
     """Chat provider for local or hosted OpenAI-compatible endpoints."""
 
-    def __init__(self, base_url: str, model: str | None = None):
+    def __init__(
+        self,
+        base_url: str,
+        model: str | None = None,
+        service_api_key: str | None = None,
+        timeout_seconds: float = 60.0,
+    ):
         self.base_url = base_url
         self.model = model
+        self.service_api_key = service_api_key
+        self.timeout_seconds = timeout_seconds
 
     def generate_text(
         self,
@@ -98,8 +106,9 @@ class OpenAICompatibleChatProvider:
                 params["model"] = self.model
 
             client = openai.OpenAI(
-                api_key=api_key or "local-model",
-                base_url=self.base_url
+                api_key=self.service_api_key or api_key or "local-model",
+                base_url=self.base_url,
+                timeout=self.timeout_seconds,
             )
             response = client.chat.completions.create(**params)
             return _collect_streamed_text(response)
@@ -195,7 +204,7 @@ def _discover_local_openai_compatible_model() -> tuple[str, str | None] | None:
     preferred_models = [
         configured_model,
         DEFAULT_PLOTBOT_LOCAL_MODEL,
-        "Qwen2.5-Coder-7B-Instruct",
+        "qwen3-coder",
     ]
     for model in preferred_models:
         if model and model in model_ids:
@@ -225,6 +234,15 @@ def get_default_chat_provider() -> ChatCompletionProvider:
     provider_config = get_openai_compatible_provider_config()
     if provider_config is not None:
         base_url, model = provider_config
-        return OpenAICompatibleChatProvider(base_url=base_url, model=model)
+        return OpenAICompatibleChatProvider(
+            base_url=base_url,
+            model=model,
+            service_api_key=(
+                os.environ.get("DOCUSCOPE_AI_API_KEY", "").strip() or None
+            ),
+            timeout_seconds=float(
+                os.environ.get("DOCUSCOPE_AI_TIMEOUT_SECONDS", "60")
+            ),
+        )
 
     return ProtectedOpenAIChatProvider()
