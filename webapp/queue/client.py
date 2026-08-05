@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 import json
 
 from redis import Redis
-from rq import Queue
+from rq import Queue, Retry
 
 from webapp.persistence import ArtifactIdentity, registry_service
 from webapp.persistence.registry import (
@@ -17,7 +18,8 @@ from webapp.persistence.registry import (
     build_shared_ngram_identity,
     get_pipeline_version,
 )
-from webapp.queue.config import get_redis_queue_config
+from webapp.queue.config import RedisQueueConfig, get_redis_queue_config
+from webapp.corpus_paths import make_portable_corpus_path
 
 
 RQ_SMOKE_ARTIFACT_TYPE = "rq_smoke_result"
@@ -100,9 +102,18 @@ def _hash_payload(payload: dict[str, object]) -> str:
 
 
 def get_redis_connection() -> Redis:
-    """Build a Redis client from the current queue configuration."""
+    """Return the cached Redis client for the current queue configuration.
 
-    return Redis.from_url(get_redis_queue_config().redis_url)
+    Cached per process so callers share one pooled connection instead of
+    opening a new client (and socket) on every enqueue/status-poll call.
+    """
+
+    return _build_redis_connection(get_redis_queue_config().redis_url)
+
+
+@lru_cache(maxsize=1)
+def _build_redis_connection(redis_url: str) -> Redis:
+    return Redis.from_url(redis_url)
 
 
 def get_queue() -> Queue:
@@ -110,6 +121,14 @@ def get_queue() -> Queue:
 
     config = get_redis_queue_config()
     return Queue(config.queue_name, connection=get_redis_connection())
+
+
+def _build_job_retry(config: RedisQueueConfig) -> Retry | None:
+    """Return the bounded retry policy for queued jobs, or None to disable retries."""
+
+    if config.max_retries <= 0:
+        return None
+    return Retry(max=config.max_retries, interval=config.retry_interval_seconds)
 
 
 def _normalize_rq_status(status: object) -> str:
@@ -151,9 +170,11 @@ def build_internal_target_identity(
 ) -> ArtifactIdentity:
     """Build a normalized identity for built-in target preparation work."""
 
+    portable_corpus_path = make_portable_corpus_path(corpus_path)
+
     selector_payload = {
         "request_type": "internal_target_prepare",
-        "corpus_path": corpus_path,
+        "corpus_path": portable_corpus_path,
     }
     parameter_payload = {
         "job_kind": "internal_target_prepare",
@@ -272,6 +293,7 @@ def enqueue_registry_smoke_test(
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueueSmokeEnqueueResult(
         state="queued",
@@ -293,7 +315,8 @@ def enqueue_internal_target_preparation(
             "Redis/RQ queueing is disabled. Set DOCUSCOPE_RQ_ENABLED=1 to enable it."
         )
 
-    identity = build_internal_target_identity(corpus_path, requester_principal_id)
+    portable_corpus_path = make_portable_corpus_path(corpus_path)
+    identity = build_internal_target_identity(portable_corpus_path, requester_principal_id)
     reservation = registry_service.reserve_artifact(identity)
 
     if reservation.state == "ready" and reservation.artifact is not None:
@@ -338,10 +361,11 @@ def enqueue_internal_target_preparation(
     rq_job = queue.enqueue(
         "webapp.queue.tasks.run_internal_target_preparation",
         reservation.job.job_id,
-        corpus_path,
+        portable_corpus_path,
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueueInternalTargetEnqueueResult(
         state="queued",
@@ -423,6 +447,7 @@ def enqueue_keyness_preparation(
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueueKeynessEnqueueResult(
         state="queued",
@@ -513,6 +538,7 @@ def enqueue_collocation_preparation(
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueueCollocationEnqueueResult(
         state="queued",
@@ -597,6 +623,7 @@ def enqueue_keyness_parts_preparation(
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueueKeynessPartsEnqueueResult(
         state="queued",
@@ -692,6 +719,7 @@ def enqueue_ngram_preparation(
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueueNgramEnqueueResult(
         state="queued",
@@ -786,6 +814,7 @@ def enqueue_plotbot_generation(
         job_id=rq_job_id,
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
+        retry=_build_job_retry(config),
     )
     return QueuePlotbotEnqueueResult(
         state="queued",
