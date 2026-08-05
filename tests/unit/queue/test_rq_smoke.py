@@ -421,7 +421,7 @@ def test_enqueue_plotbot_generation_deduplicates_pending_jobs(
             return job
 
     fake_queue = FakeQueue()
-    monkeypatch.setattr(client_module, "get_queue", lambda: fake_queue)
+    monkeypatch.setattr(client_module, "get_plotbot_queue", lambda: fake_queue)
 
     dataframe_records = [{"label": "a", "value": 1}, {"label": "b", "value": 2}]
     llm_params = {
@@ -473,7 +473,7 @@ def test_enqueue_plotbot_generation_reuses_retained_rq_result(
         fetch_job=lambda _job_id: finished_job,
         enqueue=lambda *_args, **_kwargs: pytest.fail("job must not be enqueued"),
     )
-    monkeypatch.setattr(client_module, "get_queue", lambda: fake_queue)
+    monkeypatch.setattr(client_module, "get_plotbot_queue", lambda: fake_queue)
 
     result = client_module.enqueue_plotbot_generation(
         dataframe_records=[{"label": "a", "value": 1}],
@@ -508,7 +508,7 @@ def test_enqueue_plotbot_generation_replaces_failed_rq_job(
             assert deleted == [True]
             return SimpleNamespace(id=kwargs["job_id"])
 
-    monkeypatch.setattr(client_module, "get_queue", lambda: FakeQueue())
+    monkeypatch.setattr(client_module, "get_plotbot_queue", lambda: FakeQueue())
 
     result = client_module.enqueue_plotbot_generation(
         dataframe_records=[{"label": "a", "value": 1}],
@@ -579,7 +579,7 @@ def test_run_plotbot_generation_returns_ephemeral_serialized_result(
         def enqueue(self, func, *args, **kwargs):
             return SimpleNamespace(id="rq-job-plotbot-42")
 
-    monkeypatch.setattr(client_module, "get_queue", lambda: FakeQueue())
+    monkeypatch.setattr(client_module, "get_plotbot_queue", lambda: FakeQueue())
 
     dataframe_records = [{"label": "a", "value": 1}, {"label": "b", "value": 2}]
     llm_params = {
