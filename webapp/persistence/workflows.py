@@ -94,7 +94,7 @@ class SharedArtifactWorkflow:
             )
 
         if reservation.state == "ready" and ready_loader is not None:
-            payload = ready_loader()
+            payload = self._safe_ready_load(ready_loader, cache_name)
             if payload is not None:
                 self._logger.info(
                     f"Shared {cache_name} artifact became ready during "
@@ -111,12 +111,25 @@ class SharedArtifactWorkflow:
             if ready_loader is not None and poll_attempts > 0:
                 for _ in range(poll_attempts):
                     time.sleep(poll_interval_seconds)
-                    payload = ready_loader()
+                    payload = self._safe_ready_load(ready_loader, cache_name)
                     if payload is not None:
                         return SharedArtifactDecision("ready", payload=payload)
             return SharedArtifactDecision("pending")
 
         return SharedArtifactDecision("bypass")
+
+    def _safe_ready_load(
+        self,
+        ready_loader: Callable[[], Any | None],
+        cache_name: str,
+    ) -> Any | None:
+        """Run a ready-artifact loader, absorbing races where storage vanished."""
+
+        try:
+            return ready_loader()
+        except Exception as exc:
+            self._logger.warning(f"Shared {cache_name} ready-loader failed: {exc}")
+            return None
 
     def store(
         self,
