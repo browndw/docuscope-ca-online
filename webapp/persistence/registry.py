@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import hashlib
 import json
@@ -21,7 +21,10 @@ from sqlalchemy.exc import IntegrityError
 
 from webapp.persistence.database import create_session_factory
 from webapp.persistence.models import ArtifactJob, ArtifactRecord
-from webapp.corpus_paths import make_portable_corpus_path
+from webapp.corpus_paths import (
+    is_builtin_corpus_ref,
+    make_portable_corpus_path,
+)
 
 
 ARTIFACT_STORE_ROOT = Path("webapp/_artifacts")
@@ -32,6 +35,19 @@ FREQUENCY_ARTIFACT_TYPE = "frequency_bundle"
 COLLOCATION_ARTIFACT_TYPE = "collocation_bundle"
 NGRAM_ARTIFACT_TYPE = "ngram_bundle"
 JSON_ARTIFACT_FILENAME = "payload.json"
+MODEL_METADATA_FILENAME = "meta.json"
+PUBLIC_OWNER_PRINCIPAL_ID = "__public__"
+PRIVATE_ARTIFACT_TTL_HOURS_ENV = "DOCUSCOPE_PRIVATE_ARTIFACT_TTL_HOURS"
+
+
+def _artifact_expiry(identity: "ArtifactIdentity", now: datetime) -> datetime | None:
+    """Return expiry for private compatibility artifacts only."""
+
+    if identity.scope != "private":
+        return None
+    return now + timedelta(
+        hours=int(os.getenv(PRIVATE_ARTIFACT_TTL_HOURS_ENV, "24"))
+    )
 
 
 @dataclass(frozen=True)
@@ -47,6 +63,20 @@ class ArtifactIdentity:
     pipeline_version: str
     model_version: str
     owner_principal_id: str | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize ownership so public identities are unique in PostgreSQL."""
+
+        if self.scope == "public":
+            if self.owner_principal_id not in (None, PUBLIC_OWNER_PRINCIPAL_ID):
+                raise ValueError("Public artifacts cannot have a private owner.")
+            object.__setattr__(
+                self,
+                "owner_principal_id",
+                PUBLIC_OWNER_PRINCIPAL_ID,
+            )
+        elif not self.owner_principal_id:
+            raise ValueError("Private artifacts require an owner principal.")
 
 
 @dataclass(frozen=True)
@@ -78,6 +108,87 @@ def _normalize_source_path(raw_path: str) -> str:
         return path.as_posix()
 
 
+def _require_builtin_source(raw_path: str) -> str:
+    """Return a portable built-in source or reject private/session data."""
+
+    portable_path = make_portable_corpus_path(raw_path)
+    if not is_builtin_corpus_ref(portable_path):
+        raise ValueError(
+            "Durable shared artifacts require a built-in corpus source."
+        )
+    return portable_path
+
+
+@lru_cache(maxsize=4)
+def _load_model_fingerprint(model_dir: str) -> str:
+    """Return a stable fingerprint from one bundled spaCy model's metadata."""
+
+    metadata_path = Path(model_dir) / MODEL_METADATA_FILENAME
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"Unable to resolve model metadata from {metadata_path}."
+        ) from exc
+
+    name = str(metadata.get("name", "")).strip()
+    version = str(metadata.get("version", "")).strip()
+    build = str(metadata.get("spacy_git_version", "")).strip()
+    if not name or not version:
+        raise ValueError(
+            f"Model metadata at {metadata_path} must define name and version."
+        )
+
+    fingerprint = f"{name}@{version}"
+    return f"{fingerprint}+{build}" if build else fingerprint
+
+
+def get_builtin_model_fingerprint(source: str) -> str:
+    """Resolve the model fingerprint associated with a built-in corpus."""
+
+    portable_source = _require_builtin_source(source)
+    relative_parts = Path(
+        portable_source.removeprefix("builtin:")
+    ).parts
+    if not relative_parts:
+        raise ValueError(f"Invalid built-in corpus reference: {portable_source}")
+
+    dictionary_family = relative_parts[0]
+    project_root = Path(__file__).resolve().parents[2]
+    model_dirs = {
+        "ld": project_root / "webapp" / "_models" / "en_docusco_spacy",
+        "cd": project_root / "webapp" / "_models" / "en_docusco_spacy_cd",
+    }
+    model_dir = model_dirs.get(dictionary_family)
+    if model_dir is None:
+        raise ValueError(
+            f"Unknown built-in corpus model family: {dictionary_family}"
+        )
+    return _load_model_fingerprint(str(model_dir))
+
+
+def _resolve_shared_model_version(
+    sources: list[str],
+    model_version: str | None,
+) -> str:
+    """Return the metadata-derived model fingerprint for built-in sources."""
+
+    builtin_sources = [_require_builtin_source(source) for source in sources]
+    fingerprints = {
+        get_builtin_model_fingerprint(source) for source in builtin_sources
+    }
+    if len(fingerprints) != 1:
+        raise ValueError(
+            "Shared artifacts require built-in corpora produced by the same model."
+        )
+    fingerprint = fingerprints.pop()
+    if model_version is not None and model_version.strip() != fingerprint:
+        raise ValueError(
+            "model_version must match the bundled model metadata fingerprint."
+        )
+    return fingerprint
+
+
 def get_pipeline_version() -> str:
     try:
         from importlib.metadata import version
@@ -98,11 +209,19 @@ def get_artifact_store_root() -> Path:
 def _build_artifact_dir(identity: ArtifactIdentity) -> Path:
     """Return the payload directory for an artifact identity."""
 
+    identity_hash = _hash_payload({
+        "artifact_type": identity.artifact_type,
+        "scope": identity.scope,
+        "owner_principal_id": identity.owner_principal_id,
+        "selector_hash": identity.selector_hash,
+        "parameter_hash": identity.parameter_hash,
+        "pipeline_version": identity.pipeline_version,
+        "model_version": identity.model_version,
+    })
     return (
         get_artifact_store_root() /
         identity.artifact_type /
-        identity.selector_hash /
-        identity.parameter_hash
+        identity_hash
     )
 
 
@@ -188,14 +307,20 @@ def build_shared_keyness_identity(
     reference_source: str,
     threshold: float,
     swap_target: bool,
-    model_version: str = "preprocessed",
+    model_version: str | None = None,
 ) -> ArtifactIdentity:
     """Build a normalized identity for a shared built-in keyness artifact."""
 
+    target_source = _require_builtin_source(target_source)
+    reference_source = _require_builtin_source(reference_source)
+    resolved_model_version = _resolve_shared_model_version(
+        [target_source, reference_source],
+        model_version,
+    )
     selector_payload = {
         "comparison_type": "built_in_corpora",
-        "target": {"source": _normalize_source_path(target_source)},
-        "reference": {"source": _normalize_source_path(reference_source)},
+        "target": {"source": target_source},
+        "reference": {"source": reference_source},
     }
     parameter_payload = {
         "threshold": threshold,
@@ -209,7 +334,7 @@ def build_shared_keyness_identity(
         parameter_hash=_hash_payload(parameter_payload),
         parameter_payload=parameter_payload,
         pipeline_version=get_pipeline_version(),
-        model_version=model_version,
+        model_version=resolved_model_version,
     )
 
 
@@ -219,13 +344,18 @@ def build_shared_keyness_parts_identity(
     reference_categories: list[str],
     threshold: float,
     swap_target: bool,
-    model_version: str = "preprocessed",
+    model_version: str | None = None,
 ) -> ArtifactIdentity:
     """Build a normalized identity for a shared built-in corpus-parts keyness artifact."""
 
+    target_source = _require_builtin_source(target_source)
+    resolved_model_version = _resolve_shared_model_version(
+        [target_source],
+        model_version,
+    )
     selector_payload = {
         "comparison_type": "built_in_corpus_parts",
-        "target": {"source": _normalize_source_path(target_source)},
+        "target": {"source": target_source},
     }
     parameter_payload = {
         "target_categories": sorted(str(category) for category in target_categories),
@@ -241,19 +371,24 @@ def build_shared_keyness_parts_identity(
         parameter_hash=_hash_payload(parameter_payload),
         parameter_payload=parameter_payload,
         pipeline_version=get_pipeline_version(),
-        model_version=model_version,
+        model_version=resolved_model_version,
     )
 
 
 def build_shared_frequency_identity(
     target_source: str,
-    model_version: str = "preprocessed",
+    model_version: str | None = None,
 ) -> ArtifactIdentity:
     """Build a normalized identity for a shared built-in frequency artifact."""
 
+    target_source = _require_builtin_source(target_source)
+    resolved_model_version = _resolve_shared_model_version(
+        [target_source],
+        model_version,
+    )
     selector_payload = {
         "analysis_type": "built_in_frequency",
-        "target": {"source": _normalize_source_path(target_source)},
+        "target": {"source": target_source},
     }
     parameter_payload = {"count_by": "both"}
     return ArtifactIdentity(
@@ -264,7 +399,7 @@ def build_shared_frequency_identity(
         parameter_hash=_hash_payload(parameter_payload),
         parameter_payload=parameter_payload,
         pipeline_version=get_pipeline_version(),
-        model_version=model_version,
+        model_version=resolved_model_version,
     )
 
 
@@ -276,13 +411,18 @@ def build_shared_collocation_identity(
     to_right: int,
     stat_mode: str,
     count_by: str,
-    model_version: str = "preprocessed",
+    model_version: str | None = None,
 ) -> ArtifactIdentity:
     """Build a normalized identity for a shared built-in collocation artifact."""
 
+    target_source = _require_builtin_source(target_source)
+    resolved_model_version = _resolve_shared_model_version(
+        [target_source],
+        model_version,
+    )
     selector_payload = {
         "analysis_type": "built_in_collocations",
-        "target": {"source": _normalize_source_path(target_source)},
+        "target": {"source": target_source},
     }
     parameter_payload = {
         "node_word": node_word.strip(),
@@ -300,7 +440,7 @@ def build_shared_collocation_identity(
         parameter_hash=_hash_payload(parameter_payload),
         parameter_payload=parameter_payload,
         pipeline_version=get_pipeline_version(),
-        model_version=model_version,
+        model_version=resolved_model_version,
     )
 
 
@@ -314,13 +454,18 @@ def build_shared_ngram_identity(
     tag: str | None = None,
     position: int | None = None,
     search_type: str | None = None,
-    model_version: str = "preprocessed",
+    model_version: str | None = None,
 ) -> ArtifactIdentity:
     """Build a normalized identity for shared built-in n-gram/cluster artifacts."""
 
+    target_source = _require_builtin_source(target_source)
+    resolved_model_version = _resolve_shared_model_version(
+        [target_source],
+        model_version,
+    )
     selector_payload = {
         "analysis_type": "built_in_ngrams_clusters",
-        "target": {"source": _normalize_source_path(target_source)},
+        "target": {"source": target_source},
     }
     parameter_payload = {
         "analysis_type": analysis_type,
@@ -340,7 +485,7 @@ def build_shared_ngram_identity(
         parameter_hash=_hash_payload(parameter_payload),
         parameter_payload=parameter_payload,
         pipeline_version=get_pipeline_version(),
-        model_version=model_version,
+        model_version=resolved_model_version,
     )
 
 
@@ -457,6 +602,7 @@ class ArtifactRegistryService:
                         artifact.status = "pending"
                         artifact.storage_uri = ""
                         artifact.last_accessed_at = now
+                        artifact.expires_at = _artifact_expiry(identity, now)
                         job = self._create_pending_job(
                             session,
                             identity,
@@ -469,6 +615,7 @@ class ArtifactRegistryService:
 
                     artifact.last_accessed_at = now
                     artifact.access_count += 1
+                    artifact.expires_at = _artifact_expiry(identity, now)
                     session.commit()
                     session.refresh(artifact)
                     return ReservationResult("ready", artifact)
@@ -483,6 +630,7 @@ class ArtifactRegistryService:
                     # interrupted enqueue path). Recreate the pending job so
                     # callers can enqueue work again.
                     artifact.last_accessed_at = now
+                    artifact.expires_at = _artifact_expiry(identity, now)
                     recovered_job = self._create_pending_job(
                         session,
                         identity,
@@ -496,6 +644,7 @@ class ArtifactRegistryService:
                 artifact.status = "pending"
                 artifact.storage_uri = ""
                 artifact.last_accessed_at = now
+                artifact.expires_at = _artifact_expiry(identity, now)
                 job = self._create_pending_job(session, identity, artifact.artifact_id)
                 session.commit()
                 session.refresh(artifact)
@@ -517,12 +666,17 @@ class ArtifactRegistryService:
                 created_at=now,
                 last_accessed_at=now,
                 access_count=0,
+                expires_at=_artifact_expiry(identity, now),
             )
             session.add(artifact)
-            session.flush()
-            job = self._create_pending_job(session, identity, artifact.artifact_id)
 
             try:
+                session.flush()
+                job = self._create_pending_job(
+                    session,
+                    identity,
+                    artifact.artifact_id,
+                )
                 session.commit()
                 session.refresh(artifact)
                 session.refresh(job)
@@ -587,6 +741,18 @@ class ArtifactRegistryService:
             job.finished_at = datetime.now(timezone.utc)
             session.commit()
 
+    def record_job_retry(self, job_id: int, failure_reason: str) -> None:
+        """Record a failed attempt without releasing the active reservation."""
+
+        with self._session_factory() as session:
+            job = session.get(ArtifactJob, job_id)
+            if job is None or job.status in {"completed", "failed"}:
+                return
+            job.retry_count += 1
+            job.failure_reason = failure_reason
+            job.finished_at = None
+            session.commit()
+
     def mark_job_failed(self, job_id: int, failure_reason: str) -> None:
         """Mark a job as failed and release its artifact reservation."""
 
@@ -606,13 +772,44 @@ class ArtifactRegistryService:
 
             session.commit()
 
-    def get_job_by_id(self, job_id: int) -> ArtifactJob | None:
+    def get_job_by_id_internal(self, job_id: int) -> ArtifactJob | None:
         """Return a job by primary key without mutating its state."""
 
         with self._session_factory() as session:
             return session.get(ArtifactJob, job_id)
 
-    def get_artifact_by_id(self, artifact_id: int) -> ArtifactRecord | None:
+    def get_public_job_by_id(self, job_id: int) -> ArtifactJob | None:
+        """Return a job only when it belongs to the public artifact workflow."""
+
+        job = self.get_job_by_id_internal(job_id)
+        return job if job is not None and job.scope == "public" else None
+
+    def get_job_by_id_for_principal(
+        self,
+        job_id: int,
+        requester_principal_id: str,
+    ) -> ArtifactJob | None:
+        """Return a public job or a private job owned by the requester."""
+
+        job = self.get_job_by_id_internal(job_id)
+        if job is None or job.scope == "public":
+            return job
+        if requester_principal_id and (
+            job.requester_principal_id == requester_principal_id
+        ):
+            return job
+        if requester_principal_id and job.artifact_id is not None:
+            with self._session_factory() as session:
+                sharing_principal_id = session.scalar(
+                    select(ArtifactRecord.sharing_principal_id).where(
+                        ArtifactRecord.artifact_id == job.artifact_id
+                    )
+                )
+            if sharing_principal_id == requester_principal_id:
+                return job
+        return None
+
+    def get_artifact_by_id_internal(self, artifact_id: int) -> ArtifactRecord | None:
         """Return an artifact by primary key when its ready storage is usable."""
 
         with self._session_factory() as session:
@@ -627,6 +824,29 @@ class ArtifactRegistryService:
                 return None
 
             return artifact
+
+    def get_public_artifact_by_id(self, artifact_id: int) -> ArtifactRecord | None:
+        """Return an artifact only when it is explicitly public."""
+
+        artifact = self.get_artifact_by_id_internal(artifact_id)
+        return artifact if artifact is not None and artifact.scope == "public" else None
+
+    def get_artifact_by_id_for_principal(
+        self,
+        artifact_id: int,
+        requester_principal_id: str,
+    ) -> ArtifactRecord | None:
+        """Return a public artifact or a private artifact accessible to requester."""
+
+        artifact = self.get_artifact_by_id_internal(artifact_id)
+        if artifact is None or artifact.scope == "public":
+            return artifact
+        if requester_principal_id and requester_principal_id in {
+            artifact.owner_principal_id,
+            artifact.sharing_principal_id,
+        }:
+            return artifact
+        return None
 
     def store_json_artifact(
         self,
