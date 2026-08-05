@@ -19,7 +19,7 @@ from typing import List, Dict, Any, Optional, Callable
 
 import streamlit as st
 
-from webapp.config.unified import get_config
+from webapp.config.unified import get_config, get_secret
 from webapp.persistence.authorization_service import AuthorizationService
 from webapp.utilities.configuration.logging_config import get_logger
 
@@ -78,8 +78,15 @@ def initialize_authorization_db() -> None:
         return
 
     try:
-        default_admin = get_config('default_admin_email', 'authorization', None)
-        _get_authorization_service().initialize_defaults(DEFAULT_ROLES, default_admin)
+        bootstrap_admin = get_secret(
+            'bootstrap_admin_email',
+            'authorization',
+            None,
+        )
+        _get_authorization_service().initialize_defaults(
+            DEFAULT_ROLES,
+            bootstrap_admin,
+        )
 
     except Exception as e:
         logger.error(f"Failed to initialize authorization database: {e}")
