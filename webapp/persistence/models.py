@@ -42,7 +42,7 @@ class ArtifactRecord(Base):
     artifact_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
-    owner_principal_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_principal_id: Mapped[str] = mapped_column(String(255), nullable=False)
     sharing_principal_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     selector_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     selector_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
