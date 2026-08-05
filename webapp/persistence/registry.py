@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 import hashlib
 import json
 import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import polars as pl
 from sqlalchemy import select
@@ -17,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from webapp.persistence.database import create_session_factory
 from webapp.persistence.models import ArtifactJob, ArtifactRecord
+from webapp.corpus_paths import make_portable_corpus_path
 
 
 ARTIFACT_STORE_ROOT = Path("webapp/_artifacts")
@@ -62,9 +67,13 @@ def _hash_payload(payload: dict[str, Any]) -> str:
 
 
 def _normalize_source_path(raw_path: str) -> str:
-    path = Path(raw_path).resolve()
+    portable_path = make_portable_corpus_path(raw_path)
+    if portable_path != raw_path:
+        return portable_path
+
+    path = Path(raw_path).resolve(strict=False)
     try:
-        return path.relative_to(Path.cwd().resolve()).as_posix()
+        return path.relative_to(Path.cwd().resolve(strict=False)).as_posix()
     except ValueError:
         return path.as_posix()
 
@@ -95,6 +104,47 @@ def _build_artifact_dir(identity: ArtifactIdentity) -> Path:
         identity.selector_hash /
         identity.parameter_hash
     )
+
+
+def _publish_staged_dir(staging_dir: Path, final_dir: Path) -> None:
+    """Atomically swap a fully-written staging directory into its final path.
+
+    Using a same-filesystem rename means readers only ever see either the
+    previous complete artifact or the new complete one, never a partially
+    written directory (e.g. if a worker crashes mid-write).
+    """
+
+    if final_dir.exists():
+        stale_dir = final_dir.with_name(f"{final_dir.name}.stale-{uuid.uuid4().hex}")
+        os.replace(final_dir, stale_dir)
+        try:
+            os.replace(staging_dir, final_dir)
+        finally:
+            shutil.rmtree(stale_dir, ignore_errors=True)
+    else:
+        os.replace(staging_dir, final_dir)
+
+
+@contextmanager
+def _staged_artifact_dir(final_dir: Path) -> Iterator[Path]:
+    """Yield a temporary directory to write artifact files into, then publish it.
+
+    On success, the staging directory is atomically renamed to `final_dir`.
+    On failure, the partially written staging directory is discarded and the
+    previous artifact at `final_dir` (if any) is left untouched.
+    """
+
+    final_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(tempfile.mkdtemp(
+        prefix=f".{final_dir.name}.staging-", dir=final_dir.parent
+    ))
+    try:
+        yield staging_dir
+    except BaseException:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+    else:
+        _publish_staged_dir(staging_dir, final_dir)
 
 
 @lru_cache(maxsize=64)
@@ -563,10 +613,20 @@ class ArtifactRegistryService:
             return session.get(ArtifactJob, job_id)
 
     def get_artifact_by_id(self, artifact_id: int) -> ArtifactRecord | None:
-        """Return an artifact by primary key without changing its state."""
+        """Return an artifact by primary key when its ready storage is usable."""
 
         with self._session_factory() as session:
-            return session.get(ArtifactRecord, artifact_id)
+            artifact = session.get(ArtifactRecord, artifact_id)
+            if artifact is None:
+                return None
+
+            if artifact.status == "ready" and not self._artifact_storage_exists(artifact):
+                artifact.status = "failed"
+                artifact.last_accessed_at = datetime.now(timezone.utc)
+                session.commit()
+                return None
+
+            return artifact
 
     def store_json_artifact(
         self,
@@ -576,13 +636,12 @@ class ArtifactRegistryService:
         """Persist a small JSON payload in the artifact store and registry."""
 
         artifact_dir = _build_artifact_dir(identity)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
-        payload_path = artifact_dir / JSON_ARTIFACT_FILENAME
-        payload_path.write_text(
-            json.dumps(payload, sort_keys=True, indent=2),
-            encoding="utf-8",
-        )
+        with _staged_artifact_dir(artifact_dir) as staging_dir:
+            payload_path = staging_dir / JSON_ARTIFACT_FILENAME
+            payload_path.write_text(
+                json.dumps(payload, sort_keys=True, indent=2),
+                encoding="utf-8",
+            )
 
         storage_uri = artifact_dir.as_posix()
         now = datetime.now(timezone.utc)
@@ -640,16 +699,15 @@ class ArtifactRegistryService:
         """Persist a keyness bundle in the artifact store and register it."""
 
         artifact_dir = _build_artifact_dir(identity)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
         file_map = {
             "kw_pos": "kw_pos.parquet",
             "kw_ds": "kw_ds.parquet",
             "kt_pos": "kt_pos.parquet",
             "kt_ds": "kt_ds.parquet",
         }
-        for key, filename in file_map.items():
-            keyness_frames[key].write_parquet(artifact_dir / filename)
+        with _staged_artifact_dir(artifact_dir) as staging_dir:
+            for key, filename in file_map.items():
+                keyness_frames[key].write_parquet(staging_dir / filename)
 
         storage_uri = artifact_dir.as_posix()
         now = datetime.now(timezone.utc)
@@ -714,22 +772,21 @@ class ArtifactRegistryService:
         """Persist a corpus-parts keyness bundle and metadata in the artifact store."""
 
         artifact_dir = _build_artifact_dir(identity)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
         file_map = {
             "kw_pos_cp": "kw_pos.parquet",
             "kw_ds_cp": "kw_ds.parquet",
             "kt_pos_cp": "kt_pos.parquet",
             "kt_ds_cp": "kt_ds.parquet",
         }
-        for key, filename in file_map.items():
-            keyness_frames[key].write_parquet(artifact_dir / filename)
+        with _staged_artifact_dir(artifact_dir) as staging_dir:
+            for key, filename in file_map.items():
+                keyness_frames[key].write_parquet(staging_dir / filename)
 
-        metadata_path = artifact_dir / JSON_ARTIFACT_FILENAME
-        metadata_path.write_text(
-            json.dumps(metadata, sort_keys=True, indent=2),
-            encoding="utf-8",
-        )
+            metadata_path = staging_dir / JSON_ARTIFACT_FILENAME
+            metadata_path.write_text(
+                json.dumps(metadata, sort_keys=True, indent=2),
+                encoding="utf-8",
+            )
 
         storage_uri = artifact_dir.as_posix()
         now = datetime.now(timezone.utc)
@@ -796,14 +853,13 @@ class ArtifactRegistryService:
         """Persist a frequency bundle in the artifact store and register it."""
 
         artifact_dir = _build_artifact_dir(identity)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
         file_map = {
             "ft_pos": "ft_pos.parquet",
             "ft_ds": "ft_ds.parquet",
         }
-        for key, filename in file_map.items():
-            frequency_frames[key].write_parquet(artifact_dir / filename)
+        with _staged_artifact_dir(artifact_dir) as staging_dir:
+            for key, filename in file_map.items():
+                frequency_frames[key].write_parquet(staging_dir / filename)
 
         storage_uri = artifact_dir.as_posix()
         now = datetime.now(timezone.utc)
@@ -865,9 +921,8 @@ class ArtifactRegistryService:
         """Persist a collocation bundle in the artifact store and register it."""
 
         artifact_dir = _build_artifact_dir(identity)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
-        collocations.write_parquet(artifact_dir / "collocations.parquet")
+        with _staged_artifact_dir(artifact_dir) as staging_dir:
+            collocations.write_parquet(staging_dir / "collocations.parquet")
 
         storage_uri = artifact_dir.as_posix()
         now = datetime.now(timezone.utc)
@@ -926,9 +981,8 @@ class ArtifactRegistryService:
         """Persist an n-gram/cluster bundle in the artifact store and register it."""
 
         artifact_dir = _build_artifact_dir(identity)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
-        ngrams.write_parquet(artifact_dir / "ngrams.parquet")
+        with _staged_artifact_dir(artifact_dir) as staging_dir:
+            ngrams.write_parquet(staging_dir / "ngrams.parquet")
 
         storage_uri = artifact_dir.as_posix()
         now = datetime.now(timezone.utc)
