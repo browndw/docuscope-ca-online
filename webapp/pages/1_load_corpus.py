@@ -17,7 +17,7 @@ import streamlit as st
 
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
-from webapp.utilities.configuration.config_manager import config_manager
+from webapp.config.unified import config
 from webapp.utilities.configuration.logging_config import get_logger
 
 # Module-specific imports
@@ -66,22 +66,22 @@ LOAD_CORPUS_PERSISTENT_WIDGETS = [
 app_core.register_page_widgets(LOAD_CORPUS_PERSISTENT_WIDGETS)
 
 # Configuration values from centralized config manager
-MODEL_LARGE = config_manager.model_large_path
-MODEL_SMALL = config_manager.model_small_path
+MODEL_LARGE = config.model_large_path
+MODEL_SMALL = config.model_small_path
 
 # Global flags and limits from configuration
-DESKTOP = config_manager.desktop_mode
-CHECK_SIZE = config_manager.check_size
-ENABLE_DETECT = config_manager.check_language
-MAX_TEXT = config_manager.max_text_size
-MAX_POLARS = config_manager.max_polars_size
+DESKTOP = config.desktop_mode
+CHECK_SIZE = config.check_size
+ENABLE_DETECT = config.check_language
+MAX_TEXT = config.max_text_size
+MAX_POLARS = config.max_polars_size
 
 
 TITLE = "Manage Corpus Data"
 ICON = ":material/database:"
 SLOW_LOAD_CORPUS_PAGE_MS = 100
 logger = get_logger()
-TEST_MODE = config_manager.test_mode
+TEST_MODE = config.test_mode
 PROCESS_TARGET_PROBE_STAGE_KEY = "load_test_process_target_probe_stage"
 PROCESS_TARGET_PROBE_TIMINGS_KEY = "load_test_process_target_probe_stage_timings_ms"
 PROCESS_TARGET_PROBE_FLAT_TIMINGS_KEY = "load_test_process_target_probe_stage_timings_flat"
@@ -138,6 +138,17 @@ def _clear_internal_target_queue_state(user_session_id: str) -> None:
     queue_state = _get_internal_target_queue_state(user_session_id)
     if queue_state is not None:
         st.session_state.pop(INTERNAL_TARGET_QUEUE_STATE_KEY, None)
+
+
+def _current_session_snapshot(user_session_id: str) -> dict:
+    """Return the latest normalized session flags for the active Streamlit session."""
+
+    session_raw = st.session_state[user_session_id].get(SessionKeys.SESSION_DATAFRAME, {})
+    if hasattr(session_raw, 'to_dict') and hasattr(session_raw, 'columns'):
+        return session_raw.to_dict(as_series=False)
+    if isinstance(session_raw, dict):
+        return session_raw.copy()
+    return {}
 
 
 def _submit_internal_target_job(corp_path: str, user_session_id: str) -> None:
@@ -331,7 +342,7 @@ def main() -> None:
     user_session_id, session = get_or_init_user_session()
     has_target = bool(safe_session_get(session, SessionKeys.HAS_TARGET, False))
     has_reference = bool(safe_session_get(session, SessionKeys.HAS_REFERENCE, False))
-    has_meta = bool(safe_session_get(session, SessionKeys.METADATA_TARGET, {}))
+    has_meta = bool(safe_session_get(session, SessionKeys.HAS_META, False))
 
     # Initialize processing state if not exists
     if LoadCorpusKeys.READY_TO_PROCESS not in st.session_state[user_session_id]:
@@ -442,15 +453,16 @@ def main() -> None:
         )
 
         metadata_target = None
-
-        # Load and display corpus information
-        load_and_display_target_corpus(session, user_session_id)
-
         if not has_meta:
-            if metadata_target is None:
-                metadata_target = load_metadata("target", user_session_id)
-
+            metadata_target = load_metadata("target", user_session_id)
             handle_target_metadata_processing(metadata_target, user_session_id)
+            session = _current_session_snapshot(user_session_id)
+            has_meta = safe_session_get(session, SessionKeys.HAS_META, False) is True
+            metadata_target = load_metadata("target", user_session_id)
+
+        # Load and display corpus information after metadata actions so the
+        # click-triggered run can show newly processed metadata without st.rerun().
+        load_and_display_target_corpus(session, user_session_id)
 
         # If reference corpus is loaded, show info and warnings
         if not has_reference:
