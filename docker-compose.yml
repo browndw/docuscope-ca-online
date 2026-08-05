@@ -4,23 +4,19 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: docuscope_ca
-      POSTGRES_USER: docuscope
-      POSTGRES_PASSWORD: docuscope
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-docuscope_ca}
+      POSTGRES_USER: ${POSTGRES_USER:-docuscope}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuscope}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docuscope -d docuscope_ca"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -36,7 +32,7 @@ services:
         condition: service_healthy
     environment:
       PYTHONPATH: /app
-      DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docuscope}:${POSTGRES_PASSWORD:-docuscope}@postgres:5432/${POSTGRES_DB:-docuscope_ca}
     command: alembic upgrade head
 
   streamlit_app:
@@ -52,13 +48,16 @@ services:
         condition: service_healthy
     environment:
       PYTHONPATH: /app
-      DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docuscope}:${POSTGRES_PASSWORD:-docuscope}@postgres:5432/${POSTGRES_DB:-docuscope_ca}
       REDIS_URL: redis://redis:6379/0
       DOCUSCOPE_RQ_ENABLED: "1"
       DOCUSCOPE_RQ_SIMPLE_WORKER: "1"
+      DOCUSCOPE_RQ_PLOTBOT_QUEUE: ${DOCUSCOPE_RQ_PLOTBOT_QUEUE:-docuscope-plotbot}
       DOCUSCOPE_AI_PROVIDER: ${DOCUSCOPE_AI_PROVIDER:-}
       DOCUSCOPE_AI_BASE_URL: ${DOCUSCOPE_AI_BASE_URL:-}
       DOCUSCOPE_AI_MODEL: ${DOCUSCOPE_AI_MODEL:-}
+      DOCUSCOPE_AI_API_KEY: ${DOCUSCOPE_AI_API_KEY:-}
+      DOCUSCOPE_AI_TIMEOUT_SECONDS: ${DOCUSCOPE_AI_TIMEOUT_SECONDS:-60}
     ports:
       - "8501:8501"
     volumes:
@@ -92,15 +91,45 @@ services:
         condition: service_healthy
     environment:
       PYTHONPATH: /app
-      DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docuscope}:${POSTGRES_PASSWORD:-docuscope}@postgres:5432/${POSTGRES_DB:-docuscope_ca}
       REDIS_URL: redis://redis:6379/0
       DOCUSCOPE_RQ_ENABLED: "1"
+      DOCUSCOPE_RQ_SIMPLE_WORKER: "0"
+    volumes:
+      - artifact_data:/app/webapp/_artifacts
+    command: python -m webapp.queue.worker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "webapp.queue.worker", "--health-check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  rq_plotbot_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docuscope}:${POSTGRES_PASSWORD:-docuscope}@postgres:5432/${POSTGRES_DB:-docuscope_ca}
+      REDIS_URL: redis://redis:6379/0
+      DOCUSCOPE_RQ_ENABLED: "1"
+      DOCUSCOPE_RQ_QUEUE: ${DOCUSCOPE_RQ_PLOTBOT_QUEUE:-docuscope-plotbot}
+      DOCUSCOPE_RQ_PLOTBOT_QUEUE: ${DOCUSCOPE_RQ_PLOTBOT_QUEUE:-docuscope-plotbot}
       DOCUSCOPE_RQ_SIMPLE_WORKER: "0"
       DOCUSCOPE_AI_PROVIDER: ${DOCUSCOPE_AI_PROVIDER:-}
       DOCUSCOPE_AI_BASE_URL: ${DOCUSCOPE_AI_BASE_URL:-}
       DOCUSCOPE_AI_MODEL: ${DOCUSCOPE_AI_MODEL:-}
-    volumes:
-      - artifact_data:/app/webapp/_artifacts
+      DOCUSCOPE_AI_API_KEY: ${DOCUSCOPE_AI_API_KEY:-}
+      DOCUSCOPE_AI_TIMEOUT_SECONDS: ${DOCUSCOPE_AI_TIMEOUT_SECONDS:-60}
     command: python -m webapp.queue.worker
     restart: unless-stopped
     healthcheck:
@@ -121,7 +150,7 @@ services:
         condition: service_healthy
     environment:
       PYTHONPATH: /app
-      DATABASE_URL: postgresql+psycopg://docuscope:docuscope@postgres:5432/docuscope_ca
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docuscope}:${POSTGRES_PASSWORD:-docuscope}@postgres:5432/${POSTGRES_DB:-docuscope_ca}
       DOCUSCOPE_ARTIFACT_STORE_ROOT: /app/webapp/_artifacts
       DOCUSCOPE_CLEANUP_INTERVAL_SECONDS: ${DOCUSCOPE_CLEANUP_INTERVAL_SECONDS:-3600}
       DOCUSCOPE_PRIVATE_ARTIFACT_TTL_HOURS: ${DOCUSCOPE_PRIVATE_ARTIFACT_TTL_HOURS:-24}
@@ -135,46 +164,6 @@ services:
     healthcheck:
       disable: true
 
-  qwen_bootstrap:
-    profiles: ["qwen"]
-    image: ${DOCUSCOPE_QWEN_VLLM_IMAGE:-vllm/vllm-openai:latest}
-    environment:
-      HF_HOME: /models/huggingface
-      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
-      DOCUSCOPE_QWEN_MODEL: ${DOCUSCOPE_QWEN_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}
-    volumes:
-      - qwen_model_cache:/models/huggingface
-    entrypoint: ["sh", "-lc"]
-    command: >
-      huggingface-cli download "$${DOCUSCOPE_QWEN_MODEL}"
-
-  qwen_model:
-    profiles: ["qwen"]
-    image: ${DOCUSCOPE_QWEN_VLLM_IMAGE:-vllm/vllm-openai:latest}
-    environment:
-      HF_HOME: /models/huggingface
-      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
-    volumes:
-      - qwen_model_cache:/models/huggingface
-    ports:
-      - "8000:8000"
-    ipc: host
-    gpus: all
-    restart: unless-stopped
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
-      - --model
-      - ${DOCUSCOPE_QWEN_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/v1/models\", timeout=5).read()'"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-
 volumes:
   postgres_data:
   artifact_data:
-  qwen_model_cache:
