@@ -50,6 +50,7 @@ class SessionKeys:
     # AI Widget Persistence Keys
     AI_PLOTBOT_QUERY = "plotbot_query"
     AI_PLOTBOT_CORPUS = "plotbot_corpus"
+    AI_PLOTBOT_SOURCE = "plotbot_source"
     AI_PLOTBOT_PERSIST = "assisted_plotting_PERSIST"
     AI_PLOTBOT_PIVOT_TABLE = "pivot_table"
     AI_PLOTBOT_MAKE_PERCENT = "make_percent"
