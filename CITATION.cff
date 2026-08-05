@@ -42,6 +42,6 @@ identifiers:
 #   - type: doi
 #     value: 10.21105/joss.xxxxx     # (Replace with JOSS DOI post-acceptance)
 notes: >-
-  Replace placeholder DOIs in identifiers once Zenodo archive and JOSS paper DOI
-  are available. If citing the forthcoming JOSS article, cite both the article
-  and this software (dual citation) where venue policies allow.
+  The Zenodo software DOI is recorded above. Add the JOSS article DOI after
+  acceptance. Where venue policies allow, cite both the article and this
+  software.
