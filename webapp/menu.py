@@ -13,7 +13,6 @@ Both timeouts are configurable via options.toml and include warning systems.
 import base64
 import os
 import time
-from time import perf_counter
 
 import streamlit as st
 
@@ -39,7 +38,7 @@ CORE_PAGE_LINKS = [
     ("pages/3_tag_frequencies.py", "Tag Frequencies", ":material/table_view:"),
     ("pages/4_ngrams.py", "Ngrams & Clusters", ":material/table_view:"),
     ("pages/5_compare_corpora.py", "Compare Corpora", ":material/compare_arrows:"),
-    ("pages/6_compare_corpus_parts.py", "Compare Corpus Parts", ":material/compare_arrows:"),
+    ("pages/6_compare_corpus_parts.py", "Compare Corpus Parts", ":material/compare_arrows:"),  # noqa: E501
     ("pages/7_collocations.py", "Collocations", ":material/network_node:"),
     ("pages/8_kwic.py", "Key Words in Context", ":material/network_node:"),
     ("pages/9_advanced_plotting.py", "Advanced Plotting", ":material/line_axis:"),
@@ -68,19 +67,6 @@ def navigation_experiment_enabled() -> bool:
     """Legacy compatibility shim for removed navigation experiment."""
 
     return False
-
-
-def _log_slow_menu_step(session_id: str, step: str, start_time: float) -> None:
-    """Log slow menu phases during page entry reruns."""
-
-    elapsed_ms = (perf_counter() - start_time) * 1000
-    if elapsed_ms >= SLOW_MENU_STEP_MS:
-        logger.warning(
-            "Slow menu step session={} step={} duration_ms={:.2f}",
-            session_id,
-            step,
-            elapsed_ms,
-        )
 
 
 def _render_page_links(page_links: list[tuple[str, str, str]]) -> None:
@@ -265,37 +251,29 @@ def authenticated_menu(user_session_id: str | None = None):
 
     # Show log out button only if not DESKTOP and user is logged in
     if not DESKTOP and not TEST_MODE and hasattr(st, "user") and getattr(st.user, "is_logged_in", False):  # noqa: E501
-        logout_start = perf_counter()
         st.sidebar.button("Log out of Google", on_click=st.logout, icon=":material/logout:")
-        _log_slow_menu_step("test-or-desktop", "logout_button", logout_start)
 
     if minimal_menu:
-        core_links_start = perf_counter()
         with st.sidebar:
             _render_page_links(MINIMAL_PAGE_LINKS)
-        _log_slow_menu_step("test-or-desktop", "navigation_links", core_links_start)
         return
 
-    nav_expander_start = perf_counter()
     with st.sidebar.expander("**Navigation**",
                              icon=":material/explore:",
                              expanded=False):
-        core_links_start = perf_counter()
         _render_page_links(CORE_PAGE_LINKS)
-        _log_slow_menu_step("test-or-desktop", "navigation_links", core_links_start)
 
         # Admin-only features (only show in online mode with authorization)
-        admin_links_start = perf_counter()
         if _admin_features_enabled(user_session_id):
 
             st.markdown("---")
             st.markdown("**Admin Features**")
             _render_page_links(ADMIN_PAGE_LINKS)
-            _log_slow_menu_step("test-or-desktop", "admin_links", admin_links_start)
-            _log_slow_menu_step("test-or-desktop", "navigation_expander", nav_expander_start)  # noqa: E501
 
 
-def get_navigation_page_sections(user_session_id: str | None = None) -> dict[str, list[tuple[str, str, str]]]:
+def get_navigation_page_sections(
+        user_session_id: str | None = None
+) -> dict[str, list[tuple[str, str, str]]]:
     """Return page-link definitions for the navigation experiment."""
 
     page_sections = {"Navigation": CORE_PAGE_LINKS}
@@ -326,25 +304,18 @@ def prepare_navigation_context() -> tuple[str | None, bool]:
     if DESKTOP or TEST_MODE:
         return None, True
 
-    session_start = perf_counter()
     user_session_id, _ = get_or_init_user_session()
-    _log_slow_menu_step(user_session_id, "get_or_init_user_session", session_start)
 
     current_login_state = _is_authenticated()
     if not current_login_state:
         st.session_state[user_session_id]["previous_login_state"] = False
         return user_session_id, False
 
-    timeout_start = perf_counter()
     if not check_session_timeouts(user_session_id):
-        _log_slow_menu_step(user_session_id, "check_session_timeouts", timeout_start)
         st.session_state[user_session_id]["previous_login_state"] = False
         return user_session_id, False
-    _log_slow_menu_step(user_session_id, "check_session_timeouts", timeout_start)
 
-    activity_start = perf_counter()
     update_last_activity(user_session_id)
-    _log_slow_menu_step(user_session_id, "update_last_activity", activity_start)
 
     previous_login_state = st.session_state[user_session_id].get(
         "previous_login_state",
@@ -353,7 +324,6 @@ def prepare_navigation_context() -> tuple[str | None, bool]:
 
     cache_enabled = get_runtime_setting('cache_mode', False, 'cache')
     if cache_enabled and not previous_login_state:
-        login_start = perf_counter()
         try:
             add_login(
                 user_id=st.user.email,
@@ -361,7 +331,6 @@ def prepare_navigation_context() -> tuple[str | None, bool]:
             )
         except Exception:
             pass
-        _log_slow_menu_step(user_session_id, "add_login", login_start)
 
     st.session_state[user_session_id]["previous_login_state"] = True
     return user_session_id, True
@@ -379,27 +348,19 @@ def require_login():
 
 
 def menu():
-    menu_start = perf_counter()
 
     if DESKTOP or TEST_MODE:
-        nav_start = perf_counter()
         authenticated_menu()
-        _log_slow_menu_step("test-or-desktop", "authenticated_menu", nav_start)
         st.sidebar.markdown("---")
-        _log_slow_menu_step("test-or-desktop", "menu_total", menu_start)
         return
 
     user_session_id, current_login_state = prepare_navigation_context()
 
     if current_login_state:
-        nav_start = perf_counter()
         authenticated_menu(user_session_id)
-        _log_slow_menu_step(user_session_id, "authenticated_menu", nav_start)
         st.sidebar.markdown("---")
-        _log_slow_menu_step(user_session_id, "menu_total", menu_start)
         return
     else:
         # User is not logged in
         st.session_state[user_session_id]["previous_login_state"] = False
         unauthenticated_menu()
-        _log_slow_menu_step(user_session_id, "unauthenticated_menu", menu_start)
