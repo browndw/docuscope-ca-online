@@ -28,8 +28,9 @@ from webapp.utilities.configuration.logging_config import get_logger
 SLOW_FORM_CONTROL_MS = 100
 SIMPLIFIED_FRAME_CACHE_MAX_ITEMS = 16
 TAGSET_FRAME_CACHE_MAX_ITEMS = 64
-_simplified_frame_cache: OrderedDict[tuple[int, str], pl.DataFrame] = OrderedDict()
-_simplified_frame_cache_locks: dict[tuple[int, str], Lock] = {}
+SimplifiedFrameCacheKey = tuple[int, str, str, int]
+_simplified_frame_cache: OrderedDict[SimplifiedFrameCacheKey, pl.DataFrame] = OrderedDict()
+_simplified_frame_cache_locks: dict[SimplifiedFrameCacheKey, Lock] = {}
 _simplified_frame_cache_locks_guard = Lock()
 _tagset_frame_cache: OrderedDict[tuple, pl.DataFrame] = OrderedDict()
 logger = get_logger()
@@ -75,7 +76,9 @@ def _log_slow_form_control(
     )
 
 
-def _get_cached_simplified_frame(cache_key: tuple[int, str]) -> pl.DataFrame | None:
+def _get_cached_simplified_frame(
+    cache_key: SimplifiedFrameCacheKey,
+) -> pl.DataFrame | None:
     cached = _simplified_frame_cache.get(cache_key)
     if cached is None:
         return None
@@ -85,7 +88,7 @@ def _get_cached_simplified_frame(cache_key: tuple[int, str]) -> pl.DataFrame | N
 
 
 def _set_cached_simplified_frame(
-    cache_key: tuple[int, str],
+    cache_key: SimplifiedFrameCacheKey,
     df: pl.DataFrame,
 ) -> None:
     _simplified_frame_cache[cache_key] = df
@@ -95,7 +98,7 @@ def _set_cached_simplified_frame(
         _simplified_frame_cache.popitem(last=False)
 
 
-def _get_simplified_frame_lock(cache_key: tuple[int, str]) -> Lock:
+def _get_simplified_frame_lock(cache_key: SimplifiedFrameCacheKey) -> Lock:
     with _simplified_frame_cache_locks_guard:
         lock = _simplified_frame_cache_locks.get(cache_key)
         if lock is None:
@@ -163,10 +166,11 @@ def _get_tagset_frame(user_session_id: str, session_key: str) -> pl.DataFrame | 
 
 def _apply_cached_simplify(
     df: pl.DataFrame,
+    source_key: str,
     cache_label: str,
     simplify_func: Callable,
 ) -> pl.DataFrame:
-    cache_key = (id(df), cache_label)
+    cache_key = (id(df), source_key, cache_label, id(simplify_func))
     cached = _get_cached_simplified_frame(cache_key)
     if cached is not None:
         return cached
@@ -290,6 +294,7 @@ def tagset_selection(
             simplify_start = perf_counter()
             df = _apply_cached_simplify(
                 df,
+                session_key,
                 f"{tag_radio}:{tag_type}",
                 simplify_func,
             )
@@ -330,7 +335,12 @@ def tagset_selection(
         simplify_func = simplify_funcs.get(tag_radio)
         if simplify_func and df is not None:
             simplify_start = perf_counter()
-            df = _apply_cached_simplify(df, tag_radio, simplify_func)
+            df = _apply_cached_simplify(
+                df,
+                session_key,
+                tag_radio,
+                simplify_func,
+            )
             _log_slow_form_control(
                 f"tagset_selection_simplify tagset={tag_radio}",
                 simplify_start,
@@ -547,7 +557,11 @@ def keyness_sort_controls(
     return sort_by, reverse
 
 
-def keyness_settings_info(user_session_id: str) -> str:
+def keyness_settings_info(
+    user_session_id: str,
+    pval_threshold: float | None = None,
+    swap_target: bool | None = None,
+) -> str:
     """
     Generate keyness settings information string.
 
@@ -561,8 +575,10 @@ def keyness_settings_info(user_session_id: str) -> str:
     str
         Formatted string with p-value threshold and swap settings
     """
-    pval_threshold = st.session_state[user_session_id].get('pval_threshold', 0.01)
-    swap_target = st.session_state[user_session_id].get('swap_target', False)
+    if pval_threshold is None:
+        pval_threshold = st.session_state[user_session_id].get('pval_threshold', 0.01)
+    if swap_target is None:
+        swap_target = st.session_state[user_session_id].get('swap_target', False)
 
     return (
         f"**p-value threshold:** {pval_threshold} &nbsp;&nbsp; "
