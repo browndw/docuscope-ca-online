@@ -36,8 +36,43 @@ def _make_keyness_df() -> pl.DataFrame:
     return pl.DataFrame({"Tag": ["NN1"], "LL": [1.0], "LR": [0.5]})
 
 
+def _make_token_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "doc_id": ["BIO_01", "ENG_01"],
+            "pos_id": [1, 1],
+            "pos_tag": ["NN1", "NN1"],
+            "ds_id": [1, 1],
+            "ds_tag": ["Actors", "Actors"],
+            "token": ["cell", "essay"],
+        }
+    )
+
+
 class TestSharedKeynessCache:
     """Test shared cache integration for built-in keyness workflows."""
+
+    @patch.object(stats, "get_or_init_user_session")
+    def test_desktop_mode_bypasses_shared_keyness_parts_identity(
+        self,
+        mock_get_session,
+    ):
+        user_session_id = "desktop-session"
+        st.session_state.clear()
+        st.session_state[user_session_id] = {
+            "tar": ["BIO"],
+            "ref": ["ENG"],
+        }
+
+        with patch.object(stats.config, "is_desktop_mode", return_value=True):
+            identity = stats._get_shared_keyness_parts_identity(
+                user_session_id,
+                0.01,
+                False,
+            )
+
+        assert identity is None
+        mock_get_session.assert_not_called()
 
     @patch("streamlit.rerun")
     @patch("streamlit.success")
@@ -117,7 +152,7 @@ class TestSharedKeynessCache:
 
     @patch("streamlit.rerun")
     @patch("streamlit.success")
-    @patch.object(stats, "_store_cached_keyness_tables")
+    @patch.object(stats, "_store_cached_keyness_tables", return_value=True)
     @patch.object(stats, "_reserve_shared_keyness_artifact", return_value=77)
     @patch.object(stats, "_get_shared_keyness_identity", return_value=MagicMock())
     @patch.object(stats, "set_corpus_data")
@@ -148,7 +183,6 @@ class TestSharedKeynessCache:
 
         assert mock_keyness_table.call_count == 4
         mock_set_corpus_data.assert_not_called()
-        mock_identity.assert_called()
         mock_reserve.assert_called_once_with(user_session_id, 0.05, True)
         mock_store_cache.assert_called_once()
         args = mock_store_cache.call_args.args
@@ -158,6 +192,93 @@ class TestSharedKeynessCache:
         assert args[3] == 77
         mock_success.assert_called_once_with("Keywords generated!")
         mock_rerun.assert_called_once()
+
+    @patch("streamlit.rerun")
+    @patch("streamlit.success")
+    @patch.object(stats, "_store_cached_keyness_tables", return_value=False)
+    @patch.object(stats, "_reserve_shared_keyness_artifact", return_value=77)
+    @patch.object(stats, "_get_shared_keyness_identity", return_value=MagicMock())
+    @patch.object(stats, "set_corpus_data")
+    @patch.object(stats.ds, "keyness_table")
+    @patch.object(stats, "_load_cached_keyness_tables", return_value=False)
+    @patch.object(stats, "get_corpus_data")
+    def test_generate_keyness_tables_keeps_frames_when_cache_store_fails(
+        self,
+        mock_get_corpus_data,
+        mock_cached_load,
+        mock_keyness_table,
+        mock_set_corpus_data,
+        mock_identity,
+        mock_reserve,
+        mock_store_cache,
+        mock_success,
+        mock_rerun,
+    ):
+        user_session_id = "user-session"
+        st.session_state.clear()
+        st.session_state[user_session_id] = {}
+        mock_get_corpus_data.side_effect = [_make_freq_df()] * 8
+        mock_keyness_table.side_effect = [_make_keyness_df()] * 4
+
+        with patch.object(stats.app_core, "session_manager", MagicMock()):
+            stats.generate_keyness_tables(user_session_id)
+
+        assert mock_set_corpus_data.call_count == 4
+        stored_keys = [call.args[2] for call in mock_set_corpus_data.call_args_list]
+        assert stored_keys == [
+            stats.TargetKeys.KW_POS,
+            stats.TargetKeys.KW_DS,
+            stats.TargetKeys.KT_POS,
+            stats.TargetKeys.KT_DS,
+        ]
+        mock_store_cache.assert_called_once()
+
+    def test_generate_keyness_parts_keeps_frames_when_cache_store_fails(self):
+        user_session_id = "parts-session"
+        st.session_state.clear()
+        st.session_state[user_session_id] = {
+            "tar": ["BIO"],
+            "ref": ["ENG"],
+        }
+        frequency_df = _make_freq_df()
+        keyness_df = _make_keyness_df()
+
+        with (
+            patch.object(stats, "get_or_init_user_session", return_value=(
+                user_session_id,
+                {"has_meta": True},
+            )),
+            patch.object(stats, "_load_cached_keyness_parts", return_value=False),
+            patch.object(stats, "_reserve_shared_keyness_parts_artifact", return_value=77),
+            patch.object(
+                stats,
+                "_get_shared_keyness_parts_identity",
+                return_value=MagicMock(),
+            ),
+            patch.object(stats, "get_corpus_data", return_value=_make_token_df()),
+            patch.object(
+                stats.ds,
+                "frequency_table",
+                return_value=(frequency_df, frequency_df),
+            ),
+            patch.object(stats.ds, "tags_table", return_value=(frequency_df, frequency_df)),
+            patch.object(stats.ds, "keyness_table", return_value=keyness_df),
+            patch.object(stats, "_store_cached_keyness_parts", return_value=False),
+            patch.object(stats, "set_corpus_data") as mock_set_corpus_data,
+            patch.object(stats.app_core, "session_manager", MagicMock()),
+            patch("streamlit.success"),
+            patch("streamlit.rerun"),
+        ):
+            stats.generate_keyness_parts(user_session_id)
+
+        assert mock_set_corpus_data.call_count == 4
+        stored_keys = [call.args[2] for call in mock_set_corpus_data.call_args_list]
+        assert stored_keys == [
+            stats.TargetKeys.KW_POS_CP,
+            stats.TargetKeys.KW_DS_CP,
+            stats.TargetKeys.KT_POS_CP,
+            stats.TargetKeys.KT_DS_CP,
+        ]
 
     @patch.object(stats, "_get_shared_keyness_identity")
     def test_reserve_shared_keyness_artifact_returns_true_when_reserved(

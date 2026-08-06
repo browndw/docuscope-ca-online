@@ -1,9 +1,14 @@
 """Tests for PCA plotting helpers."""
 
 import pandas as pd
+import polars as pl
 import pytest
+import streamlit as st
 
-from webapp.utilities.plotting.pca_plots import pca_contributions
+from webapp.utilities.plotting.pca_plots import (
+    _compute_pca_with_caching,
+    pca_contributions,
+)
 
 
 def test_pca_contributions_matches_reference_values():
@@ -48,3 +53,26 @@ def test_pca_contributions_matches_reference_values():
     assert variance == pytest.approx(
         [0.9869613943833889, 0.00934937162422936, 0.0036892339923817277]
     )
+
+
+def test_pca_cache_isolates_grouped_from_ungrouped_results():
+    user_session_id = "pca-group-cache-test"
+    st.session_state.clear()
+    st.session_state[user_session_id] = {}
+    dtm = pl.DataFrame(
+        {
+            "doc_id": ["doc1", "doc2", "doc3"],
+            "TagA": [1.0, 2.0, 3.0],
+            "TagB": [3.0, 1.0, 2.0],
+        }
+    )
+
+    ungrouped, _, _ = _compute_pca_with_caching(dtm, [], user_session_id)
+    grouped, _, _ = _compute_pca_with_caching(
+        dtm,
+        ["A", "B", "A"],
+        user_session_id,
+    )
+
+    assert "Group" not in ungrouped.columns
+    assert grouped["Group"].tolist() == ["A", "B", "A"]

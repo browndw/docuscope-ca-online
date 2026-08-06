@@ -188,7 +188,14 @@ class TestGetCorpusCategories:
         st.session_state[self.session_id] = {}
 
     @patch('webapp.utilities.session.session_core.get_doc_cats')
-    def test_get_corpus_categories_calculates_and_caches(self, mock_get_doc_cats):
+    @patch('webapp.utilities.session.session_core.auto_persist_session')
+    @patch('webapp.utilities.session.session_core.mark_session_dirty')
+    def test_get_corpus_categories_calculates_and_caches(
+        self,
+        mock_mark_session_dirty,
+        mock_auto_persist_session,
+        mock_get_doc_cats,
+    ):
         """Test that corpus categories are calculated and cached."""
         doc_ids = ["doc1", "doc2", "doc3"]
         mock_categories = ["fiction", "academic", "fiction"]
@@ -207,6 +214,8 @@ class TestGetCorpusCategories:
         cache_key = f"corpus_categories_{self.session_id}"
         assert cache_key in st.session_state[self.session_id]
         assert st.session_state[self.session_id][cache_key] == expected_result
+        mock_mark_session_dirty.assert_not_called()
+        mock_auto_persist_session.assert_not_called()
 
     @patch('webapp.utilities.session.session_core.get_doc_cats')
     def test_get_corpus_categories_returns_cached_result(self, mock_get_doc_cats):

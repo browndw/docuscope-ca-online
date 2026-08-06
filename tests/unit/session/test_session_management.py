@@ -11,8 +11,41 @@ except ImportError:
     st = MagicMock()
 
 from webapp.utilities.session import session_management
-from webapp.utilities.session.session_management import get_or_init_user_session
-from webapp.utilities.state import SessionKeys
+from webapp.utilities.session.session_management import (
+    generate_temp,
+    get_or_init_user_session,
+)
+from webapp.utilities.state import LoadCorpusKeys, SessionKeys
+
+
+@patch('streamlit.session_state', {})
+@patch.object(session_management, 'persist_session_changes')
+@patch.object(session_management, 'ensure_session_loaded')
+def test_generate_temp_backfills_reference_processing_state(
+    mock_ensure_loaded,
+    mock_persist_changes,
+):
+    session_id = 'test_session'
+    st.session_state[session_id] = {
+        LoadCorpusKeys.READY_TO_PROCESS: True,
+    }
+
+    generate_temp(
+        {
+            LoadCorpusKeys.READY_TO_PROCESS: False,
+            LoadCorpusKeys.REF_READY_TO_PROCESS: False,
+            LoadCorpusKeys.REF_CORPUS_DF: None,
+            LoadCorpusKeys.REF_EXCEPTIONS: None,
+        }.items(),
+        session_id,
+    )
+
+    assert st.session_state[session_id][LoadCorpusKeys.READY_TO_PROCESS] is True
+    assert st.session_state[session_id][LoadCorpusKeys.REF_READY_TO_PROCESS] is False
+    assert st.session_state[session_id][LoadCorpusKeys.REF_CORPUS_DF] is None
+    assert st.session_state[session_id][LoadCorpusKeys.REF_EXCEPTIONS] is None
+    mock_ensure_loaded.assert_called_once_with(session_id)
+    mock_persist_changes.assert_called_once_with(session_id)
 
 
 class TestGetOrInitUserSession:
