@@ -72,10 +72,12 @@ class TestSharedFrequencyCache:
                 key = f"frame-{iteration % 5}"
                 frame = _make_frequency_table(str(iteration))
                 data_manager_module._set_cached_artifact_frame(owner, key, frame)
-                assert data_manager_module._get_cached_artifact_frame(
+                cached = data_manager_module._get_cached_artifact_frame(
                     owner,
                     key,
-                ) is not None
+                )
+                if cached is not None:
+                    assert cached.equals(frame)
                 if iteration % 3 == 0:
                     data_manager_module._clear_cached_artifact_frame(owner, key)
 
