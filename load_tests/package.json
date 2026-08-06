@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "description": "Browser-based load tests for the DocuScope CA Streamlit application",
   "scripts": {
+    "test:audit": "npm run test:audit:uploads && npm run test:audit:analysis",
+    "test:audit:uploads": "DOCUSCOPE_AUDIT_PROFILE=uploads node scripts/page-audit.mjs",
+    "test:audit:analysis": "DOCUSCOPE_AUDIT_PROFILE=analysis node scripts/page-audit.mjs",
+    "test:audit:shared-cache": "node scripts/shared-cache-audit.mjs",
     "test:smoke": "artillery run scenarios/smoke-home.yml",
     "test:report": "artillery run --output reports/smoke-home-report.json scenarios/smoke-home.yml",
     "test:keyness": "artillery run scenarios/keyness-internal.yml",
@@ -46,6 +50,7 @@
     "test:startup:report": "artillery run --output reports/startup-only-report.json scenarios/startup-only.yml"
   },
   "devDependencies": {
-    "artillery": "^2.0.22"
+    "artillery": "^2.0.22",
+    "playwright": "1.59.1"
   }
 }
