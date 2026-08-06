@@ -23,6 +23,15 @@ class ConfigManager:
         """Initialize configuration manager."""
         self._runtime_overrides: Dict[str, Any] = {}
         self._runtime_config_available = False
+        self._desktop_fallback_reason: str | None = None
+
+    def activate_desktop_fallback(self, reason: str) -> None:
+        """Use desktop behavior for this process after local service failure."""
+        self._desktop_fallback_reason = reason
+
+    def clear_desktop_fallback(self) -> None:
+        """Clear the process-local desktop fallback state."""
+        self._desktop_fallback_reason = None
 
     _project_root: Optional[Path] = None
 
@@ -296,6 +305,9 @@ class ConfigManager:
         bool
             True if running in desktop mode (including fallback scenarios)
         """
+        if self._desktop_fallback_reason is not None:
+            return True
+
         # Get the configured desktop mode value
         configured_desktop_mode = self.get_static('desktop_mode', 'global', True)
 
