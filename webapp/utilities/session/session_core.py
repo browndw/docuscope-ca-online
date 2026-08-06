@@ -358,10 +358,6 @@ def get_corpus_categories(doc_ids: list, user_session_id: str) -> tuple[list, in
     if user_session_id not in st.session_state:
         st.session_state[user_session_id] = {}
     st.session_state[user_session_id][cache_key] = result
-    mark_session_dirty(user_session_id)
-
-    # Persist the session with new cache data
-    auto_persist_session(user_session_id)
 
     return result
 
