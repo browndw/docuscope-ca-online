@@ -10,7 +10,7 @@ enableXsrfProtection = false
 enableCORS = false
 
 [runner]
-enforceSerializableSessionState = true
+enforceSerializableSessionState = false
 
 [client]
 showSidebarNavigation = false
