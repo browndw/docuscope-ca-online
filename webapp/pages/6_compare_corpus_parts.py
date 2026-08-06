@@ -13,6 +13,8 @@ import pandas as pd
 import polars as pl
 import streamlit as st
 
+from webapp.config.unified import config
+
 # Core application utilities with standardized patterns
 from webapp.utilities.core import app_core
 
@@ -25,6 +27,7 @@ from webapp.utilities.corpus import (
 )
 from webapp.utilities.ui import (
     keyness_settings_info, keyness_sort_controls,
+    extract_keyness_parts, extract_keyness_parts_settings,
     reference_parts, render_dataframe,
     sidebar_action_button, sidebar_help_link,
     sidebar_keyness_options, tag_filter_multiselect,
@@ -74,6 +77,7 @@ COMPARE_CORPUS_PARTS_PERSISTENT_WIDGETS = [
 app_core.register_page_widgets(COMPARE_CORPUS_PARTS_PERSISTENT_WIDGETS)
 
 KEYNESS_PARTS_QUEUE_STATE_KEY = "keyness_parts_queue_state"
+KEYNESS_PARTS_SWAP_WIDGET_PREFIX = "keyness_parts_swap"
 
 st.set_page_config(
     page_title=TITLE, page_icon=ICON,
@@ -108,7 +112,7 @@ def _clear_keyness_parts_queue_state(user_session_id: str) -> None:
 def _can_queue_keyness_parts(session: dict) -> str | None:
     """Return built-in target path when corpus-parts keyness can be queued."""
 
-    if not get_redis_queue_config().enabled:
+    if config.is_desktop_mode() or not get_redis_queue_config().enabled:
         return None
 
     target_source = safe_session_get(session, SessionKeys.TARGET_DB, "")
@@ -238,7 +242,10 @@ def _render_keyness_parts_queue_status(user_session_id: str) -> None:
         st.error(f"Queued corpus-parts generation failed: {job_row.failure_reason}")
         return
 
-    st.info("Generating corpus-parts keyness tables in the background...")
+    st.sidebar.status(
+        "Generating corpus-parts keyness tables in the background...",
+        state="running",
+    )
 
 
 def render_results_interface(user_session_id: str, session: dict) -> None:
@@ -254,14 +261,16 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
     metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
 
     # Display target and reference parts information
+    keyness_parts_data = extract_keyness_parts(metadata_target)
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.info(target_parts(metadata_target.get(SessionKeys.KEYNESS_PARTS)[0]['temp']))
+        st.info(target_parts(keyness_parts_data))
     with col2:
-        st.info(reference_parts(metadata_target.get(SessionKeys.KEYNESS_PARTS)[0]['temp']))
+        st.info(reference_parts(keyness_parts_data))
 
     # Show user selections
-    st.info(keyness_settings_info(user_session_id))
+    pval_threshold, swap_target = extract_keyness_parts_settings(keyness_parts_data)
+    st.info(keyness_settings_info(user_session_id, pval_threshold, swap_target))
 
     # Table type selection in sidebar
     st.sidebar.markdown("### Comparison")
@@ -276,12 +285,12 @@ def render_results_interface(user_session_id: str, session: dict) -> None:
     st.sidebar.markdown("---")
 
     if table_radio == 'Tokens':
-        render_tokens_interface(user_session_id, target_manager)
+        render_tokens_interface(user_session_id, target_manager, session)
     else:
-        render_tags_interface(user_session_id, target_manager)
+        render_tags_interface(user_session_id, target_manager, session)
 
 
-def render_tokens_interface(user_session_id: str, target_manager) -> None:
+def render_tokens_interface(user_session_id: str, target_manager, session: dict) -> None:
     """Render the tokens analysis interface."""
     # Use the tagset selection utility for sidebar controls
     df, _, tag_radio, tag_type = tagset_selection(
@@ -326,13 +335,10 @@ def render_tokens_interface(user_session_id: str, target_manager) -> None:
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    render_sidebar_controls(df, user_session_id)
+    render_sidebar_controls(df, user_session_id, session)
 
 
-def render_tags_interface(
-        user_session_id: str,
-        target_manager
-) -> None:
+def render_tags_interface(user_session_id: str, target_manager, session: dict) -> None:
     """Render the tags-only analysis interface."""
     # Use sidebar tagset selection
     st.sidebar.markdown("### Tagset")
@@ -395,7 +401,7 @@ def render_tags_interface(
 
     # Sidebar controls
     st.sidebar.markdown("---")
-    render_sidebar_controls(df, user_session_id)
+    render_sidebar_controls(df, user_session_id, session)
 
 
 def create_enhanced_dataframe_for_export(
@@ -407,7 +413,7 @@ def create_enhanced_dataframe_for_export(
         return None
 
     # Get the context information
-    keyness_parts_data = metadata_target.get(SessionKeys.KEYNESS_PARTS)[0]['temp']
+    keyness_parts_data = extract_keyness_parts(metadata_target)
     target_info = target_parts(keyness_parts_data)
     reference_info = reference_parts(keyness_parts_data)
 
@@ -434,13 +440,77 @@ def create_enhanced_dataframe_for_export(
     return enhanced_df
 
 
+def _keyness_parts_swap_widget_key(user_session_id: str) -> str:
+    """Return the page-specific post-generation swap widget key."""
+
+    return f"{KEYNESS_PARTS_SWAP_WIDGET_PREFIX}_{user_session_id}"
+
+
+def render_swap_control(
+    user_session_id: str,
+    session: dict,
+    keyness_parts_data: list,
+) -> None:
+    """Regenerate the preserved category comparison in the opposite direction."""
+
+    pval_threshold, current_swap = extract_keyness_parts_settings(keyness_parts_data)
+    queue_pending = _get_keyness_parts_queue_state(user_session_id) is not None
+
+    st.sidebar.markdown("### Swap target/reference")
+    requested_swap = st.sidebar.toggle(
+        "Swap Target/Reference",
+        value=current_swap,
+        key=_keyness_parts_swap_widget_key(user_session_id),
+        disabled=queue_pending,
+        help=(
+            "Reverse the selected target and reference categories and regenerate "
+            "the keyness tables."
+        ),
+    )
+
+    if requested_swap != current_swap and not queue_pending:
+        target_categories = _normalize_category_selection(keyness_parts_data[0])
+        reference_categories = _normalize_category_selection(keyness_parts_data[1])
+        st.session_state[user_session_id]['tar'] = target_categories
+        st.session_state[user_session_id]['ref'] = reference_categories
+
+        target_source = _can_queue_keyness_parts(session)
+        if target_source is not None:
+            _submit_keyness_parts_job(
+                user_session_id,
+                target_source,
+                target_categories,
+                reference_categories,
+                pval_threshold,
+                requested_swap,
+            )
+            return
+
+        with st.sidebar.status(
+            "Regenerating corpus-parts keyness tables...",
+            state="running",
+        ):
+            generate_keyness_parts(
+                user_session_id,
+                threshold=pval_threshold,
+                swap_target=requested_swap,
+            )
+
+    _render_keyness_parts_queue_status(user_session_id)
+    st.sidebar.markdown("---")
+
+
 def render_sidebar_controls(
         df,
-        user_session_id: str
+        user_session_id: str,
+        session: dict,
 ) -> None:
     """Render common sidebar controls for downloads and table regeneration."""
     # Get metadata needed for enhanced export
     metadata_target = load_metadata(CorpusKeys.TARGET, user_session_id)
+    keyness_parts_data = extract_keyness_parts(metadata_target)
+
+    render_swap_control(user_session_id, session, keyness_parts_data)
 
     toggle_download(
         label="Excel",
@@ -469,6 +539,7 @@ def render_sidebar_controls(
         icon=":material/refresh:"
     ):
         _clear_keyness_parts_queue_state(user_session_id)
+        st.session_state.pop(_keyness_parts_swap_widget_key(user_session_id), None)
         # Clear only corpus parts comparison data using the corpus data manager
         clear_corpus_data(user_session_id, CorpusKeys.TARGET, [
             TargetKeys.KW_POS_CP, TargetKeys.KW_DS_CP,
