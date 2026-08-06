@@ -340,13 +340,18 @@ def main() -> None:
 
     # Get or initialize user session
     user_session_id, session = get_or_init_user_session()
+    generate_temp(
+        (
+            (LoadCorpusKeys.READY_TO_PROCESS, False),
+            (LoadCorpusKeys.REF_READY_TO_PROCESS, False),
+            (LoadCorpusKeys.REF_CORPUS_DF, None),
+            (LoadCorpusKeys.REF_EXCEPTIONS, None),
+        ),
+        user_session_id,
+    )
     has_target = bool(safe_session_get(session, SessionKeys.HAS_TARGET, False))
     has_reference = bool(safe_session_get(session, SessionKeys.HAS_REFERENCE, False))
     has_meta = bool(safe_session_get(session, SessionKeys.HAS_META, False))
-
-    # Initialize processing state if not exists
-    if LoadCorpusKeys.READY_TO_PROCESS not in st.session_state[user_session_id]:
-        st.session_state[user_session_id][LoadCorpusKeys.READY_TO_PROCESS] = False
 
     minimal_load_corpus = _load_test_minimal_load_corpus_enabled()
 
