@@ -9,14 +9,34 @@ The factory automatically selects the appropriate backend based on deployment mo
 - desktop_mode = false: Postgres control-plane storage
 """
 
+import os
 from typing import Optional
-from webapp.config.unified import get_config
+
+from sqlalchemy.engine import make_url
+
+from webapp.config.unified import config, get_config
+from webapp.persistence.config import get_database_config
+from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.storage.postgres_session_backend import (
     PostgresSessionBackend
 )
 from webapp.utilities.storage.sqlite_session_backend import (
     SQLiteSessionBackend
 )
+
+
+logger = get_logger()
+LOCAL_DATABASE_HOSTS = {None, "", "localhost", "127.0.0.1", "::1"}
+
+
+def _create_memory_backend():
+    """Create the lightweight backend without eager storage imports."""
+
+    from webapp.utilities.storage.memory_session_backend import (
+        InMemorySessionBackend,
+    )
+
+    return InMemorySessionBackend()
 
 
 class SessionBackendFactory:
@@ -47,7 +67,8 @@ class SessionBackendFactory:
         -------
         Backend instance
         """
-        if backend_type is None:
+        auto_selected = backend_type is None
+        if auto_selected:
             backend_type = get_config('backend', 'session', 'postgres')
 
         # Auto-select backend based on desktop_mode
@@ -58,16 +79,6 @@ class SessionBackendFactory:
         # - desktop_mode = false: Postgres backend by default
         if desktop_mode and backend_type in {'sqlite', 'postgres'}:
             backend_type = 'memory'
-        # Log startup mode information (one-time only)
-        if not hasattr(self, '_startup_logged'):
-            from webapp.utilities.configuration.logging_config import get_logger
-            logger = get_logger()
-
-            mode_text = "Desktop Mode" if desktop_mode else "Enterprise Mode"
-            backend_text = backend_type.title().replace('_', ' ')
-
-            logger.info(f"DocuScope CA starting in {mode_text} with {backend_text} backend")
-            self._startup_logged = True
         # Return cached instance if available
         if backend_type in self._backend_cache:
             return self._backend_cache[backend_type]
@@ -75,26 +86,56 @@ class SessionBackendFactory:
         # Create new backend instance
         if backend_type == 'memory':
             # Lightweight in-memory backend for desktop mode
-            from webapp.utilities.storage.memory_session_backend import (
-                InMemorySessionBackend
-            )
-            backend = InMemorySessionBackend()
-            self._backend_cache[backend_type] = backend
-            return backend
+            backend = _create_memory_backend()
         elif backend_type == 'sqlite':
             # Transitional SQLite backend for local tests and migration support
             backend = SQLiteSessionBackend()
-            self._backend_cache[backend_type] = backend
-            return backend
         elif backend_type == 'postgres':
-            backend = PostgresSessionBackend()
-            self._backend_cache[backend_type] = backend
-            return backend
+            try:
+                backend = PostgresSessionBackend()
+            except Exception as exc:
+                if not auto_selected or not self._allow_local_desktop_fallback():
+                    raise
+                config.activate_desktop_fallback(type(exc).__name__)
+                backend_type = 'memory'
+                backend = _create_memory_backend()
+                logger.warning(
+                    "Local Postgres is unavailable; DocuScope CA is falling back "
+                    "to Desktop Mode with in-memory session storage. Session data "
+                    "will last only for this app process. Start the Docker stack "
+                    "for enterprise persistence."
+                )
         else:
             raise ValueError(
                 f"Unknown backend type: {backend_type}. "
                 "Supported types: 'memory', 'sqlite', 'postgres'"
             )
+
+        self._backend_cache[backend_type] = backend
+        self._log_startup_mode(backend_type)
+        return backend
+
+    def _allow_local_desktop_fallback(self) -> bool:
+        """Return whether automatic local Postgres failure may use memory."""
+
+        if os.getenv("DOCUSCOPE_DISABLE_DESKTOP_FALLBACK", "").strip() == "1":
+            return False
+        database_host = make_url(get_database_config().url).host
+        return database_host in LOCAL_DATABASE_HOSTS
+
+    def _log_startup_mode(self, backend_type: str) -> None:
+        """Log the effective process mode once after backend creation."""
+
+        if hasattr(self, '_startup_logged'):
+            return
+        mode_text = "Desktop Mode" if config.is_desktop_mode() else "Enterprise Mode"
+        backend_text = backend_type.title().replace('_', ' ')
+        logger.info(
+            "DocuScope CA starting in {} with {} backend",
+            mode_text,
+            backend_text,
+        )
+        self._startup_logged = True
 
     def clear_cache(self):
         """Clear the backend cache."""
@@ -103,6 +144,8 @@ class SessionBackendFactory:
             if hasattr(backend, 'close'):
                 backend.close()
         self._backend_cache.clear()
+        if hasattr(self, '_startup_logged'):
+            del self._startup_logged
 
 
 # Global factory instance
