@@ -9,6 +9,7 @@ import polars as pl
 import streamlit as st
 import docuscospacy as ds
 from time import perf_counter
+from webapp.config.unified import config
 from webapp.utilities.core import app_core
 from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.analysis.correlation import pearson_correlation
@@ -55,6 +56,9 @@ def _log_slow_generation_trigger(
 def _get_shared_keyness_identity(user_session_id: str, threshold: float, swap_target: bool):
     """Return a shared keyness identity for built-in corpus comparisons."""
 
+    if config.is_desktop_mode():
+        return None
+
     _, session = get_or_init_user_session()
     target_db = safe_session_get(session, SessionKeys.TARGET_DB, "")
     reference_db = safe_session_get(session, SessionKeys.REFERENCE_DB, "")
@@ -87,6 +91,8 @@ def _get_keyness_parts_metadata(
     ref_tokens_ds: int,
     tar_ndocs: int,
     ref_ndocs: int,
+    threshold: float,
+    swap_target: bool,
 ) -> dict[str, list[str]]:
     """Build the metadata payload expected by the corpus-parts results page."""
 
@@ -100,6 +106,8 @@ def _get_keyness_parts_metadata(
             str(ref_tokens_ds),
             str(tar_ndocs),
             str(ref_ndocs),
+            threshold,
+            swap_target,
         ]
     }
 
@@ -110,6 +118,9 @@ def _get_shared_keyness_parts_identity(
     swap_target: bool,
 ):
     """Return a shared keyness-parts identity for built-in target corpora."""
+
+    if config.is_desktop_mode():
+        return None
 
     _, session = get_or_init_user_session()
     target_db = safe_session_get(session, SessionKeys.TARGET_DB, "")
@@ -281,7 +292,7 @@ def _store_cached_keyness_tables(
     kw_ds: pl.DataFrame,
     kt_pos: pl.DataFrame,
     kt_ds: pl.DataFrame,
-) -> None:
+) -> bool:
     """Store built-in keyness tables in the shared artifact registry."""
 
     identity = _get_shared_keyness_identity(user_session_id, threshold, swap_target)
@@ -306,6 +317,9 @@ def _store_cached_keyness_tables(
             artifact.artifact_id,
             [TargetKeys.KW_POS, TargetKeys.KW_DS, TargetKeys.KT_POS, TargetKeys.KT_DS],
         )
+        return True
+
+    return False
 
 
 def _store_cached_keyness_parts(
@@ -315,7 +329,7 @@ def _store_cached_keyness_parts(
     job_id: int | None,
     keyness_frames: dict[str, pl.DataFrame],
     metadata: dict[str, list[str]],
-) -> None:
+) -> bool:
     """Store built-in corpus-parts keyness in the shared artifact registry."""
 
     identity = _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target)
@@ -341,6 +355,9 @@ def _store_cached_keyness_parts(
                 TargetKeys.KT_DS_CP,
             ],
         )
+        return True
+
+    return False
 
 
 def _reserve_shared_keyness_artifact(
@@ -602,13 +619,7 @@ def generate_keyness_tables(
         )
         return
 
-    # Store results using the corpus data manager
-    if _get_shared_keyness_identity(user_session_id, threshold, swap_target) is None:
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_POS, kw_pos)
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_DS, kw_ds)
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_POS, kt_pos)
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_DS, kt_ds)
-    _store_cached_keyness_tables(
+    shared_result_stored = _store_cached_keyness_tables(
         user_session_id,
         threshold,
         swap_target,
@@ -618,6 +629,11 @@ def generate_keyness_tables(
         kt_pos,
         kt_ds,
     )
+    if not shared_result_stored:
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_POS, kw_pos)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KW_DS, kw_ds)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_POS, kt_pos)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, TargetKeys.KT_DS, kt_ds)
 
     app_core.session_manager.update_session_state(user_session_id, 'keyness_table', True)
     st.session_state[user_session_id][WarningKeys.KEYNESS] = None
@@ -726,27 +742,30 @@ def generate_keyness_parts(
         ref_tokens_ds,
         tar_ndocs,
         ref_ndocs,
+        threshold,
+        swap_target,
     )
 
     # --- Save results and clear warning ---
-    if _get_shared_keyness_parts_identity(user_session_id, threshold, swap_target) is None:
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_pos_cp", kw_pos_cp)
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_ds_cp", kw_ds_cp)
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_pos_cp", kt_pos_cp)
-        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_ds_cp", kt_ds_cp)
-    _store_cached_keyness_parts(
+    keyness_frames = {
+        "kw_pos_cp": kw_pos_cp,
+        "kw_ds_cp": kw_ds_cp,
+        "kt_pos_cp": kt_pos_cp,
+        "kt_ds_cp": kt_ds_cp,
+    }
+    shared_result_stored = _store_cached_keyness_parts(
         user_session_id,
         threshold,
         swap_target,
         job_id,
-        {
-            "kw_pos_cp": kw_pos_cp,
-            "kw_ds_cp": kw_ds_cp,
-            "kt_pos_cp": kt_pos_cp,
-            "kt_ds_cp": kt_ds_cp,
-        },
+        keyness_frames,
         metadata,
     )
+    if not shared_result_stored:
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_pos_cp", kw_pos_cp)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kw_ds_cp", kw_ds_cp)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_pos_cp", kt_pos_cp)
+        set_corpus_data(user_session_id, CorpusKeys.TARGET, "kt_ds_cp", kt_ds_cp)
 
     app_core.session_manager.update_session_state(user_session_id, 'keyness_parts', True)
 
