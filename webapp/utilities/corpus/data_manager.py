@@ -689,42 +689,24 @@ class CorpusDataManager:
         Optional[pl.DataFrame]
             The requested data or None if not available
         """
-        operation_start = perf_counter()
-
-        def finalize(result: Optional[pl.DataFrame]) -> Optional[pl.DataFrame]:
-            elapsed_ms = (perf_counter() - operation_start) * 1000
-            if elapsed_ms >= SLOW_CORPUS_OPERATION_MS:
-                logger.warning(
-                    (
-                        "Slow corpus get_data session={} corpus={} key={} "
-                        "duration_ms={:.2f} force_refresh={}"
-                    ),
-                    self.user_session_id,
-                    self.corpus_type,
-                    key,
-                    elapsed_ms,
-                    force_refresh,
-                )
-            return result
-
         if not force_refresh and key == "ft_pos_general":
             cached_session_frame = self._get_session_ephemeral_data(key)
             if cached_session_frame is not None:
-                return finalize(cached_session_frame)
+                return cached_session_frame
 
         # Check if data exists in session state first
         if not force_refresh and key in self.session_corpus_data:
-            return finalize(self.session_corpus_data[key])
+            return self.session_corpus_data[key]
 
         if not force_refresh:
             artifact_data = self._load_artifact_backed_data(key)
             if artifact_data is not None:
-                return finalize(artifact_data)
+                return artifact_data
 
         # If it's core data and still not found (no in-memory or artifact-backed
         # value), return None rather than falling through to derived-data logic.
         if key in self.core_keys:
-            return finalize(self.session_corpus_data.get(key))
+            return self.session_corpus_data.get(key)
 
         # Handle derived data with lazy loading
         if key == "ft_pos_general":
@@ -733,16 +715,16 @@ class CorpusDataManager:
                 self.has_artifact_ref("ft_pos") or
                 self.has_core_data()
             ):
-                return finalize(self._get_derived_data(key, force_refresh))
+                return self._get_derived_data(key, force_refresh)
 
         if key in self.derived_keys and self.has_core_data():
-            return finalize(self._get_derived_data(key, force_refresh))
+            return self._get_derived_data(key, force_refresh)
 
         # Handle additional keys (stored independently)
         if key in self.additional_keys:
-            return finalize(self.session_corpus_data.get(key))
+            return self.session_corpus_data.get(key)
 
-        return finalize(None)
+        return None
 
     def _get_derived_data(
         self, key: str, force_refresh: bool = False
