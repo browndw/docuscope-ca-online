@@ -221,6 +221,39 @@ def group_info(grp_a: list[str], grp_b: list[str]) -> str:
     return group_info
 
 
+def extract_keyness_parts(metadata: dict) -> list:
+    """Extract corpus-parts context from current or legacy metadata shapes."""
+    keyness_parts = metadata.get(SessionKeys.KEYNESS_PARTS, [])
+
+    for _ in range(3):
+        if isinstance(keyness_parts, dict):
+            keyness_parts = keyness_parts.get("temp", [])
+        elif (
+            isinstance(keyness_parts, list)
+            and len(keyness_parts) == 1
+            and isinstance(keyness_parts[0], (dict, list))
+        ):
+            keyness_parts = keyness_parts[0]
+        else:
+            break
+
+    if not isinstance(keyness_parts, list) or len(keyness_parts) < 8:
+        raise ValueError("Corpus-parts metadata is missing or incomplete.")
+
+    return keyness_parts
+
+
+def extract_keyness_parts_settings(keyness_parts: list) -> tuple[float, bool]:
+    """Extract generation settings, with defaults for legacy artifacts."""
+    pval_threshold = float(keyness_parts[8]) if len(keyness_parts) > 8 else 0.01
+    swap_value = keyness_parts[9] if len(keyness_parts) > 9 else False
+    if isinstance(swap_value, str):
+        swap_target = swap_value.strip().lower() in {"1", "true", "yes"}
+    else:
+        swap_target = bool(swap_value)
+    return pval_threshold, swap_target
+
+
 def target_parts(keyness_parts: list[str]) -> str:
     """Generate target corpus parts information string."""
     t_cats = keyness_parts[0]
