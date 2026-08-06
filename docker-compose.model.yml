@@ -19,5 +19,5 @@ services:
 
 models:
   plotbot:
-    model: ${DOCUSCOPE_MODEL_RUNNER_MODEL:-ai/qwen3-coder}
+    model: ${DOCUSCOPE_MODEL_RUNNER_MODEL:-ai/qwen3-coder@sha256:455c4d7cd4fdac736b0373ce2d30e8922cbf8318a236fc40534c7806de7a48d6}
     context_size: 4096
