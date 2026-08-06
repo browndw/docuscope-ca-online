@@ -399,8 +399,13 @@ def _compute_pca_with_caching(df: pl.DataFrame, grouping: list,
     tuple
         (pca_df, contrib_df, variance_explained)
     """
-    # Create cache key based on dataframe characteristics
-    cache_key = f"pca_{hash((tuple(df.columns), df.shape))}"
+    frame_fingerprint = hash((
+        tuple(df.columns),
+        tuple(str(dtype) for dtype in df.dtypes),
+        df.shape,
+        tuple(df.hash_rows().to_list()),
+    ))
+    cache_key = f"pca_{hash((frame_fingerprint, tuple(grouping)))}"
 
     def compute_pca():
         if hasattr(df, "to_pandas"):
