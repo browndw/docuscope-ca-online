@@ -157,6 +157,8 @@ def _build_keyness_parts_metadata(
     reference_categories: list[str],
     target_tokens: DataFrame,
     reference_tokens: DataFrame,
+    threshold: float,
+    swap_target: bool,
 ) -> dict[str, list[str]]:
     """Build metadata expected by the corpus-parts results page."""
 
@@ -188,6 +190,8 @@ def _build_keyness_parts_metadata(
             str(ref_tokens_ds),
             str(tar_ndocs),
             str(ref_ndocs),
+            threshold,
+            swap_target,
         ]
     }
 
@@ -445,6 +449,8 @@ def run_keyness_parts_preparation(
             reference_categories,
             target_tokens,
             reference_tokens,
+            threshold,
+            swap_target,
         )
         artifact = registry_service.store_keyness_parts_bundle(
             identity,
