@@ -1,9 +1,6 @@
 # DocuScope Corpus Analysis & Concordancer
 
-<div class="image" align="center">
-    <img width="150" height="auto" src="webapp/_static/docuscope-logo.png" alt="DocuScope logo">
-    <br>
-</div>
+![DocuScope logo](webapp/_static/docuscope-logo.png)
 
 ---
 
@@ -55,6 +52,59 @@ DocuScope CA uniquely combines:
 - **Flexible Deployment**: Desktop, web, container, and hosted options
 - **Research-Ready**: Built for both exploratory discovery and hypothesis-driven studies
 
+## Quick Start
+
+Pick the path that fits:
+
+- **Try it now, no install**: [DocuScope CA Enterprise](https://docuscope-ca.eberly.cmu.edu/) — hosted, browser only.
+- **Docker (recommended)**:
+
+  ```bash
+  git clone https://github.com/browndw/docuscope-ca-online.git
+  cd docuscope-ca-online
+  docker compose up
+  ```
+
+  Open `http://localhost:8501`. See [Docker Deployment](#docker-deployment-recommended)
+  for the full service list and rebuild instructions.
+- **Local Python (no Docker)**:
+
+  ```bash
+  git clone https://github.com/browndw/docuscope-ca-online.git
+  cd docuscope-ca-online
+  python3.13 -m venv venv && source venv/bin/activate
+  pip install -r requirements.txt
+  streamlit run webapp/index.py
+  ```
+
+  See [Local Installation](#local-installation) for supported Python versions
+  and the automatic Desktop Mode fallback.
+
+Deploying for a classroom or institution beyond one host? See
+[Enterprise and Horizontal Deployment](#enterprise-and-horizontal-deployment).
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Installation and Usage](#installation-and-usage)
+  - [Live Web Application](#live-web-application-immediate-access)
+  - [Docker Deployment](#docker-deployment-recommended)
+  - [Local Installation](#local-installation)
+  - [Desktop Application](#desktop-application)
+  - [Automated Testing](#automated-testing)
+  - [Reproducible Example Workflow](#reproducible-example-workflow)
+- [Enterprise and Horizontal Deployment](#enterprise-and-horizontal-deployment)
+- [Features](#features)
+- [Configuration](#configuration)
+- [Usage Examples](#usage-examples)
+- [Headless API & CLI](#headless-api--cli)
+- [Citation](#citation)
+- [License](#license)
+- [Using as Template](#using-as-template)
+- [Contributing](#contributing)
+- [Acknowledgments](#acknowledgments)
+- [Support and Documentation](#support-and-documentation)
+
 ## Installation and Usage
 
 DocuScope CA offers multiple deployment options to accommodate different user preferences and technical requirements.
@@ -77,10 +127,80 @@ git clone https://github.com/browndw/docuscope-ca-online.git
 cd docuscope-ca-online
 
 # Launch the application
-docker-compose up
+docker compose up
 ```
 
-The application will be available at `http://localhost:8501`. Docker automatically handles all dependencies, Python environment setup, and package installations.
+This starts the full enterprise-mode stack defined in `docker-compose.yml`:
+
+- `postgres` — the SQLAlchemy-backed control plane (artifact/job registry, authorization, runtime config)
+- `redis` — backs the RQ job queue
+- `migrate` — applies pending Alembic control-plane migrations before application processes start
+- `cleanup` — prunes expired sessions, temporary artifacts, terminal jobs, and old audit rows on an hourly schedule
+- `streamlit_app` — the web application, available at `http://localhost:8501`
+- `rq_worker` — processes deterministic analysis jobs (built-in target preparation, keyness, collocations, n-grams)
+- `rq_plotbot_worker` — processes built-in-only Plotbot requests on an independently scalable queue
+
+Docker automatically handles all dependencies, Python environment setup, and package installations.
+
+For deployment handoff, choose one of these two commands and leave the remaining
+application settings at their checked-in defaults:
+
+```bash
+# Core corpus-analysis application (Plotbot remains optional)
+docker compose up -d --build
+
+# Core application plus the repository-defined, self-hosted Qwen3 Coder model
+docker compose -f docker-compose.yml -f docker-compose.model.yml up -d --build
+```
+
+The self-hosted model requires Docker Compose 2.38+ and Docker Model Runner,
+and its first run downloads roughly 16.5 GiB of model data — see
+[Optional Local Qwen3 Coder Model](ENTERPRISE_DEPLOYMENT.md#optional-local-qwen3-coder-model)
+for prerequisites, benchmarking, and monitoring, whether running on one host or many.
+
+The base Compose file is the canonical **single-host** reference topology. It
+publishes one Streamlit container on host port `8501` and uses a Docker named
+volume for shared artifacts. It can scale the two worker pools on that host, for
+example:
+
+```bash
+docker compose up -d --scale rq_worker=2 --scale rq_plotbot_worker=2
+```
+
+Do not use `--scale streamlit_app=...` with the checked-in Compose file: each
+replica would try to claim host port `8501`. More than one Streamlit replica,
+multi-host deployment, and the optional self-hosted Plotbot model are covered
+in [Enterprise and Horizontal Deployment](#enterprise-and-horizontal-deployment).
+
+#### Rebuilding After Code Changes
+
+`docker compose up` reuses previously built images if they already exist. After pulling new code (or making local changes), rebuild a clean image so the containers run the current code:
+
+```bash
+# Rebuild the migration, cleanup, app, and worker images with no layer cache
+docker compose build --no-cache migrate cleanup streamlit_app rq_worker rq_plotbot_worker
+
+# Recreate the full stack from the fresh images
+docker compose up -d postgres redis migrate cleanup streamlit_app rq_worker rq_plotbot_worker
+
+# Confirm migration completed and the four long-running services report healthy
+docker compose ps
+```
+
+The cleanup service preserves public built-in artifacts unless an administrator
+assigns an explicit `expires_at` value. New private compatibility artifacts
+expire after 24 hours by default. Preview or run a cleanup pass manually with:
+
+```bash
+docker compose run --rm cleanup python -m webapp.persistence.cleanup --once --dry-run
+docker compose run --rm cleanup python -m webapp.persistence.cleanup --once
+```
+
+To validate that Postgres, Redis, and the RQ worker are wired together correctly on a fresh build, run the bundled smoke test, which enqueues a job through the running `streamlit_app` container and confirms the `rq_worker` processes it:
+
+```bash
+scripts/compose-rq-smoke.sh
+```
 
 ### Local Installation
 
@@ -91,8 +211,8 @@ For users preferring local installation:
 git clone https://github.com/browndw/docuscope-ca-online.git
 cd docuscope-ca-online
 
-# Create and activate a Python virtual environment (Python 3.11)
-python3.11 -m venv venv
+# Create and activate a Python virtual environment (Python 3.11, 3.12, or 3.13)
+python3.13 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies (models are bundled in `webapp/_models/`)
@@ -102,11 +222,22 @@ pip install -r requirements.txt
 streamlit run webapp/index.py
 ```
 
-> *Review note*: The tested pipelines, CLI/API workflows, and the JOSS reproduction script run entirely offline; no OpenAI credentials or external network access are required unless you opt into the AI-assisted features documented later in the README.
+*Review note*: The tested pipelines, CLI/API workflows, and the JOSS reproduction script run entirely offline; no OpenAI credentials or external network access are required unless you opt into the AI-assisted features documented later in the README.
+
+> [!IMPORTANT]
+> The shipped `webapp/config/options.toml` has `desktop_mode = false`, which is
+> the enterprise/Postgres-backed setting used by Docker and hosted deployments.
+> When `streamlit run webapp/index.py` is launched directly and the default local
+> Postgres endpoint is unavailable, the app automatically falls back once to
+> Desktop Mode with in-memory session storage. The terminal reports the fallback;
+> session data lasts only for that app process. Use the
+> [Docker Deployment](#docker-deployment-recommended) for durable Postgres/Redis
+> services. Operators intentionally running enterprise services on localhost can
+> set `DOCUSCOPE_DISABLE_DESKTOP_FALLBACK=1` to keep startup fail-fast.
 
 #### Notes
 
-- The project targets Python 3.11 exclusively; other versions are not supported.
+- The project targets Python 3.11, 3.12, and 3.13.
 - The DocuScope-enhanced spaCy models ship with the repository under `webapp/_models/`, so no additional downloads are required for local use.
 
 ### Desktop Application
@@ -145,13 +276,25 @@ python paper/scripts/run_example.py
 
 The script uses the sample corpus under `paper/data/test_corpus/`, runs the DocuScope + spaCy pipeline, and writes deterministic Parquet tables plus a provenance `manifest.json` to `paper/data/example_output/`. It makes no network calls and can be executed inside the Docker container or a local environment prepared with `pip install -e .`.
 
-## Using as Template
+## Enterprise and Horizontal Deployment
 
-This repository can be used as a template for creating custom deployments:
+> This section is for engineers deploying DocuScope CA at institutional or
+> classroom scale, beyond a single Docker host. If you just want to try the
+> app locally, the sections above are all you need.
 
-- **Desktop Version**: Use the "Use this template" button to create a desktop application
-- **Custom Deployments**: Adapt for institutional or research-specific needs
-- **Educational Versions**: Create modified versions for classroom use
+The full guide, in [ENTERPRISE_DEPLOYMENT.md](ENTERPRISE_DEPLOYMENT.md), covers:
+
+- **Horizontal Deployment Contract** — the required sequence and service
+  invariants for running multiple Streamlit replicas behind a load balancer,
+  with shared PostgreSQL, Redis, and artifact storage.
+- **Network Exposure** — which services are safe to expose, TLS/reverse-proxy
+  expectations, and production credential handling.
+- **Optional Authorization Bootstrap** — enabling role-based authentication
+  and the first administrator account for deployments that require it.
+- **Optional Local Qwen3 Coder Model** — self-hosting the Plotbot AI model
+  with Docker Model Runner, qualification benchmarks, and monitoring.
+- **Enterprise Deployment Capacity** — measured concurrent-user load test
+  results, per-user data limits, and overload/traffic-management layers.
 
 ## Features
 
@@ -259,102 +402,28 @@ If you use this software, please cite the software itself (and the JOSS article 
 @software{docuscope_ca_2025,
   title        = {DocuScope Corpus Analysis & Concordancer},
   author       = {Brown, David West},
-  year         = {2025},
-  version      = {0.4.0},
+  year         = {2026},
+  version      = {0.5.0},
   url          = {https://github.com/browndw/docuscope-ca-online},
-  note         = {Apache-2.0 license. Add JOSS and Zenodo DOIs when available.}
+  doi          = {10.5281/zenodo.17392153},
+  note         = {Apache-2.0 license. Add the JOSS DOI after article acceptance.}
 }
 ```
 
 After JOSS acceptance, update this section to include the article DOI (dual citation of article + software where venue policies permit).
 
-## Enterprise Deployment Capacity
-
-> This section applies to **enterprise mode** (`desktop_mode = false` in `webapp/config/options.toml`), which is the configuration used for the hosted web application and any institutional multi-user deployment. Desktop mode is a single-user variant with a simpler storage backend and different defaults; it is not addressed here.
-
-### Concurrent Users
-
-**Key takeaways:**
-
-- *For instructors using the CMU-hosted deployment:* the hosted instance is horizontally scaled, but on any single node approximately 15 users running the same compute-heavy workflow simultaneously can produce lag and dropped sessions. In practice this means instructors should avoid scheduling scenarios where an entire class executes the same analysis step at the same moment.
-- *Desktop alternative:* for scenarios where concurrent workflows with many users is a priority, [the desktop version of the application](https://github.com/browndw/docuscope-ca-desktop) provides an alternative.
-- *For institutions or engineers considering self-hosting:* a single-node deployment is sufficient for small or asynchronous use, but horizontal scaling (multiple instances behind a load balancer) is strongly recommended for any classroom or multi-user context.
-- *For future development:* improving load management for simultaneous identical processes — particularly keyness generation — is a priority.
-
-Providing a precise ceiling for concurrent users depends on the specific workflows in use. Browser-level load tests using Arsenal and Playwright against the local enterprise-mode deployment provide a measured baseline for the current build; these should be treated as single-node capacity observations rather than hard limits for a horizontally scaled deployment.
-
-Streamlit uses a thread-per-session model (one thread per user session, one Python process per instance). DocuScope CA adds a CPU-intensive NLP pipeline (spaCy + DocuScope tagging, approximately 1.1 minutes per million words), so the practical ceiling is constrained by available CPU threads and RAM rather than by the framework itself. The startup-only result in the table below (270 sessions, zero failures) is consistent with [published single-page Streamlit benchmarks](https://karnwong.me/posts/2024/09/streamlit-load-test-performance/).
-
-The following table summarizes results from these load tests. All measurements are from a single VM running one application instance.
-
-| Scenario | Max VUs | Sessions (created / completed) | Outcome |
-|---|---|---|---|
-| Application startup only | 270 | 270 / 270 | Stable — zero failures |
-| Keyness, internal corpora (ramp-up profile) | 14 | — | Stable — zero failures (heavy skipping) |
-| Keyness, internal corpora (ramp-up profile) | 15 | — | Transition zone — intermittent failures |
-| Keyness, internal corpora (ramp-up profile) | 16 | — | Fails reliably |
-| Compare-ready workflow (ramp-up profile) | 15 | 53 / 52 | Near-stable — 1 failure at final keyness/render step |
-| Token-frequency, preprocessed corpora | 15–30 | — | Rendering timeouts under sustained load |
-| Keyness, arrival-count profile | 15 | 15 / 15 | Stable — zero failures (recommended profile) |
-
-For those running their own load tests, the arrival-count-based scenario in `load_tests/scenarios/keyness-internal.yml` provides a reproducible single-node baseline.
-
-### Per-User Data Limits
-
-The following limits apply to each user session in enterprise mode:
-
-| Resource | Limit | Configuration key |
-|---|---|---|
-| Maximum corpus text size (raw input) | 20 MB | `max_text_size` |
-| Maximum tokenized DataFrame size | 150 MB | `max_polars_size` |
-| File upload size (Streamlit widget) | 200 MB per file | Streamlit server default |
-| Session inactivity timeout | 90 minutes | `inactivity_timeout_minutes` |
-| Absolute session duration | 24 hours | `absolute_timeout_hours` |
-| AI-assisted analysis quota (optional) | 200 requests per user | `quota` |
-
-The 20 MB raw-text limit is sufficient for a corpus of 3 million words (several hundred typical academic documents); most teaching or specialized corpora will fall well within it. Note that Streamlit's file picker will accept uploads up to 200 MB, but the application enforces its own 20 MB ceiling during ingestion. A user who uploads a large file will receive an error after upload but before processing begins — instructors should be aware of this sequence when setting expectations for students.
-
-Session data persists for up to 24 hours. Users receive a warning at 85 minutes of inactivity and at 23.5 hours of total session age before automatic logout.
-
-The limits above are **application-level controls** that apply in any enterprise deployment regardless of host infrastructure. For the hosted instance at Carnegie Mellon University, storage and bandwidth are governed by Campus Cloud VM configuration. No hard quotas are imposed at the infrastructure level under normal research and teaching usage; if a deployment were to generate unusually high resource consumption, Campus Cloud administrators would make contact before taking any action.
-
-### Overload and Traffic Management
-
-Protection against overload operates at three distinct layers, which are important to distinguish:
-
-**Core corpus processing (all users)**
-
-- Per-corpus data limits (described above) prevent any single session from consuming disproportionate memory or processing time.
-- Session persistence, sharded SQLite storage, and lazy generation of derived tables reduce repeated I/O and help keep multi-user access responsive.
-
-In educational settings, instructors commonly work with the pre-processed corpora bundled with the application. Because these corpora are already tokenized and annotated, they can be loaded without running the full NLP pipeline, which substantially reduces per-user compute load and makes simultaneous classroom use more practical.
-
-The analysis workflow where concurrent load is most visible is **keyness calculation** (the Compare Corpora tool, Page 5). Keyness tables are cached in user-scoped session memory but are not shared across users; cross-session caching has been considered but is architecturally non-trivial given the user-scoped storage model. For corpora larger than 1.5 million tokens, the interface also disables the most stringent p-value option (`p < .001`) to reduce per-query memory risk. Optimizing repeated keyness generation across sessions is a target for future improvement.
-
-**AI-assisted analysis features (optional, Pages 11 and 12 only)**
-
-The AI-assisted analysis pages use an OpenAI API key and are **optional** — they are not required for any of the core corpus analysis workflows. The key point for instructors is that **the optional AI features have rate limits; the core analysis tools do not**.
-
-Because classroom deployments may share a single community API key across many simultaneous users, these pages have their own protection layer: a daily per-user quota on community-key usage, a cap on simultaneous requests (5 on a community key), a circuit breaker that pauses traffic after repeated API failures, and request deduplication to avoid redundant API calls for similar prompts. The enterprise configuration also defines additional request-per-minute and queue-size settings that can be tuned for a deployment, though the concurrency cap and circuit-breaker behavior are the clearest protections enforced in the current implementation.
-
-All of these settings are configurable in the `[llm.enterprise]` section of `webapp/config/options.toml` and can be tuned to match the API tier and expected user load of a given deployment. Administrators who need to adjust individual thresholds — for example, for a large lecture course sharing a community key — will find the full parameter reference there.
-
-**Infrastructure-level protection (hosted deployment only)**
-
-The outermost safety net for the CMU-hosted instance is the Campus Cloud infrastructure itself. The underlying VMs are configured with OS-level controls that provide a fair share of memory, disk, and CPU to each process. Under sustained extreme load, Campus Cloud infrastructure can intervene to protect shared resources. This layer operates independently of the application and requires no configuration within DocuScope CA.
-
----
-
-For further context on Streamlit's scaling characteristics and approaches to increasing concurrency, the following resources are useful:
-- [Streamlit load test performance](https://karnwong.me/posts/2024/09/streamlit-load-test-performance/) — load test benchmarking Streamlit at scale
-- [Streamlit at Scale: Why My App Froze with 100 Users](https://medium.com/@hadiyolworld007/streamlit-at-scale-why-my-app-froze-with-100-users-666e736fcff0) — practical discussion of Streamlit's concurrency model and its limitations
-- [Streamlit single concurrency control](https://www.whitphx.info/posts/20240227-streamlit-single-concurrency-control/) — approach for controlling per-session concurrency
-- [Scaling Streamlit](https://ploomber.io/blog/scaling-streamlit/) — strategies for scaling Streamlit applications to higher traffic
-
 ## License
 
 Code licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
 See [LICENSE](https://github.com/browndw/docuscope-ca-online/blob/main/LICENSE) file.
+
+## Using as Template
+
+This repository can be used as a template for creating custom deployments:
+
+- **Desktop Version**: Use the "Use this template" button to create a desktop application
+- **Custom Deployments**: Adapt for institutional or research-specific needs
+- **Educational Versions**: Create modified versions for classroom use
 
 ## Contributing
 
@@ -387,7 +456,7 @@ For questions, bug reports, or feature requests:
 ---
 
 [license]: https://img.shields.io/github/license/browndw/docuscope-ca-online
-[python]: https://img.shields.io/badge/python-3.11-blue
+[python]: https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue
 [streamlit]: https://static.streamlit.io/badges/streamlit_badge_black_white.svg
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
