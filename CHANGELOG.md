@@ -5,6 +5,69 @@ All notable changes to DocuScope Corpus Analysis & Concordancer will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-06
+
+### Added
+
+- PostgreSQL control plane for durable sessions, artifact and job registries,
+  authorization, runtime configuration, and audit data.
+- Redis/RQ execution for deterministic built-in analyses, with dedicated
+  queues and workers for analysis and Plotbot jobs.
+- Shared immutable artifacts for eligible built-in corpus analyses, including
+  cross-session deduplication and model-aware provenance identities.
+- Alembic migrations, worker health checks, scheduled retention cleanup, and
+  a Compose RQ smoke test for production operations.
+- Optional Docker Model Runner deployment for Qwen3 Coder through
+  `docker-compose.model.yml`.
+- Headless API and CLI workflows with deterministic Parquet exports and
+  provenance manifests.
+- Python 3.12 and 3.13 support in addition to Python 3.11.
+- Post-generation target/reference swapping for Compare Corpus Parts, preserving
+  the selected categories and significance threshold during regeneration.
+
+### Changed
+
+- Upgraded Streamlit to 1.58.0 and moved enterprise session persistence from
+  sharded SQLite to PostgreSQL.
+- Kept uploaded and mixed-corpus workflows session-only while allowing
+  deterministic built-in results to be queued and reused safely.
+- Consolidated Plotbot on Plotly Express and a provider-neutral,
+  OpenAI-compatible model boundary.
+- Replaced the general AI community API key profile with Docker
+  Model Runner and Qwen3 Coder.
+- Replaced the PandasAI interpretation agent with deterministic DFM statistics
+  and evidence-grounded analysis workflows.
+- Removed unused SciPy, scikit-learn, Matplotlib, Seaborn, and PandasAI runtime
+  dependencies.
+
+### Fixed
+
+- Hardened restricted Plotbot execution against dunder access, dataframe
+  evaluation escapes, unsafe imports, and embedded system calls.
+- Made artifact publication atomic and artifact paths sensitive to complete
+  ownership, pipeline, model, selector, and parameter identity.
+- Reconciled RQ retries with durable control-plane job state and prevented
+  duplicate work during retry delays.
+- Enforced ownership for private compatibility records and removed routine
+  durable Plotbot result storage.
+- Corrected uploaded document identifiers before they are used in archive
+  member names.
+- Isolated Compare Corpus Parts generation settings from whole-corpus comparison
+  state, preventing stale swap information from appearing in result headers.
+- Displayed regeneration progress directly below the Compare Corpus Parts swap
+  control while replacement tables are prepared locally or in the background.
+
+### Performance
+
+- Reduced built-in corpus session payloads to lightweight references and
+  metadata descriptors.
+- Validated two 30-student cohorts completing the built-in token-frequency
+  workflow with zero failed or skipped users in the clean Docker deployment.
+- Qualified Qwen3 Coder with all six Plotbot smoke prompts, all eight strict
+  benchmark cases, and a real dedicated-worker Redis/RQ round trip.
+- Added a two-user shared-cache timing audit for keyness, corpus-parts keyness,
+  n-grams, and collocations.
+
 ## [0.4.1] - 2025-10-19
 
 ### Changed
