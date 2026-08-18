@@ -453,6 +453,11 @@ def test_enqueue_plotbot_generation_deduplicates_pending_jobs(
     assert second.state == "pending"
     assert second.rq_job_id == first.rq_job_id
     assert len(fake_queue.enqueued) == 1
+    _, enqueued_args, enqueued_kwargs = fake_queue.enqueued[0]
+    assert type(enqueued_args[3]) is dict
+    assert enqueued_kwargs["description"] == (
+        f"Plotbot generation ({enqueued_kwargs['job_id']})"
+    )
 
 
 def test_enqueue_plotbot_generation_reuses_retained_rq_result(
