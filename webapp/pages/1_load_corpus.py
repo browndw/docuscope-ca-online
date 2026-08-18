@@ -203,11 +203,11 @@ def _render_internal_target_queue_status(user_session_id: str) -> None:
         st.warning("Queued target job could not be found. Please try again.")
         return
 
-    if job_row.status == "pending":
+    if job_row.status in {"pending", "running"}:
         if not isinstance(rq_job_id, str) or not rq_job_id:
             registry_service.mark_job_failed(
                 control_plane_job_id,
-                "Queued target job was pending without a queue job id.",
+                "Queued target job had no queue job id.",
             )
             _clear_internal_target_queue_state(user_session_id)
             st.error("Queued target preparation failed before execution. Please retry.")
@@ -221,15 +221,15 @@ def _render_internal_target_queue_status(user_session_id: str) -> None:
         if rq_job is None:
             registry_service.mark_job_failed(
                 control_plane_job_id,
-                "Queue job record was missing while control-plane status was pending.",
+                "Queue job record was missing before control-plane completion.",
             )
             _clear_internal_target_queue_state(user_session_id)
-            st.error("Queued target preparation failed before execution. Please retry.")
+            st.error("Queued target preparation was interrupted. Please retry.")
             return
 
         rq_status_raw = rq_job.get_status(refresh=True)
         rq_status = str(getattr(rq_status_raw, "value", rq_status_raw)).strip().lower()
-        if rq_status == "failed":
+        if rq_status == "failed" and getattr(rq_job, "retries_left", 0) <= 0:
             failure_reason = "Queued target job failed before completion."
             if isinstance(rq_job.exc_info, str) and rq_job.exc_info.strip():
                 failure_reason = rq_job.exc_info.strip().splitlines()[-1]
