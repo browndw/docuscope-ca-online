@@ -275,6 +275,18 @@ def test_default_provider_selects_local_endpoint_from_environment(monkeypatch):
     assert provider.timeout_seconds == 30.0
 
 
+def test_default_provider_prefers_hosted_api_when_key_is_available(monkeypatch):
+    """An explicit hosted API key should take precedence over local Qwen."""
+    provider_module._discover_local_openai_compatible_model.cache_clear()
+    monkeypatch.setenv("DOCUSCOPE_AI_PROVIDER", "local")
+    monkeypatch.setenv("DOCUSCOPE_AI_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setenv("DOCUSCOPE_AI_MODEL", "ai/qwen3-coder")
+
+    provider = get_default_chat_provider(prefer_hosted_api=True)
+
+    assert isinstance(provider, ProtectedOpenAIChatProvider)
+
+
 def test_default_provider_auto_discovers_local_compatible_endpoint(monkeypatch):
     """A running local OpenAI-compatible endpoint should be usable without env vars."""
     provider_module._discover_local_openai_compatible_model.cache_clear()
