@@ -33,9 +33,6 @@ else:
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from webapp.menu import (   # noqa: E402
-    menu,
-)
 from webapp.utilities.configuration.logging_config import get_logger   # noqa: E402
 from webapp.config.unified import config   # noqa: E402
 
@@ -48,6 +45,10 @@ try:
     _session_backend = get_session_backend()
 except Exception as exc:
     logger.exception("Session backend initialization failed: {}", exc)
+
+# Import modules that consume runtime configuration only after the session
+# backend has either connected to Postgres or activated local desktop fallback.
+from webapp.menu import menu   # noqa: E402
 
 TITLE_LOGO = config.docuscope_logo_path
 PL_LOGO = config.porpoise_badge_path
@@ -208,7 +209,7 @@ def main() -> None:
         pl_logo_text = get_file_contents(PL_LOGO)
         b64 = get_base64_encoded(pl_logo_text)
         pl_html = r"""
-            <a href="https://github.com/browndw/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2025 David Brown, Suguru Ishizaki, David Kaufer
+            <a href="https://github.com/browndw/"><img src="data:image/svg+xml;base64,%s"/></a>  © 2026 David Brown, Suguru Ishizaki, David Kaufer
                 """ % b64  # noqa: E501
         st.markdown(pl_html, unsafe_allow_html=True)
         _log_slow_index_step(user_session_id, "footer_logo", footer_start)
