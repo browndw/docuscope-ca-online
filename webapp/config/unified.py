@@ -261,44 +261,17 @@ class ConfigManager:
         """
         return static_config.get_value(key, section, default)
 
-    def _check_secrets_availability(self) -> bool:
-        """
-        Check if required secrets are available for enterprise mode.
-
-        Returns
-        -------
-        bool
-            True if secrets are available, False otherwise.
-        """
-        try:
-            import streamlit as st
-            # Check for OpenAI API key
-            if "openai" in st.secrets and "api_key" in st.secrets["openai"]:
-                openai_key = st.secrets["openai"]["api_key"]
-                if openai_key and len(str(openai_key).strip()) > 0:
-                    return True
-        except Exception:
-            pass
-
-        # Check for environment variables as fallback
-        import os
-        openai_key = os.environ.get("OPENAI_API_KEY")
-        if openai_key and len(openai_key.strip()) > 0:
-            return True
-
-        return False
-
     def is_test_mode(self) -> bool:
         """Check if enterprise test mode is enabled."""
         return bool(self.get_static('test_mode', 'global', False))
 
     def is_desktop_mode(self) -> bool:
         """
-        Check if application is in desktop mode with intelligent fallback.
+        Check if application is in configured or fallback desktop mode.
 
         Returns True if:
         1. desktop_mode is explicitly set to True in config, OR
-        2. desktop_mode is False but required secrets are missing (fallback)
+        2. local Postgres initialization activated the process fallback.
 
         Returns
         -------
@@ -315,18 +288,6 @@ class ConfigManager:
         if configured_desktop_mode:
             return True
 
-        # Test mode keeps enterprise behavior even without secrets so that
-        # load and integration testing can run locally.
-        if self.is_test_mode():
-            return False
-
-        # If configured for enterprise mode, check if secrets are available
-        secrets_available = self._check_secrets_availability()
-
-        if not secrets_available:
-            return True
-
-        # Enterprise mode with valid secrets
         return False
 
     def is_cache_enabled(self) -> bool:
@@ -374,11 +335,9 @@ class ConfigManager:
 
     def get_secret(self, key: str, section: str = "openai", default: Any = None) -> Any:
         """
-        Safely get a secret value, respecting desktop mode fallback.
+        Safely get a secret value independently of deployment mode.
 
         This is the recommended way to access secrets throughout the application.
-        In desktop mode (including fallback scenarios), always returns the default
-        value to prevent attempts to access missing secrets.
 
         Parameters
         ----------
@@ -394,10 +353,6 @@ class ConfigManager:
         Any
             Secret value or default
         """
-        # In desktop mode, don't attempt to access secrets
-        if self.is_desktop_mode():
-            return default
-
         try:
             import streamlit as st
             if section in st.secrets and key in st.secrets[section]:
