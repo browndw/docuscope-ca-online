@@ -62,6 +62,18 @@ class TestConfigurationManagement:
             # we'll skip this test
             pytest.skip(f"ConfigManager not available: {e}")
 
+    def test_api_key_does_not_change_configured_enterprise_mode(self):
+        """AI credentials must not determine the deployment mode."""
+        manager = ConfigManager()
+
+        with patch.object(manager, 'get_static', return_value=False):
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("OPENAI_API_KEY", None)
+                assert manager.is_desktop_mode() is False
+
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+                assert manager.is_desktop_mode() is False
+
     def test_test_mode_skips_runtime_config_probe(self):
         """Test mode should keep config access independent from DB runtime config."""
         manager = ConfigManager()
