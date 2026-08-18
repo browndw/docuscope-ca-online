@@ -229,8 +229,13 @@ def get_openai_compatible_provider_config() -> tuple[str, str | None] | None:
     return None
 
 
-def get_default_chat_provider() -> ChatCompletionProvider:
+def get_default_chat_provider(
+    prefer_hosted_api: bool = False,
+) -> ChatCompletionProvider:
     """Return the default chat provider for synchronous assistant calls."""
+    if prefer_hosted_api:
+        return ProtectedOpenAIChatProvider()
+
     provider_config = get_openai_compatible_provider_config()
     if provider_config is not None:
         base_url, model = provider_config
