@@ -394,7 +394,7 @@ def render_plotbot_interface(user_session_id: str, session: dict) -> None:
             user_email = session.get('user_email', 'anonymous')
 
         local_provider_available = _has_local_plotbot_provider()
-        api_key = "" if local_provider_available else get_api_key(
+        api_key = get_api_key(
             user_session_id, DESKTOP, CACHE, QUOTA
         )
         model_available = local_provider_available or bool(api_key)
