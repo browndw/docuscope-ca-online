@@ -1,5 +1,6 @@
 """Test configuration management functionality."""
 
+import pickle
 import pathlib
 import pytest
 import os
@@ -20,6 +21,7 @@ if str(project_root) not in sys.path:
 from webapp.config.unified import (  # noqa: E402
     get_config, get_config_section, ConfigManager
 )
+from webapp.config.static_config import StaticConfigManager  # noqa: E402
 
 
 class TestConfigurationManagement:
@@ -122,6 +124,23 @@ class TestConfigurationManagement:
         # Test getting a section
         config_section = get_config_section('global')
         assert isinstance(config_section, dict)
+
+    def test_inline_table_values_are_pickle_safe(self, tmp_path):
+        """RQ must be able to pickle parameters loaded from TOML inline tables."""
+        config_path = tmp_path / "options.toml"
+        config_path.write_text(
+            '[llm]\n'
+            'llm_parameters = { temperature = 0.7, nested = { top_p = 0.8 } }\n',
+            encoding="utf-8",
+        )
+        manager = StaticConfigManager()
+        manager._config_path = config_path
+
+        params = manager.get_value("llm_parameters", "llm", {})
+
+        assert type(params) is dict
+        assert type(params["nested"]) is dict
+        assert pickle.loads(pickle.dumps(params)) == params
 
     def test_config_validation(self):
         """Test configuration validation."""
