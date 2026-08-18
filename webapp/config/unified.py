@@ -134,6 +134,10 @@ class ConfigManager:
 
         Returns (found, value) tuple. Uses lazy import to avoid circular deps.
         """
+        if self.is_desktop_mode():
+            self._runtime_config_available = False
+            return False, None
+
         if os.getenv("DOCUSCOPE_DISABLE_RUNTIME_CONFIG", "").strip() == "1":
             self._runtime_config_available = False
             return False, None
