@@ -719,6 +719,7 @@ def enqueue_plotbot_generation(
 ) -> QueuePlotbotEnqueueResult:
     """Enqueue a TTL-backed Plotbot job for built-in-only corpus data."""
 
+    plain_llm_params = json.loads(json.dumps(llm_params))
     portable_sources = [
         make_portable_corpus_path(source) for source in source_refs if source
     ]
@@ -741,7 +742,7 @@ def enqueue_plotbot_generation(
         "source_refs": sorted(portable_sources),
         "plot_lib": plot_lib,
         "user_input": user_input,
-        "llm_params": llm_params,
+        "llm_params": plain_llm_params,
         "schema": schema or "",
         "code_chunk_hash": _hash_payload({"code_chunk": code_chunk or ""}),
         "cached_code_hash": _hash_payload({"cached_code": cached_code or ""}),
@@ -782,12 +783,13 @@ def enqueue_plotbot_generation(
         dataframe_records,
         plot_lib,
         user_input,
-        llm_params,
+        plain_llm_params,
         schema,
         code_chunk,
         cached_code,
         api_key,
         job_id=rq_job_id,
+        description=f"Plotbot generation ({rq_job_id})",
         job_timeout=config.job_timeout,
         result_ttl=config.result_ttl,
         retry=_build_job_retry(config),
