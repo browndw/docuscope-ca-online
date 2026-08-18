@@ -6,6 +6,7 @@ into the corpus analysis workflow, including API validation, settings management
 and common utilities used by AI assistants.
 """
 
+import os
 import openai
 import docuscospacy as ds
 import pandas as pd
@@ -424,13 +425,13 @@ def get_api_key(
         if user_key is not None:
             return user_key
 
-        # Only try community key if user hasn't provided their own
+        # Try a configured hosted key if the user has not provided their own.
+        # AI provider selection is independent of desktop/enterprise mode.
         community_key = None
-        if not desktop_mode:
-            try:
-                community_key = st.secrets["openai"]["api_key"]
-            except Exception:
-                community_key = None
+        try:
+            community_key = st.secrets["openai"]["api_key"]
+        except Exception:
+            community_key = os.environ.get("OPENAI_API_KEY")
 
         # Check quota if caching is enabled and using community key
         if cache_enabled and community_key:
