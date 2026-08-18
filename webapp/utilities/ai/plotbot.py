@@ -444,7 +444,9 @@ def plotbot_code_generate_or_update(
 
         # Make the model call through a provider boundary so Plotbot is not
         # coupled to a single hosted or local runner.
-        provider = chat_provider or get_default_chat_provider()
+        provider = chat_provider or get_default_chat_provider(
+            prefer_hosted_api=bool(api_key and api_key.strip())
+        )
         full_response = provider.generate_text(
             api_key=api_key,
             request_params=request_params,
