@@ -28,7 +28,8 @@ from webapp.utilities.ai import (
     render_quota_tracker, should_show_api_key_input,
     render_work_preservation_interface, should_show_work_preservation_interface,
     export_conversation_history, clear_plotbot_table,
-    get_plotbot_builtin_sources, prune_message_thread
+    determine_api_key_type, get_plotbot_builtin_sources,
+    increment_session_quota, prune_message_thread
 )
 from webapp.utilities.ai.providers import get_openai_compatible_provider_config
 from webapp.queue import (
@@ -46,6 +47,7 @@ from webapp.utilities.ui import (
 from webapp.utilities.state import (
     SessionKeys, WarningKeys, CorpusKeys
 )
+from webapp.utilities.storage import get_session_backend
 from webapp.menu import (
     menu, require_login
 )
@@ -109,18 +111,13 @@ def _append_queued_plotbot_result(user_session_id: str, payload: dict) -> bool:
         st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
             {"role": "assistant", "type": "error", "value": error_message}
         )
-        st.session_state[user_session_id]["plotbot"].append(
-            {"role": "assistant", "type": "error", "value": error_message}
-        )
         prune_message_thread(user_session_id, SessionKeys.AI_PLOTBOT_CHAT)
-        prune_message_thread(user_session_id, "plotbot")
         return True
 
     plot_code = result.get("code")
     if isinstance(plot_code, str) and plot_code.strip():
         code_message = {"role": "assistant", "type": "code", "value": plot_code}
         st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT].append(code_message)
-        st.session_state[user_session_id]["plotbot"].append(code_message)
 
     plot_svg = result.get("plot_svg")
     if isinstance(plot_svg, str) and plot_svg.strip():
@@ -130,8 +127,28 @@ def _append_queued_plotbot_result(user_session_id: str, payload: dict) -> bool:
         )
 
     prune_message_thread(user_session_id, SessionKeys.AI_PLOTBOT_CHAT)
-    prune_message_thread(user_session_id, "plotbot")
     return True
+
+
+def _record_queued_plotbot_quota(queue_state: dict) -> None:
+    """Account once for a completed queued request using the community key."""
+    if not queue_state.get("track_community_quota") or queue_state.get("quota_recorded"):
+        return
+
+    user_email = queue_state.get("user_email")
+    if not isinstance(user_email, str) or not user_email or user_email == "anonymous":
+        return
+
+    # Mark first so a rerun cannot account for the same retained RQ result twice.
+    queue_state["quota_recorded"] = True
+    st.session_state[PLOTBOT_QUEUE_STATE_KEY] = queue_state
+    increment_session_quota(user_email)
+    get_session_backend().log_user_query(
+        user_id=user_email,
+        session_id=None,
+        assistant_type="plotbot",
+        message_content=str(queue_state.get("user_input") or "")[:500] or None,
+    )
 
 
 def _submit_plotbot_job(
@@ -151,11 +168,7 @@ def _submit_plotbot_job(
         st.session_state[user_session_id][SessionKeys.AI_PLOTBOT_CHAT].append(
             {"role": "assistant", "type": "error", "value": error_message}
         )
-        st.session_state[user_session_id]["plotbot"].append(
-            {"role": "assistant", "type": "error", "value": error_message}
-        )
         prune_message_thread(user_session_id, SessionKeys.AI_PLOTBOT_CHAT)
-        prune_message_thread(user_session_id, "plotbot")
         return
 
     dataframe_records = _dataframe_to_plotbot_records(df)
@@ -175,6 +188,13 @@ def _submit_plotbot_job(
     st.session_state[PLOTBOT_QUEUE_STATE_KEY] = {
         "session_id": user_session_id,
         "rq_job_id": result.rq_job_id,
+        "track_community_quota": (
+            result.state == "queued" and
+            determine_api_key_type(DESKTOP, api_key) == "community"
+        ),
+        "quota_recorded": False,
+        "user_email": user_email,
+        "user_input": user_input,
     }
     st.rerun()
 
@@ -205,6 +225,7 @@ def _render_plotbot_queue_status(user_session_id: str) -> None:
     rq_status = str(getattr(rq_status_raw, "value", rq_status_raw)).strip().lower()
     if rq_status == "finished":
         if _append_queued_plotbot_result(user_session_id, rq_job.result):
+            _record_queued_plotbot_quota(queue_state)
             _clear_plotbot_queue_state(user_session_id)
             st.rerun()
         _clear_plotbot_queue_state(user_session_id)

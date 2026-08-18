@@ -10,7 +10,7 @@ from webapp.utilities.state import (
     SessionKeys, WarningKeys
 )
 from webapp.utilities.analysis import generate_tags_table
-from webapp.utilities.ui import sidebar_action_button
+from webapp.utilities.ui.helpers import sidebar_action_button
 from webapp.utilities.session.session_core import safe_session_get
 
 
