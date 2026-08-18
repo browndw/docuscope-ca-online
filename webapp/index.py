@@ -39,13 +39,15 @@ from webapp.menu import (   # noqa: E402
 from webapp.utilities.configuration.logging_config import get_logger   # noqa: E402
 from webapp.config.unified import config   # noqa: E402
 
+logger = get_logger()
+
 # Initialize session backend early to ensure database is created
 try:
     from webapp.utilities.storage.backend_factory import get_session_backend
     # This will create the database and tables if they don't exist
     _session_backend = get_session_backend()
-except Exception:
-    pass
+except Exception as exc:
+    logger.exception("Session backend initialization failed: {}", exc)
 
 TITLE_LOGO = config.docuscope_logo_path
 PL_LOGO = config.porpoise_badge_path
@@ -56,7 +58,6 @@ TEST_MODE = config.test_mode
 USER_GUIDE_URL = "https://browndw.github.io/docuscope-docs/"
 VERSION = config.version
 SLOW_INDEX_STEP_MS = 100
-logger = get_logger()
 
 
 def _load_test_minimal_landing_enabled() -> bool:
