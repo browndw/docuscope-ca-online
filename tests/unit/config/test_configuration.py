@@ -120,6 +120,20 @@ class TestConfigurationManagement:
         assert found is False
         assert value is None
 
+    def test_desktop_fallback_skips_runtime_config_probe(self):
+        """A failed local Postgres connection must stop runtime DB lookups."""
+        manager = ConfigManager()
+        manager.activate_desktop_fallback("OperationalError")
+
+        with patch.dict(sys.modules, {'webapp.config.runtime_config': None}):
+            found, value = manager._try_get_runtime_override(
+                'enable_user_authorization',
+                'authorization',
+            )
+
+        assert found is False
+        assert value is None
+
     @patch.dict(os.environ, {'TEST_ENV_VAR': 'test_value'})
     def test_environment_variable_override(self):
         """Test that environment variables can override config."""
