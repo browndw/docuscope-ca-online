@@ -35,11 +35,22 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-docuscope}:${POSTGRES_PASSWORD:-docuscope}@postgres:5432/${POSTGRES_DB:-docuscope_ca}
     command: alembic upgrade head
 
+  artifact_init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: root
+    volumes:
+      - artifact_data:/app/webapp/_artifacts
+    command: chown -R streamlit:streamlit /app/webapp/_artifacts
+
   streamlit_app:
     build:
       context: .
       dockerfile: Dockerfile
     depends_on:
+      artifact_init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       postgres:
@@ -83,6 +94,8 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
+      artifact_init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       postgres:
@@ -144,6 +157,8 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
+      artifact_init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       postgres:
