@@ -99,7 +99,7 @@ def run_worker() -> None:
         connection=connection,
         name=get_worker_name(),
     )
-    worker.work()
+    worker.work(with_scheduler=True)
 
 
 def main(argv: list[str] | None = None) -> None:
