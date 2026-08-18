@@ -14,7 +14,7 @@ from typing import Optional
 
 from sqlalchemy.engine import make_url
 
-from webapp.config.unified import config, get_config
+from webapp.config.unified import config
 from webapp.persistence.config import get_database_config
 from webapp.utilities.configuration.logging_config import get_logger
 from webapp.utilities.storage.postgres_session_backend import (
@@ -69,10 +69,14 @@ class SessionBackendFactory:
         """
         auto_selected = backend_type is None
         if auto_selected:
-            backend_type = get_config('backend', 'session', 'postgres')
+            # Backend selection is a bootstrap decision. Do not consult the
+            # Postgres-backed runtime config before Postgres availability has
+            # been established and local desktop fallback can be activated.
+            backend_type = config.get_static('backend', 'session', 'postgres')
 
-        # Auto-select backend based on desktop_mode
-        desktop_mode = get_config('desktop_mode', 'global', True)
+        # Resolve the configured mode without consulting Postgres-backed runtime
+        # overrides; this backend must be established before those are available.
+        desktop_mode = config.is_desktop_mode()
 
         # Use appropriate backend for deployment mode:
         # - desktop_mode = true: In-memory backend (no database bloat)
