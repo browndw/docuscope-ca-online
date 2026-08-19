@@ -1,0 +1,25 @@
+# Single-host horizontal test deployment.
+# Combine with docker-compose.yml; do not combine with docker-compose.model.yml
+# when using a hosted OpenAI-compatible API.
+services:
+  streamlit_app:
+    # The proxy owns the host port. Replicas remain reachable only on the
+    # internal Compose network at streamlit_app:8501.
+    ports: !reset []
+
+  proxy:
+    image: nginx:1.29-alpine
+    depends_on:
+      streamlit_app:
+        condition: service_healthy
+    ports:
+      - "${DOCUSCOPE_HTTP_PORT:-8501}:80"
+    volumes:
+      - ./deploy/nginx-scale.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
