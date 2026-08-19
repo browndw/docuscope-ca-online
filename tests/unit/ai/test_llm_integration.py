@@ -30,6 +30,7 @@ except ImportError:
 from webapp.utilities.ai.llm_core import (  # noqa: E402
     is_openai_key_valid, get_api_key, setup_ai_session_state
 )
+from webapp.utilities.state import SessionKeys  # noqa: E402
 
 
 class TestLLMIntegration:
@@ -96,6 +97,17 @@ class TestLLMIntegration:
             else:
                 # Re-raise unexpected exceptions
                 raise
+
+    @patch.dict(os.environ, {'OPENAI_API_KEY': 'environment-key'})
+    @patch('webapp.utilities.ai.llm_core.st')
+    def test_get_api_key_from_environment_when_secret_is_empty(self, mock_st):
+        """Use the deployment environment when the bundled secret is empty."""
+        mock_st.secrets = {"openai": {"api_key": ""}}
+        mock_st.session_state = {
+            "test_user": {SessionKeys.AI_USER_KEY: None}
+        }
+
+        assert get_api_key("test_user", False, False, 100) == "environment-key"
 
     @patch('webapp.utilities.ai.llm_core.st')
     def test_setup_ai_session_state(self, mock_st):
