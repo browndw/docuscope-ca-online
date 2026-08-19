@@ -461,3 +461,4 @@ For questions, bug reports, or feature requests:
 [spacy]: https://img.shields.io/badge/made%20with%20❤%20and-spaCy-09a3d5.svg
 [tests]: https://github.com/browndw/docuscope-ca-online/actions/workflows/test.yml/badge.svg
 [doi]: https://zenodo.org/badge/DOI/10.5281/zenodo.17392153.svg
+[joss]: https://joss.theoj.org/papers/10.21105/joss.10418/status.svg
