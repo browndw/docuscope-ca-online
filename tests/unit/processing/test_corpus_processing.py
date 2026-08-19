@@ -796,6 +796,7 @@ class TestProcessInternalProbeModes:
     @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
     @patch('webapp.utilities.processing.corpus_processing.load_corpus_internal')
     @patch('webapp.utilities.processing.corpus_processing.os.getenv')
+    @patch('webapp.utilities.processing.corpus_processing.TEST_MODE', True)
     def test_process_internal_no_metadata_probe(
         self,
         mock_getenv,
@@ -843,6 +844,7 @@ class TestProcessInternalProbeModes:
     @patch('webapp.utilities.processing.corpus_processing.get_corpus_manager')
     @patch('webapp.utilities.processing.corpus_processing.load_corpus_internal')
     @patch('webapp.utilities.processing.corpus_processing.os.getenv')
+    @patch('webapp.utilities.processing.corpus_processing.TEST_MODE', True)
     def test_process_internal_metadata_no_persist_probe(
         self,
         mock_getenv,
