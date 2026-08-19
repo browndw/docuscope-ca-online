@@ -5,6 +5,38 @@ All notable changes to DocuScope Corpus Analysis & Concordancer will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-19
+
+### Changed
+
+- Decoupled deployment-mode detection from AI credential availability so
+  enterprise mode can use PostgreSQL independently of the configured model
+  provider.
+- Preferred an explicitly supplied hosted API key over the local Qwen provider,
+  while retaining Qwen as the keyless local fallback.
+- Made local enterprise-mode startup fall back to the desktop in-memory session
+  backend when PostgreSQL on localhost is unavailable; remote PostgreSQL
+  failures remain fatal.
+
+### Fixed
+
+- Initialized Docker artifact-volume ownership before application, worker, and
+  cleanup services start, preventing background corpus jobs from failing with
+  permission errors after a fresh deployment.
+- Enabled the RQ scheduler in the worker so delayed retries execute, and
+  reconciled missing or exhausted queue jobs instead of leaving the corpus UI
+  indefinitely stuck in a processing state.
+- Normalized TOML-derived Plotbot parameters to built-in containers before RQ
+  serialization, preventing `DynamicInlineTableDict` pickle failures.
+- Prevented API keys from appearing in RQ job descriptions and logs.
+- Avoided PostgreSQL runtime-configuration queries before backend selection and
+  after local desktop fallback, eliminating repeated startup connection errors.
+- Corrected the Streamlit startup import order and Plotbot download-control
+  import path to prevent circular imports during application initialization.
+- Recorded community API-key quota for completed queued Plotbot requests and
+  guarded quota accounting against duplicate polling updates.
+- Removed duplicate Plotbot code and error messages from queued chat results.
+
 ## [0.5.0] - 2026-08-06
 
 ### Added
