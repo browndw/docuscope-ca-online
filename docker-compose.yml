@@ -69,10 +69,12 @@ services:
       DOCUSCOPE_AI_MODEL: ${DOCUSCOPE_AI_MODEL:-}
       DOCUSCOPE_AI_API_KEY: ${DOCUSCOPE_AI_API_KEY:-}
       DOCUSCOPE_AI_TIMEOUT_SECONDS: ${DOCUSCOPE_AI_TIMEOUT_SECONDS:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "8501:8501"
     volumes:
       - artifact_data:/app/webapp/_artifacts
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     command:
       - streamlit
       - run
@@ -143,6 +145,7 @@ services:
       DOCUSCOPE_AI_MODEL: ${DOCUSCOPE_AI_MODEL:-}
       DOCUSCOPE_AI_API_KEY: ${DOCUSCOPE_AI_API_KEY:-}
       DOCUSCOPE_AI_TIMEOUT_SECONDS: ${DOCUSCOPE_AI_TIMEOUT_SECONDS:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     command: python -m webapp.queue.worker
     restart: unless-stopped
     healthcheck:
