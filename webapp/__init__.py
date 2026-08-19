@@ -7,6 +7,6 @@ using the Docuscope framework.
 Path setup is handled by index.py (the entrypoint) for both desktop and online deployments.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 __author__ = "David Brown"
 __email__ = "dwb2@andrew.cmu.edu"
