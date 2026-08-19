@@ -429,9 +429,10 @@ def get_api_key(
         # AI provider selection is independent of desktop/enterprise mode.
         community_key = None
         try:
-            community_key = st.secrets["openai"]["api_key"]
+            community_key = st.secrets["openai"]["api_key"] or None
         except Exception:
-            community_key = os.environ.get("OPENAI_API_KEY")
+            pass
+        community_key = community_key or os.environ.get("OPENAI_API_KEY")
 
         # Check quota if caching is enabled and using community key
         if cache_enabled and community_key:
