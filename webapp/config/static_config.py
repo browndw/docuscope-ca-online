@@ -7,18 +7,8 @@ of the configuration hierarchy and should never import from other webapp modules
 """
 
 import toml
-from collections.abc import Mapping
 from typing import Any, Dict, Optional
 from pathlib import Path
-
-
-def _to_plain_data(value: Any) -> Any:
-    """Convert TOML decoder containers into pickle-safe built-in containers."""
-    if isinstance(value, Mapping):
-        return {key: _to_plain_data(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_to_plain_data(item) for item in value]
-    return value
 
 
 class StaticConfigManager:
@@ -61,7 +51,7 @@ class StaticConfigManager:
         try:
             if self._config_path.exists():
                 with open(self._config_path, 'r', encoding='utf-8') as f:
-                    self._config_cache = _to_plain_data(toml.load(f))
+                    self._config_cache = toml.load(f)
             else:
                 # Return empty config if file doesn't exist
                 self._config_cache = {}
