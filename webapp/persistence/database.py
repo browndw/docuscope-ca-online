@@ -14,6 +14,14 @@ class Base(DeclarativeBase):
     """Declarative base for control-plane models."""
 
 
+def _connect_args(database_url: str) -> dict[str, object]:
+    """Return driver options compatible with transaction-pooling proxies."""
+
+    if database_url.startswith("postgresql+psycopg"):
+        return {"prepare_threshold": None}
+    return {}
+
+
 @lru_cache(maxsize=1)
 def build_engine() -> object:
     """Build and cache the primary SQLAlchemy engine."""
@@ -23,6 +31,7 @@ def build_engine() -> object:
         config.url,
         echo=config.echo_sql,
         pool_pre_ping=config.pool_pre_ping,
+        connect_args=_connect_args(config.url),
         future=True,
     )
 
