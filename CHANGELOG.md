@@ -5,6 +5,15 @@ All notable changes to DocuScope Corpus Analysis & Concordancer will be document
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-08-31
+
+### Fixed
+
+- Disabled psycopg automatic prepared statements for PostgreSQL connections,
+  preventing queued corpus preparation from failing with
+  `InvalidSqlStatementName` when deployments use transaction-pooling database
+  proxies such as PgBouncer.
+
 ## [0.5.1] - 2026-08-19
 
 ### Changed
